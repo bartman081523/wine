@@ -163,8 +163,10 @@ static HRESULT WINAPI uisettings_get_MessageDuration( IUISettings *iface, UINT32
 
 static HRESULT WINAPI uisettings_get_AnimationsEnabled( IUISettings *iface, boolean *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_CaretBrowsingEnabled( IUISettings *iface, boolean *value )

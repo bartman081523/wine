@@ -21,6 +21,7 @@
 #include "wine/debug.h"
 
 #include "pathcch.h"
+#include "appmodel.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(model);
 
@@ -442,10 +443,192 @@ static HRESULT WINAPI package_GetTrustLevel( IPackage *iface, TrustLevel *trust_
     return E_NOTIMPL;
 }
 
+struct package_id
+{
+    IPackageId IPackageId_iface;
+    LONG ref;
+    const WINE_APPMODEL_ENTRY *entry;
+    WCHAR fallback_name[MAX_PATH];
+    WCHAR fallback_full_name[MAX_PATH];
+};
+
+static inline struct package_id *impl_from_IPackageId( IPackageId *iface )
+{
+    return CONTAINING_RECORD( iface, struct package_id, IPackageId_iface );
+}
+
+static HRESULT WINAPI package_id_QueryInterface( IPackageId *iface, REFIID iid, void **out )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) ||
+        IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
+        IsEqualGUID( iid, &IID_IPackageId ))
+    {
+        *out = &impl->IPackageId_iface;
+        IInspectable_AddRef( (IInspectable *)*out );
+        return S_OK;
+    }
+
+    FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI package_id_AddRef( IPackageId *iface )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p increasing refcount to %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI package_id_Release( IPackageId *iface )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+    TRACE( "iface %p decreasing refcount to %lu.\n", iface, ref );
+    if (!ref) free( impl );
+    return ref;
+}
+
+static HRESULT WINAPI package_id_GetIids( IPackageId *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI package_id_GetRuntimeClassName( IPackageId *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.ApplicationModel.PackageId",
+                                ARRAY_SIZE(L"Windows.ApplicationModel.PackageId") - 1,
+                                class_name );
+}
+
+static HRESULT WINAPI package_id_GetTrustLevel( IPackageId *iface, TrustLevel *trust_level )
+{
+    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI package_id_get_Name( IPackageId *iface, HSTRING *value )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    const WCHAR *str = impl->entry && impl->entry->name ? impl->entry->name : impl->fallback_name;
+    TRACE( "iface %p, value %p -> %s\n", iface, value, debugstr_w(str) );
+    return WindowsCreateString( str, wcslen(str), value );
+}
+
+static HRESULT WINAPI package_id_get_Version( IPackageId *iface, PackageVersion *value )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    if (impl->entry)
+        *value = *(PackageVersion *)&impl->entry->package_version;
+    else
+        memset( value, 0, sizeof(*value) );
+    return S_OK;
+}
+
+static HRESULT WINAPI package_id_get_Architecture( IPackageId *iface, __x_ABI_CWindows_CSystem_CProcessorArchitecture *value )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    *value = (enum __x_ABI_CWindows_CSystem_CProcessorArchitecture)(impl->entry ? impl->entry->processor_architecture : 9);
+    return S_OK;
+}
+
+static HRESULT WINAPI package_id_get_ResourceId( IPackageId *iface, HSTRING *value )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    const WCHAR *str = impl->entry && impl->entry->resource_id ? impl->entry->resource_id : L"";
+    TRACE( "iface %p, value %p -> %s\n", iface, value, debugstr_w(str) );
+    return WindowsCreateString( str, wcslen(str), value );
+}
+
+static HRESULT WINAPI package_id_get_Publisher( IPackageId *iface, HSTRING *value )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    const WCHAR *str = impl->entry && impl->entry->publisher ? impl->entry->publisher : L"";
+    TRACE( "iface %p, value %p -> %s\n", iface, value, debugstr_w(str) );
+    return WindowsCreateString( str, wcslen(str), value );
+}
+
+static HRESULT WINAPI package_id_get_PublisherId( IPackageId *iface, HSTRING *value )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    const WCHAR *str = impl->entry && impl->entry->publisher_id ? impl->entry->publisher_id : L"";
+    TRACE( "iface %p, value %p -> %s\n", iface, value, debugstr_w(str) );
+    return WindowsCreateString( str, wcslen(str), value );
+}
+
+static HRESULT WINAPI package_id_get_FullName( IPackageId *iface, HSTRING *value )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    const WCHAR *str = impl->entry && impl->entry->full_name ? impl->entry->full_name : impl->fallback_full_name;
+    TRACE( "iface %p, value %p -> %s\n", iface, value, debugstr_w(str) );
+    return WindowsCreateString( str, wcslen(str), value );
+}
+
+static HRESULT WINAPI package_id_get_FamilyName( IPackageId *iface, HSTRING *value )
+{
+    struct package_id *impl = impl_from_IPackageId( iface );
+    const WCHAR *str = impl->entry && impl->entry->family_name ? impl->entry->family_name : impl->fallback_name;
+    TRACE( "iface %p, value %p -> %s\n", iface, value, debugstr_w(str) );
+    return WindowsCreateString( str, wcslen(str), value );
+}
+
+static const struct IPackageIdVtbl package_id_vtbl =
+{
+    package_id_QueryInterface,
+    package_id_AddRef,
+    package_id_Release,
+    /* IInspectable */
+    package_id_GetIids,
+    package_id_GetRuntimeClassName,
+    package_id_GetTrustLevel,
+    /* IPackageId */
+    package_id_get_Name,
+    package_id_get_Version,
+    package_id_get_Architecture,
+    package_id_get_ResourceId,
+    package_id_get_Publisher,
+    package_id_get_PublisherId,
+    package_id_get_FullName,
+    package_id_get_FamilyName,
+};
+
 static HRESULT WINAPI package_get_Id( IPackage *iface, IPackageId **value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    struct package_id *impl;
+
+    TRACE( "iface %p, value %p\n", iface, value );
+
+    if (!value) return E_INVALIDARG;
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+
+    impl->IPackageId_iface.lpVtbl = &package_id_vtbl;
+    impl->ref = 1;
+    impl->entry = WineAppModelGetCurrentEntry();
+    if (!impl->entry)
+    {
+        WCHAR path[MAX_PATH], *p;
+        GetModuleFileNameW( NULL, path, MAX_PATH );
+        p = wcsrchr( path, '\\' );
+        if (p) p++; else p = path;
+        lstrcpynW( impl->fallback_name, p, ARRAY_SIZE(impl->fallback_name) );
+        lstrcpynW( impl->fallback_full_name, p, ARRAY_SIZE(impl->fallback_full_name) );
+    }
+
+    *value = &impl->IPackageId_iface;
+    TRACE( "created IPackageId %p (name %s)\n", *value,
+           debugstr_w(impl->entry ? impl->entry->name : impl->fallback_name) );
+    return S_OK;
 }
 
 static HRESULT WINAPI package_get_InstalledLocation( IPackage *iface, IStorageFolder **value )
@@ -496,11 +679,9 @@ static const struct IPackageVtbl package_vtbl =
 
 DEFINE_IINSPECTABLE( package_statics, IPackageStatics, struct package_statics, IActivationFactory_iface )
 
-static HRESULT WINAPI package_statics_get_Current( IPackageStatics *iface, IPackage **value )
+HRESULT create_package( IPackage **value )
 {
     struct package *impl;
-
-    TRACE( "iface %p, value %p\n", iface, value );
 
     if (!value) return E_INVALIDARG;
     if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
@@ -511,6 +692,12 @@ static HRESULT WINAPI package_statics_get_Current( IPackageStatics *iface, IPack
     *value = &impl->IPackage_iface;
     TRACE( "created IPackage %p.\n", *value );
     return S_OK;
+}
+
+static HRESULT WINAPI package_statics_get_Current( IPackageStatics *iface, IPackage **value )
+{
+    TRACE( "iface %p, value %p\n", iface, value );
+    return create_package( value );
 }
 
 static const struct IPackageStaticsVtbl package_statics_vtbl =

@@ -207,8 +207,9 @@ BOOL WINAPI Shell_NotifyIconW(DWORD dwMessage, PNOTIFYICONDATAW nid)
     tray = FindWindowExW(0, NULL, L"Shell_TrayWnd", NULL);
     if (!tray)
     {
-        SetLastError(E_FAIL);
-        return FALSE;
+        WARN("no Shell_TrayWnd found, returning TRUE stub\n");
+        SetLastError(S_OK);
+        return TRUE;
     }
 
     cds.dwData = dwMessage;
@@ -298,6 +299,8 @@ BOOL WINAPI Shell_NotifyIconW(DWORD dwMessage, PNOTIFYICONDATAW nid)
  */
 HRESULT WINAPI Shell_NotifyIconGetRect(const NOTIFYICONIDENTIFIER* identifier, RECT* icon_location)
 {
-    FIXME("stub (%p) (%p)\n", identifier, icon_location);
-    return E_NOTIMPL;
+    TRACE("stub (%p) (%p)\n", identifier, icon_location);
+    if (!icon_location) return E_POINTER;
+    SetRect(icon_location, 0, 0, 16, 16);
+    return S_OK;
 }

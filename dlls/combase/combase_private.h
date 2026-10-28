@@ -76,7 +76,7 @@ struct tlsdata
     struct apartment *apt;
     IErrorInfo       *errorinfo;
     DWORD             thread_seqid;  /* returned with CoGetCurrentProcess */
-    DWORD             flags;         /* tlsdata_flags (+0Ch on x86) */
+    DWORD             flags;         /* tlsdata_flags (+0Ch on x86, +14h on x64) */
     void             *unknown0;
     DWORD             inits;         /* number of times CoInitializeEx called */
     DWORD             ole_inits;     /* number of times OleInitialize called */
@@ -93,6 +93,7 @@ struct tlsdata
     DWORD             spies_lock;
     DWORD             cancelcount;
     CO_MTA_USAGE_COOKIE implicit_mta_cookie; /* mta referenced by roapi from sta thread */
+    struct IRestrictedErrorInfo *restricted_error_info;
 };
 
 extern HRESULT WINAPI InternalTlsAllocData(struct tlsdata **data);

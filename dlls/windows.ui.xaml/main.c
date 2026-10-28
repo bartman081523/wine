@@ -32,6 +32,24 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     if (!wcscmp( buffer, RuntimeClass_Windows_UI_ColorHelper ))
         IActivationFactory_QueryInterface( color_helper_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Application" ))
+        IActivationFactory_QueryInterface( application_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Window" ))
+        IActivationFactory_QueryInterface( window_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.PropertyMetadata" ))
+        IActivationFactory_QueryInterface( property_metadata_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.DependencyProperty" ))
+        IActivationFactory_QueryInterface( dependency_property_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.DependencyObject" ))
+        IActivationFactory_QueryInterface( dependency_object_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.System.User" ))
+        IActivationFactory_QueryInterface( user_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.SizeHelper" ))
+        IActivationFactory_QueryInterface( size_helper_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Frame" ))
+        IActivationFactory_QueryInterface( frame_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Page" ))
+        IActivationFactory_QueryInterface( page_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

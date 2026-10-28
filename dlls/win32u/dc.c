@@ -740,7 +740,7 @@ HDC WINAPI NtGdiOpenDCW( UNICODE_STRING *device, const DEVMODEW *devmode, UNICOD
     /* gdi_lock should not be locked */
     if (is_display)
         funcs = get_display_driver();
-    else if (type != WINE_GDI_DRIVER_VERSION)
+    else if (type != WINE_GDI_DRIVER_VERSION && type != 108 && type != 111)
         ERR( "version mismatch: %u\n", type );
     else
         funcs = hspool;

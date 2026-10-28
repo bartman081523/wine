@@ -610,6 +610,463 @@ static struct threadpool_factory threadpool_factory =
     .refcount = 1,
 };
 
+struct threadpool_timer
+{
+    IThreadPoolTimer IThreadPoolTimer_iface;
+    LONG refcount;
+
+    TP_TIMER *tp_timer;
+    ITimerElapsedHandler *handler;
+    ITimerDestroyedHandler *destroyed;
+    TimeSpan period;
+    TimeSpan delay;
+    CRITICAL_SECTION cs;
+    BOOL canceled;
+};
+
+static inline struct threadpool_timer *impl_from_IThreadPoolTimer(IThreadPoolTimer *iface)
+{
+    return CONTAINING_RECORD(iface, struct threadpool_timer, IThreadPoolTimer_iface);
+}
+
+static void CALLBACK timer_callback(TP_CALLBACK_INSTANCE *instance, void *context, TP_TIMER *timer)
+{
+    struct threadpool_timer *impl = context;
+    ITimerElapsedHandler *handler = NULL;
+
+    EnterCriticalSection(&impl->cs);
+    if (!impl->canceled && impl->handler)
+    {
+        handler = impl->handler;
+        ITimerElapsedHandler_AddRef(handler);
+    }
+    LeaveCriticalSection(&impl->cs);
+
+    if (handler)
+    {
+        ITimerElapsedHandler_Invoke(handler, &impl->IThreadPoolTimer_iface);
+        ITimerElapsedHandler_Release(handler);
+    }
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_QueryInterface(IThreadPoolTimer *iface, REFIID iid, void **out)
+{
+    struct threadpool_timer *impl = impl_from_IThreadPoolTimer(iface);
+
+    TRACE("iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out);
+
+    if (IsEqualIID(iid, &IID_IThreadPoolTimer)
+            || IsEqualIID(iid, &IID_IInspectable)
+            || IsEqualIID(iid, &IID_IUnknown)
+            || IsEqualIID(iid, &IID_IAgileObject))
+    {
+        *out = iface;
+        IUnknown_AddRef((IUnknown *)*out);
+        return S_OK;
+    }
+
+    *out = NULL;
+    WARN("Unsupported interface %s.\n", debugstr_guid(iid));
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE threadpool_timer_AddRef(IThreadPoolTimer *iface)
+{
+    struct threadpool_timer *impl = impl_from_IThreadPoolTimer(iface);
+    ULONG refcount = InterlockedIncrement(&impl->refcount);
+
+    TRACE("iface %p, refcount %lu.\n", iface, refcount);
+
+    return refcount;
+}
+
+static ULONG STDMETHODCALLTYPE threadpool_timer_Release(IThreadPoolTimer *iface)
+{
+    struct threadpool_timer *impl = impl_from_IThreadPoolTimer(iface);
+    ULONG refcount = InterlockedDecrement(&impl->refcount);
+
+    TRACE("iface %p, refcount %lu.\n", iface, refcount);
+
+    if (!refcount)
+    {
+        TP_TIMER *tp_timer = NULL;
+        ITimerDestroyedHandler *destroyed = NULL;
+
+        EnterCriticalSection(&impl->cs);
+        if (!impl->canceled)
+        {
+            impl->canceled = TRUE;
+            tp_timer = impl->tp_timer;
+            impl->tp_timer = NULL;
+            destroyed = impl->destroyed;
+            impl->destroyed = NULL;
+        }
+        LeaveCriticalSection(&impl->cs);
+
+        if (tp_timer)
+        {
+            SetThreadpoolTimer(tp_timer, NULL, 0, 0);
+            WaitForThreadpoolTimerCallbacks(tp_timer, TRUE);
+            CloseThreadpoolTimer(tp_timer);
+        }
+
+        if (destroyed)
+        {
+            ITimerDestroyedHandler_Invoke(destroyed, &impl->IThreadPoolTimer_iface);
+            ITimerDestroyedHandler_Release(destroyed);
+        }
+
+        if (impl->handler)
+            ITimerElapsedHandler_Release(impl->handler);
+
+        DeleteCriticalSection(&impl->cs);
+        free(impl);
+    }
+
+    return refcount;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_GetIids(IThreadPoolTimer *iface, ULONG *iid_count, IID **iids)
+{
+    FIXME("iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_GetRuntimeClassName(IThreadPoolTimer *iface, HSTRING *class_name)
+{
+    return WindowsCreateString(RuntimeClass_Windows_System_Threading_ThreadPoolTimer,
+                               ARRAY_SIZE(RuntimeClass_Windows_System_Threading_ThreadPoolTimer) - 1,
+                               class_name);
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_GetTrustLevel(IThreadPoolTimer *iface, TrustLevel *trust_level)
+{
+    *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_get_Period(IThreadPoolTimer *iface, TimeSpan *value)
+{
+    struct threadpool_timer *impl = impl_from_IThreadPoolTimer(iface);
+    TRACE("iface %p, value %p.\n", iface, value);
+    if (!value) return E_INVALIDARG;
+    *value = impl->period;
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_get_Delay(IThreadPoolTimer *iface, TimeSpan *value)
+{
+    struct threadpool_timer *impl = impl_from_IThreadPoolTimer(iface);
+    TRACE("iface %p, value %p.\n", iface, value);
+    if (!value) return E_INVALIDARG;
+    *value = impl->delay;
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_Cancel(IThreadPoolTimer *iface)
+{
+    struct threadpool_timer *impl = impl_from_IThreadPoolTimer(iface);
+    TP_TIMER *tp_timer = NULL;
+    ITimerDestroyedHandler *destroyed = NULL;
+
+    TRACE("iface %p.\n", iface);
+
+    EnterCriticalSection(&impl->cs);
+    if (!impl->canceled)
+    {
+        impl->canceled = TRUE;
+        tp_timer = impl->tp_timer;
+        impl->tp_timer = NULL;
+        destroyed = impl->destroyed;
+        impl->destroyed = NULL;
+    }
+    LeaveCriticalSection(&impl->cs);
+
+    if (tp_timer)
+    {
+        SetThreadpoolTimer(tp_timer, NULL, 0, 0);
+        WaitForThreadpoolTimerCallbacks(tp_timer, TRUE);
+        CloseThreadpoolTimer(tp_timer);
+    }
+
+    if (destroyed)
+    {
+        ITimerDestroyedHandler_Invoke(destroyed, &impl->IThreadPoolTimer_iface);
+        ITimerDestroyedHandler_Release(destroyed);
+    }
+
+    return S_OK;
+}
+
+static const struct IThreadPoolTimerVtbl threadpool_timer_vtbl =
+{
+    threadpool_timer_QueryInterface,
+    threadpool_timer_AddRef,
+    threadpool_timer_Release,
+    /* IInspectable methods */
+    threadpool_timer_GetIids,
+    threadpool_timer_GetRuntimeClassName,
+    threadpool_timer_GetTrustLevel,
+    /* IThreadPoolTimer methods */
+    threadpool_timer_get_Period,
+    threadpool_timer_get_Delay,
+    threadpool_timer_Cancel,
+};
+
+static HRESULT create_threadpool_timer(ITimerElapsedHandler *handler, TimeSpan period, TimeSpan delay,
+                                       ITimerDestroyedHandler *destroyed, IThreadPoolTimer **ret)
+{
+    struct threadpool_timer *impl;
+    FILETIME ft;
+    ULARGE_INTEGER uli;
+    DWORD period_ms = 0;
+
+    *ret = NULL;
+    if (!handler) return E_INVALIDARG;
+
+    if (!(impl = calloc(1, sizeof(*impl))))
+        return E_OUTOFMEMORY;
+
+    impl->IThreadPoolTimer_iface.lpVtbl = &threadpool_timer_vtbl;
+    impl->refcount = 1;
+    InitializeCriticalSection(&impl->cs);
+    impl->period = period;
+    impl->delay = delay;
+
+    impl->handler = handler;
+    ITimerElapsedHandler_AddRef(impl->handler);
+
+    if (destroyed)
+    {
+        impl->destroyed = destroyed;
+        ITimerDestroyedHandler_AddRef(impl->destroyed);
+    }
+
+    if (!(impl->tp_timer = CreateThreadpoolTimer(timer_callback, impl, NULL)))
+    {
+        DeleteCriticalSection(&impl->cs);
+        ITimerElapsedHandler_Release(impl->handler);
+        if (impl->destroyed) ITimerDestroyedHandler_Release(impl->destroyed);
+        free(impl);
+        return E_FAIL;
+    }
+
+    uli.QuadPart = (ULONGLONG)(-delay.Duration);
+    ft.dwLowDateTime = uli.LowPart;
+    ft.dwHighDateTime = uli.HighPart;
+
+    if (period.Duration > 0)
+    {
+        period_ms = (DWORD)(period.Duration / 10000);
+        if (!period_ms) period_ms = 1;
+    }
+
+    SetThreadpoolTimer(impl->tp_timer, &ft, period_ms, 0);
+
+    *ret = &impl->IThreadPoolTimer_iface;
+    return S_OK;
+}
+
+struct threadpool_timer_factory
+{
+    IActivationFactory IActivationFactory_iface;
+    IThreadPoolTimerStatics IThreadPoolTimerStatics_iface;
+    LONG refcount;
+};
+
+static inline struct threadpool_timer_factory *impl_from_timer_IActivationFactory(IActivationFactory *iface)
+{
+    return CONTAINING_RECORD(iface, struct threadpool_timer_factory, IActivationFactory_iface);
+}
+
+static inline struct threadpool_timer_factory *impl_from_IThreadPoolTimerStatics(IThreadPoolTimerStatics *iface)
+{
+    return CONTAINING_RECORD(iface, struct threadpool_timer_factory, IThreadPoolTimerStatics_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_factory_QueryInterface(
+        IActivationFactory *iface, REFIID iid, void **out)
+{
+    struct threadpool_timer_factory *factory = impl_from_timer_IActivationFactory(iface);
+
+    TRACE("iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out);
+
+    if (IsEqualGUID(iid, &IID_IUnknown) ||
+        IsEqualGUID(iid, &IID_IInspectable) ||
+        IsEqualGUID(iid, &IID_IAgileObject) ||
+        IsEqualGUID(iid, &IID_IActivationFactory))
+    {
+        IUnknown_AddRef(iface);
+        *out = &factory->IActivationFactory_iface;
+        return S_OK;
+    }
+
+    if (IsEqualGUID(iid, &IID_IThreadPoolTimerStatics))
+    {
+        IUnknown_AddRef(iface);
+        *out = &factory->IThreadPoolTimerStatics_iface;
+        return S_OK;
+    }
+
+    FIXME("%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid(iid));
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE threadpool_timer_factory_AddRef(IActivationFactory *iface)
+{
+    struct threadpool_timer_factory *factory = impl_from_timer_IActivationFactory(iface);
+    ULONG refcount = InterlockedIncrement(&factory->refcount);
+    TRACE("iface %p, refcount %lu.\n", iface, refcount);
+    return refcount;
+}
+
+static ULONG STDMETHODCALLTYPE threadpool_timer_factory_Release(IActivationFactory *iface)
+{
+    struct threadpool_timer_factory *factory = impl_from_timer_IActivationFactory(iface);
+    ULONG refcount = InterlockedDecrement(&factory->refcount);
+    TRACE("iface %p, refcount %lu.\n", iface, refcount);
+    return refcount;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_factory_GetIids(
+        IActivationFactory *iface, ULONG *iid_count, IID **iids)
+{
+    FIXME("iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_factory_GetRuntimeClassName(
+        IActivationFactory *iface, HSTRING *class_name)
+{
+    FIXME("iface %p, class_name %p stub!\n", iface, class_name);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_factory_GetTrustLevel(
+        IActivationFactory *iface, TrustLevel *trust_level)
+{
+    FIXME("iface %p, trust_level %p stub!\n", iface, trust_level);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_factory_ActivateInstance(
+        IActivationFactory *iface, IInspectable **instance)
+{
+    FIXME("iface %p, instance %p stub!\n", iface, instance);
+    return E_NOTIMPL;
+}
+
+static const struct IActivationFactoryVtbl threadpool_timer_factory_vtbl =
+{
+    threadpool_timer_factory_QueryInterface,
+    threadpool_timer_factory_AddRef,
+    threadpool_timer_factory_Release,
+    /* IInspectable methods */
+    threadpool_timer_factory_GetIids,
+    threadpool_timer_factory_GetRuntimeClassName,
+    threadpool_timer_factory_GetTrustLevel,
+    /* IActivationFactory methods */
+    threadpool_timer_factory_ActivateInstance,
+};
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_statics_QueryInterface(
+        IThreadPoolTimerStatics *iface, REFIID iid, void **object)
+{
+    struct threadpool_timer_factory *factory = impl_from_IThreadPoolTimerStatics(iface);
+    return IActivationFactory_QueryInterface(&factory->IActivationFactory_iface, iid, object);
+}
+
+static ULONG STDMETHODCALLTYPE threadpool_timer_statics_AddRef(IThreadPoolTimerStatics *iface)
+{
+    struct threadpool_timer_factory *factory = impl_from_IThreadPoolTimerStatics(iface);
+    return IActivationFactory_AddRef(&factory->IActivationFactory_iface);
+}
+
+static ULONG STDMETHODCALLTYPE threadpool_timer_statics_Release(IThreadPoolTimerStatics *iface)
+{
+    struct threadpool_timer_factory *factory = impl_from_IThreadPoolTimerStatics(iface);
+    return IActivationFactory_Release(&factory->IActivationFactory_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_statics_GetIids(
+        IThreadPoolTimerStatics *iface, ULONG *iid_count, IID **iids)
+{
+    FIXME("iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_statics_GetRuntimeClassName(
+        IThreadPoolTimerStatics *iface, HSTRING *class_name)
+{
+    FIXME("iface %p, class_name %p stub!\n", iface, class_name);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_statics_GetTrustLevel(
+        IThreadPoolTimerStatics *iface, TrustLevel *trust_level)
+{
+    FIXME("iface %p, trust_level %p stub!\n", iface, trust_level);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_statics_CreatePeriodicTimer(
+        IThreadPoolTimerStatics *iface, ITimerElapsedHandler *handler,
+        TimeSpan period, IThreadPoolTimer **timer)
+{
+    TRACE("iface %p, handler %p, period %lld, timer %p.\n", iface, handler, period.Duration, timer);
+    return create_threadpool_timer(handler, period, period, NULL, timer);
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_statics_CreateTimer(
+        IThreadPoolTimerStatics *iface, ITimerElapsedHandler *handler,
+        TimeSpan delay, IThreadPoolTimer **timer)
+{
+    TimeSpan zero_period = {0};
+    TRACE("iface %p, handler %p, delay %lld, timer %p.\n", iface, handler, delay.Duration, timer);
+    return create_threadpool_timer(handler, zero_period, delay, NULL, timer);
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_statics_CreatePeriodicTimerWithCompletion(
+        IThreadPoolTimerStatics *iface, ITimerElapsedHandler *handler,
+        TimeSpan period, ITimerDestroyedHandler *destroyed, IThreadPoolTimer **timer)
+{
+    TRACE("iface %p, handler %p, period %lld, destroyed %p, timer %p.\n", iface, handler, period.Duration, destroyed, timer);
+    return create_threadpool_timer(handler, period, period, destroyed, timer);
+}
+
+static HRESULT STDMETHODCALLTYPE threadpool_timer_statics_CreateTimerWithCompletion(
+        IThreadPoolTimerStatics *iface, ITimerElapsedHandler *handler,
+        TimeSpan delay, ITimerDestroyedHandler *destroyed, IThreadPoolTimer **timer)
+{
+    TimeSpan zero_period = {0};
+    TRACE("iface %p, handler %p, delay %lld, destroyed %p, timer %p.\n", iface, handler, delay.Duration, destroyed, timer);
+    return create_threadpool_timer(handler, zero_period, delay, destroyed, timer);
+}
+
+static const struct IThreadPoolTimerStaticsVtbl threadpool_timer_statics_vtbl =
+{
+    threadpool_timer_statics_QueryInterface,
+    threadpool_timer_statics_AddRef,
+    threadpool_timer_statics_Release,
+    /* IInspectable methods */
+    threadpool_timer_statics_GetIids,
+    threadpool_timer_statics_GetRuntimeClassName,
+    threadpool_timer_statics_GetTrustLevel,
+    /* IThreadPoolTimerStatics methods */
+    threadpool_timer_statics_CreatePeriodicTimer,
+    threadpool_timer_statics_CreateTimer,
+    threadpool_timer_statics_CreatePeriodicTimerWithCompletion,
+    threadpool_timer_statics_CreateTimerWithCompletion,
+};
+
+static struct threadpool_timer_factory threadpool_timer_factory =
+{
+    .IActivationFactory_iface.lpVtbl = &threadpool_timer_factory_vtbl,
+    .IThreadPoolTimerStatics_iface.lpVtbl = &threadpool_timer_statics_vtbl,
+    .refcount = 1,
+};
+
 HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out)
 {
     FIXME("clsid %s, riid %s, out %p stub!\n", debugstr_guid(clsid), debugstr_guid(riid), out);
@@ -627,6 +1084,11 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, IActivationFactory **fac
     if (!wcscmp(name, RuntimeClass_Windows_System_Threading_ThreadPool))
     {
         *factory = &threadpool_factory.IActivationFactory_iface;
+        IUnknown_AddRef(*factory);
+    }
+    else if (!wcscmp(name, RuntimeClass_Windows_System_Threading_ThreadPoolTimer))
+    {
+        *factory = &threadpool_timer_factory.IActivationFactory_iface;
         IUnknown_AddRef(*factory);
     }
 

@@ -14,9 +14,9 @@
 
 2010 stub -noname SlicerControl  # NtUserSlicerControl
 
-2503 stub DelegateInput  # NtUserDelegateInput
-2504 stub UndelegateInput  # NtUserUndelegateInput
-2505 stub HandleDelegatedInput  # NtUserHandleDelegatedInput
+2503 stdcall DelegateInput(ptr ptr ptr ptr long long)
+2504 stdcall UndelegateInput(ptr ptr)
+2505 stdcall HandleDelegatedInput(ptr long)
 2506 stub @
 2507 stub -noname SetAutoRotation  # NtUserSetAutoRotation
 2508 stub -noname PromotePointer  # NtUserPromotePointer
@@ -68,8 +68,8 @@
 2554 stub @
 2555 stub @
 2556 stub -noname SetActivationFilter  # NtUserSetActivationFilter
-2557 stub @
-2558 stub @
+2557 stdcall -noname user32_2557(ptr ptr ptr)
+2558 stdcall -noname user32_2558(ptr ptr ptr)
 2559 stub -noname GetOwnerTransformedMonitorRect  # NtUserGetOwnerTransformedMonitorRect
 2560 stub @
 2561 stdcall -noname EnableMouseInPointerForThread() NtUserEnableMouseInPointerForThread
@@ -84,8 +84,8 @@
 2570 stub @
 2571 stub SetCoreWindow  # NtUserSetCoreWindow
 2572 stub @
-2573 stub @
-2574 stub @
+2573 stdcall -noname IsShellFrameWindow(ptr)
+2574 stdcall -noname IsShellManagedWindow(ptr)
 2575 stub @
 2576 stub -noname SetCoreWindowPartner  # NtUserSetCoreWindowPartner
 
@@ -211,9 +211,9 @@
 2715 stub -noname LogicalToPhysicalDpiPointForWindow  # NtUserLogicalToPhysicalDpiPointForWindow
 2716 stub -noname PhysicalToLogicalDpiPointForWindow  # NtUserPhysicalToLogicalDpiPointForWindow
 
-2800 stub ShellHandwritingDelegateInput  # NtUserShellHandwritingDelegateInput
-2801 stub ShellHandwritingUndelegateInput  # NtUserShellHandwritingUndelegateInput
-2802 stub ShellHandwritingHandleDelegatedInput  # NtUserShellHandwritingHandleDelegatedInput
+2800 stdcall ShellHandwritingDelegateInput(ptr ptr ptr ptr long long)
+2801 stdcall ShellHandwritingUndelegateInput(ptr ptr)
+2802 stdcall ShellHandwritingHandleDelegatedInput(ptr long)
 2804 stub EnableWindowShellWindowManagementBehavior  # NtUserEnableWindowShellWindowManagementBehavior
 
 @ stdcall ActivateKeyboardLayout(long long) NtUserActivateKeyboardLayout
@@ -696,7 +696,7 @@
 @ stdcall GetUserObjectSecurity(long ptr ptr long ptr)
 # @ stub GetWinStationInfo
 @ stdcall GetWindow(long long)
-# @ stub GetWindowBand
+@ stdcall GetWindowBand(long ptr)
 # @ stub GetWindowCompositionAttribute
 # @ stub GetWindowCompositionInfo
 @ stdcall GetWindowContextHelpId(long) NtUserGetWindowContextHelpId

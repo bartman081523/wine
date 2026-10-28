@@ -1787,6 +1787,80 @@ NTSTATUS WINAPI RtlConvertSidToUnicodeString(
     return STATUS_SUCCESS;
 }
 
+struct dummy_sid_st
+{
+    BYTE   revision;
+    BYTE   sub_count;
+    BYTE   authority[6];
+    DWORD  sub_auth[4];
+};
+
+static const struct dummy_sid_st dummy_sid = { 1, 4, { 0, 0, 0, 0, 0, 15 }, { 2, 1, 1, 1 } };
+
+/******************************************************************************
+ * RtlGetAppContainerNamedObjectPath (NTDLL.@)
+ *
+ * The native function returns e.g.
+ * "\Sessions\1\AppContainerNamedObjects\S-1-15-2-...";
+ * with relative_path != 0 only "AppContainerNamedObjects\S-1-15-2-..." is returned.
+ */
+NTSTATUS WINAPI RtlGetAppContainerNamedObjectPath( HANDLE token, PSID sid, BOOLEAN relative_path,
+                                                   UNICODE_STRING *object_path )
+{
+    UCHAR container_buf[0x100];
+    UNICODE_STRING sid_str;
+    WCHAR path[64 + 10 * SID_MAX_SUB_AUTHORITIES];
+    DWORD session_id = 0, ret_len;
+    PSID container_sid = NULL;
+    NTSTATUS status;
+
+    TRACE( "(%p, %p, %u, %p)\n", token, sid, relative_path, object_path );
+
+    if (!object_path) return STATUS_ACCESS_VIOLATION;
+
+    if (sid)
+    {
+        if (!RtlValidSid( sid )) return STATUS_INVALID_SID;
+    }
+    else
+    {
+        /* TOKEN_APPCONTAINER_INFORMATION starts with a PSID */
+        if (token && !NtQueryInformationToken( token, TokenAppContainerSid, container_buf,
+                                               sizeof(container_buf), &ret_len ))
+            container_sid = *(PSID *)container_buf;
+        if (container_sid) sid = container_sid;
+        else sid = (PSID)&dummy_sid;  /* app containers are not otherwise implemented in Wine */
+    }
+
+    if ((status = RtlConvertSidToUnicodeString( &sid_str, sid, TRUE ))) return status;
+
+    if (NtQueryInformationToken( token, TokenSessionId, &session_id,
+                                 sizeof(session_id), &ret_len ))
+        session_id = 0;
+
+    if (relative_path)
+        swprintf( path, ARRAY_SIZE(path), L"AppContainerNamedObjects\\%s", sid_str.Buffer );
+    else
+        swprintf( path, ARRAY_SIZE(path), L"\\Sessions\\%u\\AppContainerNamedObjects\\%s",
+                  session_id, sid_str.Buffer );
+
+    RtlFreeHeap( GetProcessHeap(), 0, sid_str.Buffer );
+
+    object_path->MaximumLength = (wcslen( path ) + 1) * sizeof(WCHAR);
+    object_path->Length = object_path->MaximumLength - sizeof(WCHAR);
+    if (!(object_path->Buffer = RtlAllocateHeap( GetProcessHeap(), 0, object_path->MaximumLength )))
+        return STATUS_NO_MEMORY;
+    memcpy( object_path->Buffer, path, object_path->MaximumLength );
+
+    TRACE( "-> %s\n", debugstr_w( path ) );
+    return STATUS_SUCCESS;
+}
+
+VOID WINAPI RtlDisownModuleHeapAllocation( HANDLE process_heap, PVOID address )
+{
+    TRACE( "(%p, %p) stub\n", process_heap, address );
+}
+
 /******************************************************************************
  * RtlQueryInformationAcl (NTDLL.@)
  */

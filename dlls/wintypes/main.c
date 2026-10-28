@@ -145,108 +145,116 @@ DEFINE_IINSPECTABLE(api_information_statics, IApiInformationStatics, struct api_
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsTypePresent(
         IApiInformationStatics *iface, HSTRING type_name, BOOLEAN *value)
 {
-    FIXME("iface %p, type_name %s, value %p stub!\n", iface, debugstr_hstring(type_name), value);
+    TRACE("iface %p, type_name %s, value %p\n", iface, debugstr_hstring(type_name), value);
 
-    if (!type_name)
+    if (!type_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsMethodPresent(
         IApiInformationStatics *iface, HSTRING type_name, HSTRING method_name, BOOLEAN *value)
 {
-    FIXME("iface %p, type_name %s, method_name %s, value %p stub!\n", iface,
+    TRACE("iface %p, type_name %s, method_name %s, value %p\n", iface,
             debugstr_hstring(type_name), debugstr_hstring(method_name), value);
 
-    if (!type_name)
+    if (!type_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsMethodPresentWithArity(
         IApiInformationStatics *iface, HSTRING type_name, HSTRING method_name,
         UINT32 input_parameter_count, BOOLEAN *value)
 {
-    FIXME("iface %p, type_name %s, method_name %s, input_parameter_count %u, value %p stub!\n",
+    TRACE("iface %p, type_name %s, method_name %s, input_parameter_count %u, value %p\n",
             iface, debugstr_hstring(type_name), debugstr_hstring(method_name),
             input_parameter_count, value);
 
-    if (!type_name)
+    if (!type_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsEventPresent(
         IApiInformationStatics *iface, HSTRING type_name, HSTRING event_name, BOOLEAN *value)
 {
-    FIXME("iface %p, type_name %s, event_name %s, value %p stub!\n", iface,
+    TRACE("iface %p, type_name %s, event_name %s, value %p\n", iface,
             debugstr_hstring(type_name), debugstr_hstring(event_name), value);
 
-    if (!type_name)
+    if (!type_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsPropertyPresent(
         IApiInformationStatics *iface, HSTRING type_name, HSTRING property_name, BOOLEAN *value)
 {
-    FIXME("iface %p, type_name %s, property_name %s, value %p stub!\n", iface,
+    TRACE("iface %p, type_name %s, property_name %s, value %p\n", iface,
             debugstr_hstring(type_name), debugstr_hstring(property_name), value);
 
-    if (!type_name)
+    if (!type_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsReadOnlyPropertyPresent(
         IApiInformationStatics *iface, HSTRING type_name, HSTRING property_name,
         BOOLEAN *value)
 {
-    FIXME("iface %p, type_name %s, property_name %s, value %p stub!\n", iface,
+    TRACE("iface %p, type_name %s, property_name %s, value %p\n", iface,
             debugstr_hstring(type_name), debugstr_hstring(property_name), value);
 
-    if (!type_name)
+    if (!type_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsWriteablePropertyPresent(
         IApiInformationStatics *iface, HSTRING type_name, HSTRING property_name, BOOLEAN *value)
 {
-    FIXME("iface %p, type_name %s, property_name %s, value %p stub!\n", iface,
+    TRACE("iface %p, type_name %s, property_name %s, value %p\n", iface,
             debugstr_hstring(type_name), debugstr_hstring(property_name), value);
 
-    if (!type_name)
+    if (!type_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsEnumNamedValuePresent(
         IApiInformationStatics *iface, HSTRING enum_type_name, HSTRING value_name, BOOLEAN *value)
 {
-    FIXME("iface %p, enum_type_name %s, value_name %s, value %p stub!\n", iface,
+    TRACE("iface %p, enum_type_name %s, value_name %s, value %p\n", iface,
             debugstr_hstring(enum_type_name), debugstr_hstring(value_name), value);
 
-    if (!enum_type_name)
+    if (!enum_type_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = FALSE;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE api_information_statics_IsApiContractPresentByMajor(
         IApiInformationStatics *iface, HSTRING contract_name, UINT16 major_version, BOOLEAN *value)
 {
-    FIXME("iface %p, contract_name %s, major_version %u, value %p semi-stub.\n", iface,
+    TRACE("iface %p, contract_name %s, major_version %u, value %p\n", iface,
             debugstr_hstring(contract_name), major_version, value);
 
-    if (!contract_name)
+    if (!contract_name || !value)
         return E_INVALIDARG;
 
     *value = is_api_contract_present( contract_name, major_version );
@@ -257,13 +265,14 @@ static HRESULT STDMETHODCALLTYPE api_information_statics_IsApiContractPresentByM
         IApiInformationStatics *iface, HSTRING contract_name, UINT16 major_version,
         UINT16 minor_version, BOOLEAN *value)
 {
-    FIXME("iface %p, contract_name %s, major_version %u, minor_version %u, value %p stub!\n", iface,
+    TRACE("iface %p, contract_name %s, major_version %u, minor_version %u, value %p\n", iface,
             debugstr_hstring(contract_name), major_version, minor_version, value);
 
-    if (!contract_name)
+    if (!contract_name || !value)
         return E_INVALIDARG;
 
-    return E_NOTIMPL;
+    *value = is_api_contract_present( contract_name, major_version );
+    return S_OK;
 }
 
 static const struct IApiInformationStaticsVtbl api_information_statics_vtbl =
@@ -355,22 +364,32 @@ static ULONG STDMETHODCALLTYPE property_value_statics_factory_Release(IActivatio
 static HRESULT STDMETHODCALLTYPE property_value_statics_factory_GetIids(IActivationFactory *iface, ULONG *iid_count,
         IID **iids)
 {
-    FIXME("iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids);
-    return E_NOTIMPL;
+    IID *list;
+
+    if (!iid_count || !iids) return E_POINTER;
+    list = CoTaskMemAlloc(3 * sizeof(IID));
+    if (!list) return E_OUTOFMEMORY;
+    list[0] = IID_IActivationFactory;
+    list[1] = IID_IPropertyValueStatics;
+    list[2] = IID_IAgileObject;
+    *iid_count = 3;
+    *iids = list;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE property_value_statics_factory_GetRuntimeClassName(IActivationFactory *iface,
         HSTRING *class_name)
 {
-    FIXME("iface %p, class_name %p stub!\n", iface, class_name);
-    return E_NOTIMPL;
+    if (!class_name) return E_POINTER;
+    return WindowsCreateString(L"Windows.Foundation.PropertyValue", wcslen(L"Windows.Foundation.PropertyValue"), class_name);
 }
 
 static HRESULT STDMETHODCALLTYPE property_value_statics_factory_GetTrustLevel(IActivationFactory *iface,
         TrustLevel *trust_level)
 {
-    FIXME("iface %p, trust_level %p stub!\n", iface, trust_level);
-    return E_NOTIMPL;
+    if (!trust_level) return E_POINTER;
+    *trust_level = BaseTrust;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE property_value_statics_factory_ActivateInstance(IActivationFactory *iface,
@@ -470,6 +489,7 @@ static HRESULT STDMETHODCALLTYPE property_value_QueryInterface(IPropertyValue *i
 
     if (IsEqualIID(riid, &IID_IUnknown)
         || IsEqualIID(riid, &IID_IInspectable)
+        || IsEqualIID(riid, &IID_IAgileObject)
         || IsEqualIID(riid, &IID_IPropertyValue))
     {
         IPropertyValue_AddRef(iface);
@@ -619,22 +639,153 @@ static ULONG STDMETHODCALLTYPE property_value_Release(IPropertyValue *iface)
     return refcount;
 }
 
+static const WCHAR *get_property_value_runtime_class_name(PropertyType type)
+{
+    switch (type)
+    {
+    case PropertyType_Empty:
+        return L"Windows.Foundation.IReference`1<Object>";
+    case PropertyType_UInt8:
+        return L"Windows.Foundation.IReference`1<UInt8>";
+    case PropertyType_Int16:
+        return L"Windows.Foundation.IReference`1<Int16>";
+    case PropertyType_UInt16:
+        return L"Windows.Foundation.IReference`1<UInt16>";
+    case PropertyType_Int32:
+        return L"Windows.Foundation.IReference`1<Int32>";
+    case PropertyType_UInt32:
+        return L"Windows.Foundation.IReference`1<UInt32>";
+    case PropertyType_Int64:
+        return L"Windows.Foundation.IReference`1<Int64>";
+    case PropertyType_UInt64:
+        return L"Windows.Foundation.IReference`1<UInt64>";
+    case PropertyType_Single:
+        return L"Windows.Foundation.IReference`1<Single>";
+    case PropertyType_Double:
+        return L"Windows.Foundation.IReference`1<Double>";
+    case PropertyType_Char16:
+        return L"Windows.Foundation.IReference`1<Char16>";
+    case PropertyType_Boolean:
+        return L"Windows.Foundation.IReference`1<Boolean>";
+    case PropertyType_String:
+        return L"Windows.Foundation.IReference`1<String>";
+    case PropertyType_Inspectable:
+        return L"Windows.Foundation.IReference`1<Object>";
+    case PropertyType_DateTime:
+        return L"Windows.Foundation.IReference`1<Windows.Foundation.DateTime>";
+    case PropertyType_TimeSpan:
+        return L"Windows.Foundation.IReference`1<TimeSpan>";
+    case PropertyType_Guid:
+        return L"Windows.Foundation.IReference`1<Guid>";
+    case PropertyType_Point:
+        return L"Windows.Foundation.IReference`1<Windows.Foundation.Point>";
+    case PropertyType_Size:
+        return L"Windows.Foundation.IReference`1<Windows.Foundation.Size>";
+    case PropertyType_Rect:
+        return L"Windows.Foundation.IReference`1<Windows.Foundation.Rect>";
+    case PropertyType_OtherType:
+        return L"Windows.Foundation.IReference`1<Object>";
+    case PropertyType_UInt8Array:
+        return L"Windows.Foundation.IReferenceArray`1<UInt8>";
+    case PropertyType_Int16Array:
+        return L"Windows.Foundation.IReferenceArray`1<Int16>";
+    case PropertyType_UInt16Array:
+        return L"Windows.Foundation.IReferenceArray`1<UInt16>";
+    case PropertyType_Int32Array:
+        return L"Windows.Foundation.IReferenceArray`1<Int32>";
+    case PropertyType_UInt32Array:
+        return L"Windows.Foundation.IReferenceArray`1<UInt32>";
+    case PropertyType_Int64Array:
+        return L"Windows.Foundation.IReferenceArray`1<Int64>";
+    case PropertyType_UInt64Array:
+        return L"Windows.Foundation.IReferenceArray`1<UInt64>";
+    case PropertyType_SingleArray:
+        return L"Windows.Foundation.IReferenceArray`1<Single>";
+    case PropertyType_DoubleArray:
+        return L"Windows.Foundation.IReferenceArray`1<Double>";
+    case PropertyType_Char16Array:
+        return L"Windows.Foundation.IReferenceArray`1<Char16>";
+    case PropertyType_BooleanArray:
+        return L"Windows.Foundation.IReferenceArray`1<Boolean>";
+    case PropertyType_StringArray:
+        return L"Windows.Foundation.IReferenceArray`1<String>";
+    case PropertyType_InspectableArray:
+        return L"Windows.Foundation.IReferenceArray`1<Object>";
+    case PropertyType_DateTimeArray:
+        return L"Windows.Foundation.IReferenceArray`1<Windows.Foundation.DateTime>";
+    case PropertyType_TimeSpanArray:
+        return L"Windows.Foundation.IReferenceArray`1<TimeSpan>";
+    case PropertyType_GuidArray:
+        return L"Windows.Foundation.IReferenceArray`1<Guid>";
+    case PropertyType_PointArray:
+        return L"Windows.Foundation.IReferenceArray`1<Windows.Foundation.Point>";
+    case PropertyType_SizeArray:
+        return L"Windows.Foundation.IReferenceArray`1<Windows.Foundation.Size>";
+    case PropertyType_RectArray:
+        return L"Windows.Foundation.IReferenceArray`1<Windows.Foundation.Rect>";
+    default:
+        return L"Windows.Foundation.IReference`1<Object>";
+    }
+}
+
 static HRESULT STDMETHODCALLTYPE property_value_GetIids(IPropertyValue *iface, ULONG *iid_count, IID **iids)
 {
-    FIXME("iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids);
-    return E_NOTIMPL;
+    struct property_value *impl = impl_from_IPropertyValue(iface);
+    const IID *ref_iid = NULL;
+    ULONG count = 2;
+    IID *list;
+
+    if (!iid_count || !iids) return E_POINTER;
+
+    switch (impl->type)
+    {
+    case PropertyType_UInt8: ref_iid = &IID_IReference_BYTE; break;
+    case PropertyType_Int16: ref_iid = &IID_IReference_INT16; break;
+    case PropertyType_Int32: ref_iid = &IID_IReference_INT32; break;
+    case PropertyType_UInt32: ref_iid = &IID_IReference_UINT32; break;
+    case PropertyType_Int64: ref_iid = &IID_IReference_INT64; break;
+    case PropertyType_UInt64: ref_iid = &IID_IReference_UINT64; break;
+    case PropertyType_Boolean: ref_iid = &IID_IReference_boolean; break;
+    case PropertyType_Single: ref_iid = &IID_IReference_FLOAT; break;
+    case PropertyType_Double: ref_iid = &IID_IReference_DOUBLE; break;
+    case PropertyType_DateTime: ref_iid = &IID_IReference_DateTime; break;
+    case PropertyType_TimeSpan: ref_iid = &IID_IReference_TimeSpan; break;
+    case PropertyType_Guid: ref_iid = &IID_IReference_GUID; break;
+    case PropertyType_Point: ref_iid = &IID_IReference_Point; break;
+    case PropertyType_Size: ref_iid = &IID_IReference_Size; break;
+    case PropertyType_Rect: ref_iid = &IID_IReference_Rect; break;
+    case PropertyType_String: ref_iid = &IID_IReference_HSTRING; break;
+    default: break;
+    }
+
+    if (ref_iid) count = 3;
+
+    list = CoTaskMemAlloc(count * sizeof(IID));
+    if (!list) return E_OUTOFMEMORY;
+    list[0] = IID_IPropertyValue;
+    list[1] = IID_IAgileObject;
+    if (ref_iid) list[2] = *ref_iid;
+
+    *iid_count = count;
+    *iids = list;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE property_value_GetRuntimeClassName(IPropertyValue *iface, HSTRING *class_name)
 {
-    FIXME("iface %p, class_name %p stub!\n", iface, class_name);
-    return E_NOTIMPL;
+    struct property_value *impl = impl_from_IPropertyValue(iface);
+    const WCHAR *name;
+
+    if (!class_name) return E_POINTER;
+    name = get_property_value_runtime_class_name(impl->type);
+    return WindowsCreateString(name, wcslen(name), class_name);
 }
 
 static HRESULT STDMETHODCALLTYPE property_value_GetTrustLevel(IPropertyValue *iface, TrustLevel *trust_level)
 {
-    FIXME("iface %p, trust_level %p stub!\n", iface, trust_level);
-    return E_NOTIMPL;
+    if (!trust_level) return E_POINTER;
+    *trust_level = BaseTrust;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE property_value_get_Type(IPropertyValue *iface, enum PropertyType *type)
@@ -1398,12 +1549,22 @@ DEFINE_IINSPECTABLE(property_value_statics, IPropertyValueStatics, struct proper
 static HRESULT STDMETHODCALLTYPE property_value_statics_CreateEmpty(IPropertyValueStatics *iface,
         IInspectable **property_value)
 {
+    struct property_value *impl;
+
     TRACE("iface %p, property_value %p.\n", iface, property_value);
 
     if (!property_value)
         return E_POINTER;
 
-    *property_value = NULL;
+    impl = calloc(1, sizeof(*impl));
+    if (!impl)
+        return E_OUTOFMEMORY;
+
+    impl->IPropertyValue_iface.lpVtbl = &property_value_vtbl;
+    impl->type = PropertyType_Empty;
+    impl->ref = 1;
+
+    *property_value = (IInspectable *)&impl->IPropertyValue_iface;
     return S_OK;
 }
 

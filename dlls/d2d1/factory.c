@@ -123,6 +123,12 @@ static HRESULT STDMETHODCALLTYPE d2d_factory_QueryInterface(ID2D1Factory7 *iface
         *out = &factory->ID2D1Multithread_iface;
         return S_OK;
     }
+    else if (IsEqualGUID(iid, &IID_ID2D1FactoryInternal))
+    {
+        ID2D1Factory7_AddRef(iface);
+        *out = &factory->ID2D1FactoryInternal_iface;
+        return S_OK;
+    }
 
     WARN("%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid(iid));
 
@@ -1347,6 +1353,139 @@ static const struct ID2D1MultithreadVtbl d2d_factory_multithread_noop_vtbl =
     d2d_factory_st_Leave,
 };
 
+static inline struct d2d_factory *impl_from_ID2D1FactoryInternal(ID2D1FactoryInternal *iface)
+{
+    return CONTAINING_RECORD(iface, struct d2d_factory, ID2D1FactoryInternal_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE d2d_factory_internal_QueryInterface(ID2D1FactoryInternal *iface, REFIID iid, void **out)
+{
+    struct d2d_factory *factory = impl_from_ID2D1FactoryInternal(iface);
+    return d2d_factory_QueryInterface(&factory->ID2D1Factory7_iface, iid, out);
+}
+
+static ULONG STDMETHODCALLTYPE d2d_factory_internal_AddRef(ID2D1FactoryInternal *iface)
+{
+    struct d2d_factory *factory = impl_from_ID2D1FactoryInternal(iface);
+    return d2d_factory_AddRef(&factory->ID2D1Factory7_iface);
+}
+
+static ULONG STDMETHODCALLTYPE d2d_factory_internal_Release(ID2D1FactoryInternal *iface)
+{
+    struct d2d_factory *factory = impl_from_ID2D1FactoryInternal(iface);
+    return d2d_factory_Release(&factory->ID2D1Factory7_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE d2d_factory_internal_CreateRegionGeometry(
+    ID2D1FactoryInternal *iface, const RECT *rects, UINT count, ID2D1Geometry **geometry)
+{
+    struct d2d_factory *factory = impl_from_ID2D1FactoryInternal(iface);
+    HRESULT hr;
+
+    TRACE("iface %p, rects %p, count %u, geometry %p.\n", iface, rects, count, geometry);
+
+    if (!geometry) return E_POINTER;
+    *geometry = NULL;
+
+    if (!rects || !count)
+        return E_INVALIDARG;
+
+    if (count == 1)
+    {
+        D2D1_RECT_F d2d_rect = { (float)rects[0].left, (float)rects[0].top, (float)rects[0].right, (float)rects[0].bottom };
+        ID2D1RectangleGeometry *rect_geom;
+        hr = ID2D1Factory7_CreateRectangleGeometry(&factory->ID2D1Factory7_iface, &d2d_rect, &rect_geom);
+        if (SUCCEEDED(hr))
+            *geometry = (ID2D1Geometry *)rect_geom;
+        return hr;
+    }
+    else
+    {
+        ID2D1Geometry **geoms = calloc(count, sizeof(*geoms));
+        UINT i;
+        if (!geoms) return E_OUTOFMEMORY;
+        for (i = 0; i < count; ++i)
+        {
+            D2D1_RECT_F d2d_rect = { (float)rects[i].left, (float)rects[i].top, (float)rects[i].right, (float)rects[i].bottom };
+            ID2D1RectangleGeometry *rect_geom;
+            hr = ID2D1Factory7_CreateRectangleGeometry(&factory->ID2D1Factory7_iface, &d2d_rect, &rect_geom);
+            if (FAILED(hr))
+            {
+                while (i--) ID2D1Geometry_Release(geoms[i]);
+                free(geoms);
+                return hr;
+            }
+            geoms[i] = (ID2D1Geometry *)rect_geom;
+        }
+        hr = ID2D1Factory7_CreateGeometryGroup(&factory->ID2D1Factory7_iface, D2D1_FILL_MODE_WINDING,
+                                              geoms, count, (ID2D1GeometryGroup **)geometry);
+        for (i = 0; i < count; ++i)
+            ID2D1Geometry_Release(geoms[i]);
+        free(geoms);
+        return hr;
+    }
+}
+
+static HRESULT STDMETHODCALLTYPE d2d_factory_internal_D2DCombine(
+    ID2D1FactoryInternal *iface, void *p1, void *p2, void *p3, void *p4, DWORD mode, void **out)
+{
+    FIXME("iface %p stub!\n", iface);
+    if (out) *out = NULL;
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE d2d_factory_internal_GenerateGradient(
+    ID2D1FactoryInternal *iface, void *p1, void *p2, void *p3, void *p4, void *p5, void *p6, void *p7, void *p8)
+{
+    FIXME("iface %p stub!\n", iface);
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE d2d_factory_internal_StartupInit(
+    ID2D1FactoryInternal *iface, DWORD flags)
+{
+    TRACE("iface %p, flags %#lx.\n", iface, flags);
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE d2d_factory_internal_Stub(ID2D1FactoryInternal *iface)
+{
+    FIXME("iface %p stub!\n", iface);
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE d2d_factory_internal_CreateDeviceInternal(
+    ID2D1FactoryInternal *iface, DWORD version, IDXGIDevice *dxgi_device, void **out_device)
+{
+    struct d2d_factory *factory = impl_from_ID2D1FactoryInternal(iface);
+    TRACE("iface %p, version %lu, dxgi_device %p, out_device %p.\n", iface, version, dxgi_device, out_device);
+    return d2d_factory_create_device((ID2D1Factory1 *)&factory->ID2D1Factory7_iface, dxgi_device, true, &IID_ID2D1Device, out_device);
+}
+
+static const struct ID2D1FactoryInternalVtbl d2d_factory_internal_vtbl =
+{
+    d2d_factory_internal_QueryInterface,
+    d2d_factory_internal_AddRef,
+    d2d_factory_internal_Release,
+    d2d_factory_internal_CreateRegionGeometry,
+    d2d_factory_internal_D2DCombine,
+    d2d_factory_internal_GenerateGradient,
+    d2d_factory_internal_StartupInit,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_CreateDeviceInternal,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+    d2d_factory_internal_Stub,
+};
+
 static void d2d_factory_init(struct d2d_factory *factory, D2D1_FACTORY_TYPE factory_type,
         const D2D1_FACTORY_OPTIONS *factory_options)
 {
@@ -1356,6 +1495,7 @@ static void d2d_factory_init(struct d2d_factory *factory, D2D1_FACTORY_TYPE fact
     factory->ID2D1Factory7_iface.lpVtbl = &d2d_factory_vtbl;
     factory->ID2D1Multithread_iface.lpVtbl = factory_type == D2D1_FACTORY_TYPE_SINGLE_THREADED ?
             &d2d_factory_multithread_noop_vtbl : &d2d_factory_multithread_vtbl;
+    factory->ID2D1FactoryInternal_iface.lpVtbl = &d2d_factory_internal_vtbl;
     factory->factory_type = factory_type;
     factory->refcount = 1;
     d2d_factory_reload_sysmetrics(factory);

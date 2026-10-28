@@ -24,6 +24,7 @@
 #include "objbase.h"
 #include "ctxtcall.h"
 #include "oleauto.h"
+#include "restrictederrorinfo.h"
 #include "dde.h"
 #include "winternl.h"
 
@@ -411,6 +412,8 @@ static void com_cleanup_tlsdata(void)
 
     if (tlsdata->errorinfo)
         IErrorInfo_Release(tlsdata->errorinfo);
+    if (tlsdata->restricted_error_info)
+        IRestrictedErrorInfo_Release(tlsdata->restricted_error_info);
     if (tlsdata->state)
         IUnknown_Release(tlsdata->state);
 
@@ -2591,9 +2594,12 @@ static ULONG WINAPI thread_context_callback_Release(IContextCallback *iface)
 static HRESULT WINAPI thread_context_callback_ContextCallback(IContextCallback *iface,
         PFNCONTEXTCALL callback, ComCallData *param, REFIID riid, int method, IUnknown *punk)
 {
-    FIXME("%p, %p, %p, %s, %d, %p\n", iface, callback, param, debugstr_guid(riid), method, punk);
+    TRACE("%p, %p, %p, %s, %d, %p\n", iface, callback, param, debugstr_guid(riid), method, punk);
 
-    return E_NOTIMPL;
+    if (!callback)
+        return E_POINTER;
+
+    return callback(param);
 }
 
 static const IContextCallbackVtbl thread_context_callback_vtbl =

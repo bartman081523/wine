@@ -30,6 +30,11 @@ HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID riid, void **out )
     return CLASS_E_CLASSNOTAVAILABLE;
 }
 
+#include "store.c"
+#include "resourcecontext.c"
+#include "memorymanager.c"
+#include "useractivity.c"
+
 HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **factory )
 {
     const WCHAR *buffer = WindowsGetStringRawBuffer( classid, NULL );
@@ -42,6 +47,31 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( package_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, RuntimeClass_Windows_ApplicationModel_DesignMode ))
         IActivationFactory_QueryInterface( design_mode_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.AppInfo" ) ||
+             !wcscmp( buffer, RuntimeClass_Windows_ApplicationModel_AppInfo ))
+        IActivationFactory_QueryInterface( app_info_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.AppInstance" ))
+        IActivationFactory_QueryInterface( app_instance_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.Background.BackgroundExecutionManager" ))
+        IActivationFactory_QueryInterface( background_execution_manager_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.Background.BackgroundTaskRegistration" ))
+        IActivationFactory_QueryInterface( background_task_registration_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.StartupTask" ))
+        IActivationFactory_QueryInterface( startup_task_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.Resources.ResourceLoader" ))
+        IActivationFactory_QueryInterface( resource_loader_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.Resources.Core.ResourceContext" ))
+        IActivationFactory_QueryInterface( resource_context_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.Resources.Core.ResourceManager" ))
+        IActivationFactory_QueryInterface( resource_manager_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Services.Store.StoreContext" ))
+        IActivationFactory_QueryInterface( store_context_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.System.MemoryManager" ) ||
+             !wcscmp( buffer, RuntimeClass_MemoryManager ))
+        IActivationFactory_QueryInterface( memory_manager_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.UserActivities.UserActivityRequestManager" ) ||
+             !wcscmp( buffer, RuntimeClass_UserActivityRequestManager ))
+        IActivationFactory_QueryInterface( user_activity_request_manager_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

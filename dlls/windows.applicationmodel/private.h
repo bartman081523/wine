@@ -38,6 +38,14 @@
 
 extern IActivationFactory *package_factory;
 extern IActivationFactory *design_mode_factory;
+extern IActivationFactory *app_info_factory;
+extern IActivationFactory *app_instance_factory;
+extern IActivationFactory *background_execution_manager_factory;
+extern IActivationFactory *startup_task_factory;
+extern IActivationFactory *background_task_registration_factory;
+extern IActivationFactory *resource_loader_factory;
+
+HRESULT create_package( IPackage **value );
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

@@ -36,7 +36,7 @@
 @ stdcall ScriptString_pLogAttr(ptr) gdi32.ScriptString_pLogAttr
 @ stdcall ScriptString_pSize(ptr) gdi32.ScriptString_pSize
 @ stdcall ScriptString_pcOutChars(ptr) gdi32.ScriptString_pcOutChars
-@ stdcall ScriptSubstituteSingleGlyph() gdi32.ScriptSubstituteSingleGlyph
+@ stdcall ScriptSubstituteSingleGlyph(ptr ptr ptr long long long long long ptr) gdi32.ScriptSubstituteSingleGlyph
 @ stdcall ScriptTextOut(ptr ptr long long long ptr ptr ptr long ptr long ptr ptr ptr) gdi32.ScriptTextOut
 @ stdcall ScriptXtoCP(long long long ptr ptr ptr ptr ptr ptr) gdi32.ScriptXtoCP
 @ stdcall UspAllocCache() gdi32.UspAllocCache

@@ -90,6 +90,8 @@ struct icon
     UINT           info_timeout;    /* timeout for info balloon */
     HICON          info_icon;       /* info balloon icon */
     UINT           version;         /* notify icon api version */
+    GUID           guid;            /* notify icon guid */
+    BOOL           has_guid;        /* whether guid is valid */
 };
 
 static struct list icon_list = LIST_INIT( icon_list );
@@ -160,14 +162,56 @@ static WNDCLASSEXW tray_icon_class =
 static void do_hide_systray(void);
 static void do_show_systray(void);
 
-/* Retrieves icon record by owner window and ID */
-static struct icon *get_icon(HWND owner, UINT id)
+static const GUID null_guid = {0};
+
+/* Retrieves icon record by owner window and ID or GUID */
+static struct icon *get_icon(const NOTIFYICONDATAW *nid)
 {
     struct icon *this;
 
-    /* search for the icon */
-    LIST_FOR_EACH_ENTRY( this, &icon_list, struct icon, entry )
-        if ((this->id == id) && (this->owner == owner)) return this;
+    if (!nid) return NULL;
+
+    /* 1. Match by GUID if NIF_GUID is set or guidItem is non-zero */
+    if ((nid->uFlags & NIF_GUID) || memcmp(&nid->guidItem, &null_guid, sizeof(GUID)))
+    {
+        LIST_FOR_EACH_ENTRY( this, &icon_list, struct icon, entry )
+        {
+            if (this->has_guid && IsEqualGUID(&this->guid, &nid->guidItem))
+                return this;
+        }
+    }
+
+    /* 2. Match by owner window and ID */
+    if (nid->hWnd || nid->uID)
+    {
+        LIST_FOR_EACH_ENTRY( this, &icon_list, struct icon, entry )
+        {
+            if ((this->id == nid->uID) && (this->owner == nid->hWnd))
+                return this;
+        }
+    }
+
+    /* 3. Match by owner window alone if non-null */
+    if (nid->hWnd)
+    {
+        struct icon *match = NULL;
+        int count = 0;
+        LIST_FOR_EACH_ENTRY( this, &icon_list, struct icon, entry )
+        {
+            if (this->owner == nid->hWnd)
+            {
+                match = this;
+                count++;
+            }
+        }
+        if (count == 1) return match;
+    }
+
+    /* 4. If exactly one icon exists in icon_list, match it */
+    if (list_count(&icon_list) == 1)
+    {
+        return LIST_ENTRY( list_head(&icon_list), struct icon, entry );
+    }
 
     return NULL;
 }
@@ -697,6 +741,12 @@ static BOOL modify_icon( struct icon *icon, NOTIFYICONDATAW *nid )
         return FALSE;
     }
 
+    if (nid->uFlags & NIF_GUID)
+    {
+        icon->guid = nid->guidItem;
+        icon->has_guid = TRUE;
+    }
+
     if (nid->uFlags & NIF_STATE)
     {
         icon->state = (icon->state & ~nid->dwStateMask) | (nid->dwState & nid->dwStateMask);
@@ -749,10 +799,10 @@ static BOOL add_icon(NOTIFYICONDATAW *nid)
 
     TRACE( "id=0x%x, hwnd=%p\n", nid->uID, nid->hWnd );
 
-    if ((icon = get_icon(nid->hWnd, nid->uID)))
+    if ((icon = get_icon(nid)))
     {
         WARN( "duplicate tray icon add, buggy app?\n" );
-        return FALSE;
+        return modify_icon( icon, nid );
     }
 
     if (!(icon = calloc( 1, sizeof(*icon) )))
@@ -764,6 +814,11 @@ static BOOL add_icon(NOTIFYICONDATAW *nid)
     ZeroMemory(icon, sizeof(struct icon));
     icon->id     = nid->uID;
     icon->owner  = nid->hWnd;
+    if (nid->uFlags & NIF_GUID)
+    {
+        icon->guid = nid->guidItem;
+        icon->has_guid = TRUE;
+    }
     icon->display = ICON_DISPLAY_HIDDEN;
 
     CreateWindowExW( 0, tray_icon_class.lpszClassName, NULL, WS_CLIPSIBLINGS | WS_POPUP,
@@ -909,7 +964,8 @@ static BOOL handle_incoming(HWND hwndSource, COPYDATASTRUCT *cds)
                                       icon_data, icon_data + cbMaskBits);
     }
     /* try forwarding to the display driver first */
-    if (cds->dwData == NIM_ADD || !(icon = get_icon( nid.hWnd, nid.uID )))
+    icon = get_icon( &nid );
+    if (cds->dwData == NIM_ADD || !icon)
     {
         if ((ret = NtUserMessageCall( hwndSource, WINE_SYSTRAY_NOTIFY_ICON, cds->dwData, 0,
                                       &nid, NtUserSystemTrayCall, FALSE )) != -1)
@@ -924,14 +980,30 @@ static BOOL handle_incoming(HWND hwndSource, COPYDATASTRUCT *cds)
         break;
     case NIM_DELETE:
         if (icon) ret = delete_icon( icon );
+        else ret = TRUE;
         break;
     case NIM_MODIFY:
         if (icon) ret = modify_icon( icon, &nid );
+        else if (!list_empty(&icon_list))
+        {
+            struct icon *first = LIST_ENTRY( list_head(&icon_list), struct icon, entry );
+            ret = modify_icon( first, &nid );
+        }
+        else ret = add_icon( &nid );
         break;
     case NIM_SETVERSION:
         if (icon)
         {
             icon->version = nid.uVersion;
+            ret = TRUE;
+        }
+        else
+        {
+            if (!list_empty(&icon_list))
+            {
+                struct icon *first = LIST_ENTRY( list_head(&icon_list), struct icon, entry );
+                first->version = nid.uVersion;
+            }
             ret = TRUE;
         }
         break;

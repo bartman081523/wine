@@ -236,7 +236,8 @@ static HRESULT WINAPI memory_stream_random_access_QueryInterface( IRandomAccessS
 
     if (IsEqualGUID( iid, &IID_IUnknown )
             || IsEqualGUID( iid, &IID_IInspectable )
-            || IsEqualGUID( iid, &IID_IRandomAccessStream ))
+            || IsEqualGUID( iid, &IID_IRandomAccessStream )
+            || IsEqualGUID( iid, &IID_IRandomAccessStreamWithContentType ))
     {
         *out = iface;
     }
@@ -675,18 +676,26 @@ static HRESULT WINAPI memory_stream_output_WriteAsync( IOutputStream *iface, IBu
     return async_operation_uint32_uint32_create( (IUnknown *)iface, (IUnknown *)buffer, memory_stream_output_async, operation );
 }
 
+static HRESULT memory_stream_flush_async( IUnknown *invoker, IUnknown *param, PROPVARIANT *result, BOOL called_async )
+{
+    result->vt = VT_BOOL;
+    result->boolVal = VARIANT_TRUE;
+    return S_OK;
+}
+
 static HRESULT WINAPI memory_stream_output_FlushAsync( IOutputStream *iface, IAsyncOperation_boolean **operation )
 {
     struct memory_stream *impl = impl_from_IOutputStream( iface );
 
-    FIXME( "iface %p, operation %p stub!\n", iface, operation );
+    TRACE( "iface %p, operation %p.\n", iface, operation );
 
-    *operation = NULL;
+    if (!operation)
+        return E_POINTER;
 
     if (impl->closed)
         return RO_E_CLOSED;
 
-    return E_NOTIMPL;
+    return async_operation_boolean_create( (IUnknown *)iface, NULL, memory_stream_flush_async, operation );
 }
 
 static const struct IOutputStreamVtbl memory_stream_output_vtbl =
@@ -835,3 +844,61 @@ struct memory_stream_factory memory_stream_factory =
 };
 
 IActivationFactory *memory_stream_activation_factory = &memory_stream_factory.IActivationFactory_iface;
+
+HRESULT memory_stream_from_file( const WCHAR *path, const WCHAR *content_type, IRandomAccessStream **out )
+{
+    struct memory_stream *impl;
+    HANDLE file;
+    DWORD size, bytes_read;
+
+    TRACE( "path %s, content_type %s, out %p.\n", debugstr_w(path), debugstr_w(content_type), out );
+
+    if (!out) return E_INVALIDARG;
+    *out = NULL;
+
+    file = CreateFileW( path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL );
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        WARN( "could not open file %s, err %lu\n", debugstr_w(path), GetLastError() );
+        return HRESULT_FROM_WIN32( GetLastError() );
+    }
+
+    size = GetFileSize( file, NULL );
+    if (!(impl = calloc( 1, sizeof(*impl) )))
+    {
+        CloseHandle( file );
+        return E_OUTOFMEMORY;
+    }
+
+    if (size != INVALID_FILE_SIZE && size > 0)
+    {
+        impl->buffer = malloc( size );
+        if (!impl->buffer)
+        {
+            CloseHandle( file );
+            free( impl );
+            return E_OUTOFMEMORY;
+        }
+        if (!ReadFile( file, impl->buffer, size, &bytes_read, NULL ))
+        {
+            DWORD err = GetLastError();
+            CloseHandle( file );
+            free( impl->buffer );
+            free( impl );
+            return HRESULT_FROM_WIN32( err );
+        }
+        impl->size = bytes_read;
+        impl->capacity = bytes_read;
+    }
+    CloseHandle( file );
+
+    impl->ref = 1;
+    impl->IRandomAccessStream_iface.lpVtbl = &memory_stream_random_access_vtbl;
+    impl->IInputStream_iface.lpVtbl = &memory_stream_input_vtbl;
+    impl->IOutputStream_iface.lpVtbl = &memory_stream_output_vtbl;
+    impl->IClosable_iface.lpVtbl = &memory_stream_closable_vtbl;
+
+    *out = &impl->IRandomAccessStream_iface;
+    TRACE( "created memory stream %p from file %s (size %lu).\n", *out, debugstr_w(path), size );
+    return S_OK;
+}

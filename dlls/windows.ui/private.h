@@ -30,16 +30,28 @@
 #include "activation.h"
 
 #define WIDL_using_Windows_Foundation
-#include "windows.foundation.h"
+#define WIDL_using_Windows_Foundation_Collections
 #define WIDL_using_Windows_UI
-#include "windows.ui.h"
 #define WIDL_using_Windows_UI_ViewManagement
+#define WIDL_using_Windows_System
+#define WIDL_using_Windows_UI_Core
+#define WIDL_using_Windows_UI_Notifications
+
+#include "windows.foundation.h"
+#include "windows.ui.h"
 #include "windows.ui.viewmanagement.h"
+#include "windows.system.h"
+#include "windows.ui.core.h"
+#include "windows.ui.notifications.h"
 
 extern IActivationFactory *accessibilitysettings_factory;
 extern IActivationFactory *uisettings_factory;
 extern IActivationFactory *uiviewsettings_factory;
 extern IActivationFactory *inputpane_factory;
+extern IActivationFactory *corewindow_factory;
+extern IActivationFactory *badgeupdatemanager_factory;
+extern IActivationFactory *toastnotificationmanager_factory;
+extern IActivationFactory *tileupdatemanager_factory;
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

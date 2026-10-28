@@ -570,7 +570,7 @@
 @ stdcall ScriptString_pLogAttr(ptr)
 @ stdcall ScriptString_pSize(ptr)
 @ stdcall ScriptString_pcOutChars(ptr)
-# @ stub ScriptSubstituteSingleGlyph
+@ stdcall ScriptSubstituteSingleGlyph(ptr ptr ptr long long long long long ptr)
 @ stdcall ScriptTextOut(ptr ptr long long long ptr ptr ptr long ptr long ptr ptr ptr)
 @ stdcall ScriptXtoCP(long long long ptr ptr ptr ptr ptr ptr)
 @ stub SelectBrushLocal

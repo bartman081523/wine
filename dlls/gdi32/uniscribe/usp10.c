@@ -3542,6 +3542,26 @@ HRESULT WINAPI ScriptGetCMap(HDC hdc, SCRIPT_CACHE *psc, const WCHAR *pwcInChars
 }
 
 /***********************************************************************
+ *      ScriptSubstituteSingleGlyph (USP10.@)
+ */
+HRESULT WINAPI ScriptSubstituteSingleGlyph(HDC hdc, SCRIPT_CACHE *psc, SCRIPT_ANALYSIS *psa,
+                                           OPENTYPE_TAG tagScript, OPENTYPE_TAG tagLangSys,
+                                           OPENTYPE_TAG tagFeature, LONG lParameter,
+                                           WORD wGlyphIn, WORD *pwGlyphOut)
+{
+    TRACE("(%p, %p, %p, %s, %s, %s, %ld, %04x, %p)\n",
+          hdc, psc, psa,
+          debugstr_an((char*)&tagScript, 4),
+          debugstr_an((char*)&tagLangSys, 4),
+          debugstr_an((char*)&tagFeature, 4),
+          lParameter, wGlyphIn, pwGlyphOut);
+
+    if (!pwGlyphOut) return E_POINTER;
+    *pwGlyphOut = wGlyphIn;
+    return S_OK;
+}
+
+/***********************************************************************
  *      ScriptTextOut (USP10.@)
  *
  */

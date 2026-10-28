@@ -1,7 +1,9 @@
 MODULE    = dcomp.dll
+IMPORTS   = combase ole32 user32 uuid
 
 EXTRADLLFLAGS = -Wb,--prefer-native
 
 SOURCES = \
 	device.c \
+	compositor.c \
 	version.rc

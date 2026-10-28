@@ -1,7 +1,8 @@
 MODULE  = appxdeploymentclient.dll
-IMPORTS = combase
+IMPORTS = combase kernelbase
 
 SOURCES = \
-	classes.idl \
-	main.c \
-	package.c
+        classes.idl \
+        fake_package_impl.c \
+        main.c \
+        package.c

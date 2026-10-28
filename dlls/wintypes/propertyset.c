@@ -30,15 +30,58 @@ struct propertyset
 {
     IPropertySet IPropertySet_iface;
     IObservableMap_HSTRING_IInspectable IObservableMap_HSTRING_IInspectable_iface;
+    struct { const void *lpVtbl; } IRedhawkInterop_iface;
     LONG ref;
 
     IInspectable *map_inner;
 };
 
+static const GUID IID_ComWrappers_internal = {0x11d3b13a, 0x180e, 0x4789, {0xa8, 0xbe, 0x77, 0x12, 0x88, 0x28, 0x93, 0xe6}};
+
 static inline struct propertyset *impl_from_IPropertySet( IPropertySet *iface )
 {
     return CONTAINING_RECORD( iface, struct propertyset, IPropertySet_iface );
 }
+
+static HRESULT STDMETHODCALLTYPE propertyset_QueryInterface( IPropertySet *iface, REFIID iid, void **out );
+static ULONG STDMETHODCALLTYPE propertyset_AddRef( IPropertySet *iface );
+static ULONG STDMETHODCALLTYPE propertyset_Release( IPropertySet *iface );
+static HRESULT STDMETHODCALLTYPE propertyset_GetRuntimeClassName( IPropertySet *iface, HSTRING *class_name );
+static HRESULT STDMETHODCALLTYPE propertyset_GetTrustLevel( IPropertySet *iface, TrustLevel *trust_level );
+
+static HRESULT WINAPI redhawk_interop_stub(void *This, ...) { return S_OK; }
+
+static HRESULT WINAPI redhawk_propset_QI(void *This, REFIID riid, void **out)
+{
+    struct propertyset *impl = (struct propertyset *)((char *)This - offsetof(struct propertyset, IRedhawkInterop_iface));
+    return propertyset_QueryInterface(&impl->IPropertySet_iface, riid, out);
+}
+static ULONG WINAPI redhawk_propset_AddRef(void *This)
+{
+    struct propertyset *impl = (struct propertyset *)((char *)This - offsetof(struct propertyset, IRedhawkInterop_iface));
+    return propertyset_AddRef(&impl->IPropertySet_iface);
+}
+static ULONG WINAPI redhawk_propset_Release(void *This)
+{
+    struct propertyset *impl = (struct propertyset *)((char *)This - offsetof(struct propertyset, IRedhawkInterop_iface));
+    return propertyset_Release(&impl->IPropertySet_iface);
+}
+
+static const void *redhawk_propset_vtbl[32] = {
+    (void *)redhawk_propset_QI,
+    (void *)redhawk_propset_AddRef,
+    (void *)redhawk_propset_Release,
+    (void *)redhawk_interop_stub,
+    (void *)propertyset_GetRuntimeClassName,
+    (void *)propertyset_GetTrustLevel,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub
+};
 
 static HRESULT STDMETHODCALLTYPE propertyset_QueryInterface( IPropertySet *iface, REFIID iid, void **out )
 {
@@ -58,6 +101,12 @@ static HRESULT STDMETHODCALLTYPE propertyset_QueryInterface( IPropertySet *iface
     else if (IsEqualGUID( iid, &IID_IObservableMap_HSTRING_IInspectable ))
     {
         *out = &impl->IObservableMap_HSTRING_IInspectable_iface;
+        IUnknown_AddRef( (IUnknown *)*out );
+        return S_OK;
+    }
+    else if (IsEqualGUID( iid, &IID_ComWrappers_internal ))
+    {
+        *out = &impl->IRedhawkInterop_iface;
         IUnknown_AddRef( (IUnknown *)*out );
         return S_OK;
     }
@@ -102,8 +151,8 @@ static HRESULT STDMETHODCALLTYPE propertyset_GetIids( IPropertySet *iface, ULONG
 
 static HRESULT STDMETHODCALLTYPE propertyset_GetRuntimeClassName( IPropertySet *iface, HSTRING *class_name )
 {
-    FIXME( "(%p, %p) stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    static const WCHAR name[] = L"Windows.Foundation.Collections.PropertySet";
+    return WindowsCreateString( name, ARRAY_SIZE(name) - 1, class_name );
 }
 
 static HRESULT STDMETHODCALLTYPE propertyset_GetTrustLevel( IPropertySet *iface, TrustLevel *trust_level )
@@ -238,6 +287,7 @@ static HRESULT STDMETHODCALLTYPE factory_ActivateInstance( IActivationFactory *i
 
     impl->IPropertySet_iface.lpVtbl = &propertyset_vtbl;
     impl->IObservableMap_HSTRING_IInspectable_iface.lpVtbl = &propertyset_IObservableMap_vtbl;
+    impl->IRedhawkInterop_iface.lpVtbl = redhawk_propset_vtbl;
     impl->ref = 1;
 
     if (FAILED(hr = multi_threaded_map_create( &iids, (IInspectable *)&impl->IPropertySet_iface, &impl->map_inner )))

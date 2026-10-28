@@ -5197,3 +5197,44 @@ NTSTATUS WINAPI wow64_NtUserDisplayConfigGetDeviceInfo( UINT *args )
 
     return NtUserDisplayConfigGetDeviceInfo( packet );
 }
+
+NTSTATUS WINAPI wow64_NtCreateCompositionInputSink( UINT *args )
+{
+    const void *desc = get_ptr( &args );
+    ULONG *out_sink = get_ptr( &args );
+    HANDLE handle;
+    NTSTATUS status;
+
+    status = NtCreateCompositionInputSink( desc, &handle );
+    if (!status && out_sink) *out_sink = HandleToUlong( handle );
+    return status;
+}
+
+NTSTATUS WINAPI wow64_NtCloseCompositionInputSink( UINT *args )
+{
+    HANDLE sink = get_handle( &args );
+    return NtCloseCompositionInputSink( sink );
+}
+
+NTSTATUS WINAPI wow64_NtDuplicateCompositionInputSink( UINT *args )
+{
+    HANDLE sink = get_handle( &args );
+    ULONG *out_sink = get_ptr( &args );
+    HANDLE handle;
+    NTSTATUS status;
+
+    status = NtDuplicateCompositionInputSink( sink, &handle );
+    if (!status && out_sink) *out_sink = HandleToUlong( handle );
+    return status;
+}
+
+NTSTATUS WINAPI wow64_NtQueryCompositionInputSink( UINT *args )
+{
+    HANDLE sink = get_handle( &args );
+    ULONG info_class = get_ulong( &args );
+    void *info = get_ptr( &args );
+    ULONG size = get_ulong( &args );
+    ULONG *ret_size = get_ptr( &args );
+
+    return NtQueryCompositionInputSink( sink, info_class, info, size, ret_size );
+}

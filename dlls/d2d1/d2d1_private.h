@@ -739,10 +739,45 @@ struct d2d_effect_registration
     struct d2d_effect_properties *properties;
 };
 
+/* {6F72C0A2-6DB7-46E9-9B62-B58A23F4928B} */
+DEFINE_GUID(IID_ID2D1FactoryInternal, 0x6f72c0a2, 0x6db7, 0x46e9, 0x9b, 0x62, 0xb5, 0x8a, 0x23, 0xf4, 0x92, 0x8b);
+
+typedef struct ID2D1FactoryInternal ID2D1FactoryInternal;
+
+typedef struct ID2D1FactoryInternalVtbl
+{
+    HRESULT (STDMETHODCALLTYPE *QueryInterface)(ID2D1FactoryInternal *This, REFIID riid, void **ppvObject);
+    ULONG (STDMETHODCALLTYPE *AddRef)(ID2D1FactoryInternal *This);
+    ULONG (STDMETHODCALLTYPE *Release)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *CreateRegionGeometry)(ID2D1FactoryInternal *This, const RECT *rects, UINT count, ID2D1Geometry **geometry);
+    HRESULT (STDMETHODCALLTYPE *D2DCombine)(ID2D1FactoryInternal *This, void *p1, void *p2, void *p3, void *p4, DWORD mode, void **out);
+    HRESULT (STDMETHODCALLTYPE *GenerateGradient)(ID2D1FactoryInternal *This, void *p1, void *p2, void *p3, void *p4, void *p5, void *p6, void *p7, void *p8);
+    HRESULT (STDMETHODCALLTYPE *StartupInit)(ID2D1FactoryInternal *This, DWORD flags);
+    HRESULT (STDMETHODCALLTYPE *Method7)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method8)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method9)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method10)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method11)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method12)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method13)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method14)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *CreateDeviceInternal)(ID2D1FactoryInternal *This, DWORD version, IDXGIDevice *dxgi_device, void **out_device);
+    HRESULT (STDMETHODCALLTYPE *Method16)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method17)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method18)(ID2D1FactoryInternal *This);
+    HRESULT (STDMETHODCALLTYPE *Method19)(ID2D1FactoryInternal *This);
+} ID2D1FactoryInternalVtbl;
+
+struct ID2D1FactoryInternal
+{
+    const ID2D1FactoryInternalVtbl *lpVtbl;
+};
+
 struct d2d_factory
 {
     ID2D1Factory7 ID2D1Factory7_iface;
     ID2D1Multithread ID2D1Multithread_iface;
+    ID2D1FactoryInternal ID2D1FactoryInternal_iface;
     LONG refcount;
 
     ID3D10Device1 *device;

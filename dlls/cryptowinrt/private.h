@@ -40,9 +40,14 @@
 #include "async_private.h"
 
 extern IActivationFactory *credentials_activation_factory;
+extern IActivationFactory *cryptobuffer_activation_factory;
+extern IActivationFactory *dataprotection_activation_factory;
 
 extern HRESULT async_operation_boolean_create( IUnknown *invoker, IUnknown *param, async_operation_callback callback,
                                                IAsyncOperation_boolean **out );
+extern HRESULT async_operation_inspectable_create( const GUID *iid, IUnknown *invoker, IUnknown *param, async_operation_callback callback,
+                                                   IAsyncOperation_IInspectable **out );
+extern HRESULT async_action_create( IUnknown *invoker, async_operation_callback callback, IAsyncAction **out );
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

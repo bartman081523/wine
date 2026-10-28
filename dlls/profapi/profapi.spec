@@ -11,7 +11,7 @@
 111 stub -noname @
 112 stub -noname @
 113 stub -noname @
-114 stub -noname @
+114 stdcall -noname @(ptr long ptr long ptr) profapi_114
 115 stub -noname @
 116 stub -noname @
 117 stub -noname @

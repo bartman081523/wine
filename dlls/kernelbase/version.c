@@ -1576,13 +1576,98 @@ BOOL WINAPI GetVersionExW( OSVERSIONINFOW *info )
     return TRUE;
 }
 
+/* Package identity for prefixes seeded by external MSIX installer
+ * tooling. The installed package tree is described by the
+ * HKCU\Software\Wine\AppModel registry table (see appmodel_registry.c),
+ * including the running process's own identity. A packaged .NET app
+ * probes GetCurrentPackage{FullName,FamilyName} and the application
+ * user model id before enumerating packages, which wine's unseeded
+ * stubs answer APPMODEL_ERROR_NO_{PACKAGE,APPLICATION}; on such
+ * prefixes every function below keeps that behaviour. The PACKAGE_INFO
+ * plumbing lives in appmodel_fake.c, the WinRT package objects in
+ * appxdeploymentclient. */
+
+static LONG copy_id( UINT32 *length, WCHAR *name, const WCHAR *text )
+{
+    UINT32 len = lstrlenW( text ) + 1;
+
+    if (!length)
+        return ERROR_INVALID_PARAMETER;
+    if (!name || *length < len)
+    {
+        *length = len;
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+    lstrcpyW( name, text );
+    *length = len;
+    return ERROR_SUCCESS;
+}
+
+/* packages may carry no install location; their files are then treated
+ * as living in the process working directory */
+static void fall_back_to_cwd( WCHAR *cwd )
+{
+    if (!GetCurrentDirectoryW( MAX_PATH, cwd ))
+        lstrcpyW( cwd, L"C:\\Windows\\System32" );
+}
+
+/* Serves one seeded family: full_names receives pointers into buffer,
+ * one full family name per package, mirroring the Windows ABI. */
+static LONG serve_packages_by_family( const WCHAR *family_name, UINT32 *count,
+                                      WCHAR **full_names, UINT32 *buffer_length, WCHAR *buffer )
+{
+    const WINE_APPMODEL_ENTRY **entry_list;
+    UINT32 matched, i, needed = 0, offset = 0;
+    LONG ret = ERROR_SUCCESS;
+
+    matched = WineAppModelGetEntriesByFamily( family_name, NULL, 0 );
+    if (!matched) return APPMODEL_ERROR_NO_PACKAGE;
+
+    if (!(entry_list = HeapAlloc( GetProcessHeap(), 0, matched * sizeof(*entry_list) )))
+        return ERROR_OUTOFMEMORY;
+    WineAppModelGetEntriesByFamily( family_name, entry_list, matched );
+
+    for (i = 0; i < matched; i++)
+        needed += lstrlenW( entry_list[i]->full_name ) + 1;
+
+    if (!full_names || !buffer || *buffer_length < needed)
+        ret = ERROR_INSUFFICIENT_BUFFER;
+    else
+    {
+        for (i = 0; i < matched; i++)
+        {
+            lstrcpyW( buffer + offset, entry_list[i]->full_name );
+            full_names[i] = buffer + offset;
+            offset += lstrlenW( entry_list[i]->full_name ) + 1;
+        }
+    }
+
+    HeapFree( GetProcessHeap(), 0, entry_list );
+    *count = matched;
+    *buffer_length = needed;
+    return ret;
+}
+
 /***********************************************************************
  *         GetCurrentApplicationUserModelId   (kernelbase.@)
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentApplicationUserModelId( UINT32 *length, WCHAR *id )
 {
-    FIXME( "(%p %p): stub\n", length, id );
-    return APPMODEL_ERROR_NO_APPLICATION;
+    const WINE_APPMODEL_ENTRY *entry = WineAppModelGetCurrentEntry();
+    WCHAR aumid[256];
+
+    TRACE( "(%p %p)\n", length, id );
+    if (!entry || !entry->app_id)
+        return APPMODEL_ERROR_NO_APPLICATION;
+
+    /* "<family name>!<application id>" */
+    if (lstrlenW( entry->family_name ) + 1 + lstrlenW( entry->app_id ) + 1 > ARRAY_SIZE( aumid ))
+        return ERROR_INVALID_PARAMETER;
+    lstrcpyW( aumid, entry->family_name );
+    lstrcatW( aumid, L"!" );
+    lstrcatW( aumid, entry->app_id );
+    TRACE( "returning %s\n", debugstr_w(aumid) );
+    return copy_id( length, id, aumid );
 }
 
 /***********************************************************************
@@ -1590,8 +1675,12 @@ LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentApplicationUserModelId( UINT32 *le
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackageFamilyName( UINT32 *length, WCHAR *name )
 {
-    FIXME( "(%p %p): stub\n", length, name );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    const WINE_APPMODEL_ENTRY *entry = WineAppModelGetCurrentEntry();
+
+    TRACE( "(%p %p)\n", length, name );
+    if (!entry)
+        return APPMODEL_ERROR_NO_PACKAGE;
+    return copy_id( length, name, entry->family_name );
 }
 
 
@@ -1600,18 +1689,38 @@ LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackageFamilyName( UINT32 *length,
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackageFullName( UINT32 *length, WCHAR *name )
 {
-    FIXME( "(%p %p): stub\n", length, name );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    const WINE_APPMODEL_ENTRY *entry = WineAppModelGetCurrentEntry();
+
+    TRACE( "(%p %p)\n", length, name );
+    if (!entry)
+        return APPMODEL_ERROR_NO_PACKAGE;
+    return copy_id( length, name, entry->full_name );
 }
 
+
+#ifndef PACKAGE_FILTER_HEAD
+#define PACKAGE_FILTER_HEAD    0x00000010
+#endif
+#ifndef PACKAGE_FILTER_DIRECT
+#define PACKAGE_FILTER_DIRECT  0x00000020
+#endif
+#ifndef PACKAGE_PROPERTY_FRAMEWORK
+#define PACKAGE_PROPERTY_FRAMEWORK 0x00000001
+#endif
 
 /***********************************************************************
  *         GetCurrentPackageId   (kernelbase.@)
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackageId( UINT32 *len, BYTE *buffer )
 {
-    FIXME( "(%p %p): stub\n", len, buffer );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    const WINE_APPMODEL_ENTRY *entry = WineAppModelGetCurrentEntry();
+
+    TRACE( "(%p %p)\n", len, buffer );
+
+    if (!entry)
+        return APPMODEL_ERROR_NO_PACKAGE;
+
+    return PackageIdFromFullName( entry->full_name, 0, len, buffer );
 }
 
 /***********************************************************************
@@ -1619,8 +1728,128 @@ LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackageId( UINT32 *len, BYTE *buff
  */
 LONG WINAPI GetCurrentPackageInfo( const UINT32 flags, UINT32 *buffer_size, BYTE *buffer, UINT32 *count )
 {
-    FIXME( "(%#x %p %p %p): stub\n", flags, buffer_size, buffer, count );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    const WINE_APPMODEL_ENTRY *head = WineAppModelGetCurrentEntry();
+    const WINE_APPMODEL_ENTRY *entry;
+    PACKAGE_INFO *info_array;
+    WCHAR *str_ptr;
+    UINT32 total_entries, match_count = 0;
+    UINT32 total_bytes = 0;
+    UINT32 i, idx;
+
+    TRACE( "(%#x %p %p %p)\n", flags, buffer_size, buffer, count );
+
+    if (!buffer_size)
+        return ERROR_INVALID_PARAMETER;
+
+    if (!head)
+        return APPMODEL_ERROR_NO_PACKAGE;
+
+    total_entries = WineAppModelGetEntryCount();
+
+    if (flags == PACKAGE_FILTER_HEAD)
+        match_count = 1;
+    else
+        match_count = total_entries ? total_entries : 1;
+
+    total_bytes = match_count * sizeof(PACKAGE_INFO);
+
+    for (i = 0; i < match_count; i++)
+    {
+        if (i == 0)
+            entry = head;
+        else
+        {
+            idx = (i <= WineAppModelGetEntryIndex(head)) ? i - 1 : i;
+            entry = WineAppModelGetEntry(idx);
+            if (!entry) entry = head;
+        }
+
+        total_bytes += (lstrlenW(entry->path ? entry->path : L"") + 1) * sizeof(WCHAR);
+        total_bytes += (lstrlenW(entry->full_name ? entry->full_name : L"") + 1) * sizeof(WCHAR);
+        total_bytes += (lstrlenW(entry->family_name ? entry->family_name : L"") + 1) * sizeof(WCHAR);
+        total_bytes += (lstrlenW(entry->name ? entry->name : L"") + 1) * sizeof(WCHAR);
+        total_bytes += (lstrlenW(entry->publisher ? entry->publisher : L"") + 1) * sizeof(WCHAR);
+        total_bytes += (lstrlenW(entry->resource_id ? entry->resource_id : L"") + 1) * sizeof(WCHAR);
+        total_bytes += (lstrlenW(entry->publisher_id ? entry->publisher_id : L"") + 1) * sizeof(WCHAR);
+    }
+
+    if (!buffer || *buffer_size < total_bytes)
+    {
+        if (count) *count = match_count;
+        *buffer_size = total_bytes;
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+
+    info_array = (PACKAGE_INFO *)buffer;
+    str_ptr = (WCHAR *)(buffer + match_count * sizeof(PACKAGE_INFO));
+
+    for (i = 0; i < match_count; i++)
+    {
+        const WCHAR *s;
+        size_t len;
+
+        if (i == 0)
+            entry = head;
+        else
+        {
+            idx = (i <= WineAppModelGetEntryIndex(head)) ? i - 1 : i;
+            entry = WineAppModelGetEntry(idx);
+            if (!entry) entry = head;
+        }
+
+        memset(&info_array[i], 0, sizeof(PACKAGE_INFO));
+        info_array[i].flags = entry->is_framework ? PACKAGE_PROPERTY_FRAMEWORK : 0;
+
+        s = entry->path ? entry->path : L"";
+        len = lstrlenW(s);
+        memcpy(str_ptr, s, (len + 1) * sizeof(WCHAR));
+        info_array[i].path = str_ptr;
+        str_ptr += len + 1;
+
+        s = entry->full_name ? entry->full_name : L"";
+        len = lstrlenW(s);
+        memcpy(str_ptr, s, (len + 1) * sizeof(WCHAR));
+        info_array[i].packageFullName = str_ptr;
+        str_ptr += len + 1;
+
+        s = entry->family_name ? entry->family_name : L"";
+        len = lstrlenW(s);
+        memcpy(str_ptr, s, (len + 1) * sizeof(WCHAR));
+        info_array[i].packageFamilyName = str_ptr;
+        str_ptr += len + 1;
+
+        info_array[i].packageId.processorArchitecture = entry->processor_architecture;
+        info_array[i].packageId.version = entry->package_version;
+
+        s = entry->name ? entry->name : L"";
+        len = lstrlenW(s);
+        memcpy(str_ptr, s, (len + 1) * sizeof(WCHAR));
+        info_array[i].packageId.name = str_ptr;
+        str_ptr += len + 1;
+
+        s = entry->publisher ? entry->publisher : L"";
+        len = lstrlenW(s);
+        memcpy(str_ptr, s, (len + 1) * sizeof(WCHAR));
+        info_array[i].packageId.publisher = str_ptr;
+        str_ptr += len + 1;
+
+        s = entry->resource_id ? entry->resource_id : L"";
+        len = lstrlenW(s);
+        memcpy(str_ptr, s, (len + 1) * sizeof(WCHAR));
+        info_array[i].packageId.resourceId = str_ptr;
+        str_ptr += len + 1;
+
+        s = entry->publisher_id ? entry->publisher_id : L"";
+        len = lstrlenW(s);
+        memcpy(str_ptr, s, (len + 1) * sizeof(WCHAR));
+        info_array[i].packageId.publisherId = str_ptr;
+        str_ptr += len + 1;
+    }
+
+    if (count)
+        *count = match_count;
+    *buffer_size = total_bytes;
+    return ERROR_SUCCESS;
 }
 
 /***********************************************************************
@@ -1628,8 +1857,19 @@ LONG WINAPI GetCurrentPackageInfo( const UINT32 flags, UINT32 *buffer_size, BYTE
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackagePath( UINT32 *length, WCHAR *path )
 {
-    FIXME( "(%p %p): stub\n", length, path );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    const WINE_APPMODEL_ENTRY *entry = WineAppModelGetCurrentEntry();
+    WCHAR cwd[MAX_PATH];
+
+    TRACE( "(%p %p)\n", length, path );
+    if (!entry)
+        return APPMODEL_ERROR_NO_PACKAGE;
+
+    if (entry->path)
+        return copy_id( length, path, entry->path );
+
+    fall_back_to_cwd( cwd );
+    TRACE( "no explicit path, returning %s\n", debugstr_w(cwd) );
+    return copy_id( length, path, cwd );
 }
 
 
@@ -1638,8 +1878,12 @@ LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackagePath( UINT32 *length, WCHAR
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetPackageFullName( HANDLE process, UINT32 *length, WCHAR *name )
 {
-    FIXME( "(%p %p %p): stub\n", process, length, name );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    const WINE_APPMODEL_ENTRY *entry = WineAppModelGetCurrentEntry();
+
+    TRACE( "(%p %p %p)\n", process, length, name );
+    if (!entry)
+        return APPMODEL_ERROR_NO_PACKAGE;
+    return copy_id( length, name, entry->full_name );
 }
 
 
@@ -1648,8 +1892,12 @@ LONG WINAPI /* DECLSPEC_HOTPATCH */ GetPackageFullName( HANDLE process, UINT32 *
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetPackageFamilyName( HANDLE process, UINT32 *length, WCHAR *name )
 {
-    FIXME( "(%p %p %p): stub\n", process, length, name );
-    return APPMODEL_ERROR_NO_PACKAGE;
+    const WINE_APPMODEL_ENTRY *entry = WineAppModelGetCurrentEntry();
+
+    TRACE( "(%p %p %p)\n", process, length, name );
+    if (!entry)
+        return APPMODEL_ERROR_NO_PACKAGE;
+    return copy_id( length, name, entry->family_name );
 }
 
 /***********************************************************************
@@ -1657,12 +1905,23 @@ LONG WINAPI /* DECLSPEC_HOTPATCH */ GetPackageFamilyName( HANDLE process, UINT32
  */
 LONG WINAPI GetPackagePathByFullName(const WCHAR *name, UINT32 *len, WCHAR *path)
 {
+    const WINE_APPMODEL_ENTRY *entry;
+    WCHAR cwd[MAX_PATH];
+
+    TRACE( "(%s %p %p)\n", debugstr_w(name), len, path );
+
     if (!len || !name)
         return ERROR_INVALID_PARAMETER;
 
-    FIXME( "(%s %p %p): stub\n", debugstr_w(name), len, path );
+    /* not among the installed packages keeps the stock answer */
+    if (!(entry = WineAppModelGetEntryByFullName( name )))
+        return ERROR_NOT_FOUND;
 
-    return APPMODEL_ERROR_NO_PACKAGE;
+    if (entry->path)
+        return copy_id( len, path, entry->path );
+
+    fall_back_to_cwd( cwd );
+    return copy_id( len, path, cwd );
 }
 
 static const struct
@@ -1822,6 +2081,50 @@ LONG WINAPI PackageFullNameFromId(const PACKAGE_ID *package_id, UINT32 *length, 
     return ERROR_SUCCESS;
 }
 
+/***********************************************************************
+ *         PackageFamilyNameFromFullName   (kernelbase.@)
+ */
+LONG WINAPI PackageFamilyNameFromFullName(const WCHAR *full_name, UINT32 *length, WCHAR *family_name)
+{
+    const WINE_APPMODEL_ENTRY *entry;
+    const WCHAR *p, *q;
+    UINT32 name_len, pub_len, needed;
+
+    TRACE("(%s %p %p)\n", debugstr_w(full_name), length, family_name);
+
+    if (!full_name || !length)
+        return ERROR_INVALID_PARAMETER;
+
+    if ((entry = WineAppModelGetEntryByFullName(full_name)))
+        return copy_id(length, family_name, entry->family_name);
+
+    entry = WineAppModelGetCurrentEntry();
+    if (entry && entry->full_name && !wcscmp(full_name, entry->full_name))
+        return copy_id(length, family_name, entry->family_name);
+
+    p = wcschr(full_name, L'_');
+    q = wcsrchr(full_name, L'_');
+    if (!p || !q || p == q)
+        return ERROR_INVALID_PARAMETER;
+
+    name_len = p - full_name;
+    q++;
+    pub_len = lstrlenW(q);
+    needed = name_len + 1 + pub_len + 1;
+
+    if (*length < needed || !family_name)
+    {
+        *length = needed;
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+
+    memcpy(family_name, full_name, name_len * sizeof(WCHAR));
+    family_name[name_len] = L'_';
+    lstrcpyW(family_name + name_len + 1, q);
+    *length = needed;
+    return ERROR_SUCCESS;
+}
+
 
 /***********************************************************************
  *         GetPackagesByPackageFamily   (kernelbase.@)
@@ -1846,6 +2149,11 @@ LONG WINAPI GetPackagesByPackageFamily(const WCHAR *family_name, UINT32 *count, 
 
     if ((*buffer_length || *count) && (!full_names || !buffer))
         return ERROR_INVALID_PARAMETER;
+
+    /* Packages seeded by external MSIX installer tooling take
+     * precedence over the package repository. */
+    if (WineAppModelGetEntriesByFamily( family_name, NULL, 0 ))
+        return serve_packages_by_family( family_name, count, full_names, buffer_length, buffer );
 
     if (!(publisher_id = wcschr(family_name, L'_')))
         return ERROR_INVALID_PARAMETER;

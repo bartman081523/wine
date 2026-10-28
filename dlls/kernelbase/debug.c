@@ -391,6 +391,17 @@ void WINAPI DECLSPEC_HOTPATCH RaiseException( DWORD code, DWORD flags, DWORD cou
 {
     EXCEPTION_RECORD record;
 
+    if (code == 0xe06d7363)
+    {
+        void *stack[16];
+        WORD c = RtlCaptureStackBackTrace( 0, 16, stack, NULL );
+        WORD j;
+        ERR( "RaiseException 0xe06d7363 thrown! arg1=%p, arg2=%p, backtrace:\n",
+             count > 1 ? (void *)args[1] : NULL, count > 2 ? (void *)args[2] : NULL );
+        for (j = 0; j < c; j++)
+            ERR( "  cxx_frame[%02u]: %p\n", j, stack[j] );
+    }
+
     record.ExceptionCode    = code;
     record.ExceptionFlags   = flags & EXCEPTION_NONCONTINUABLE;
     record.ExceptionRecord  = NULL;
@@ -416,12 +427,49 @@ __ASM_GLOBAL_IMPORT(RaiseException)
 /*******************************************************************
  *           RaiseFailFastException  (kernelbase.@)
  */
+/* CMXP probe drain: a CoreMessagingXP client that throws ProtocolException
+ * fail-fasts before any further ALPC syscall, so the send-time probe readout
+ * never sees the throw trampoline slots. A dying process is guaranteed to
+ * pass here; drain the CMXP snapshots now (no-op when CMXP is not loaded). */
+extern void cmxp_probe_dump(void);
+
 void WINAPI DECLSPEC_HOTPATCH RaiseFailFastException( EXCEPTION_RECORD *record, CONTEXT *context, DWORD flags )
 {
     EXCEPTION_RECORD rec;
     CONTEXT ctx;
+    void *stack[32];
+    WORD count, j;
 
-    WARN( "(%p, %p, %lx)\n", record, context, flags );
+    cmxp_probe_dump();
+
+    count = RtlCaptureStackBackTrace( 0, 32, stack, NULL );
+    ERR( "RaiseFailFastException called! code=%08lx flags=%lx addr=%p params=%lu, backtrace (%u frames):\n",
+         record ? record->ExceptionCode : 0, record ? record->ExceptionFlags : 0,
+         record ? record->ExceptionAddress : NULL, record ? record->NumberParameters : 0, count );
+    for (j = 0; j < count; j++)
+        ERR( "  frame[%02u]: %p\n", j, stack[j] );
+
+    if (record)
+    {
+        DWORD i;
+        for (i = 0; i < record->NumberParameters && i < 8; i++)
+            ERR( "  param[%lu]=%016I64x\n", i, (UINT64)record->ExceptionInformation[i] );
+        {
+            void **sp = (void **)record;
+            ERR( "stack around record (%p):\n", record );
+            for (i = 0; i < 16; i++)
+                ERR( "  sp[%02lu] (%p): %p\n", i, &sp[i], sp[i] );
+        }
+    }
+    if (context)
+    {
+#ifdef __x86_64__
+        ERR( "context: rax=%016I64x rbx=%016I64x rcx=%016I64x rdx=%016I64x rsi=%016I64x rdi=%016I64x rbp=%016I64x rsp=%016I64x\n",
+             context->Rax, context->Rbx, context->Rcx, context->Rdx, context->Rsi, context->Rdi, context->Rbp, context->Rsp );
+        ERR( "context: r8=%016I64x r9=%016I64x r10=%016I64x r11=%016I64x r12=%016I64x r13=%016I64x r14=%016I64x r15=%016I64x rip=%016I64x\n",
+             context->R8, context->R9, context->R10, context->R11, context->R12, context->R13, context->R14, context->R15, context->Rip );
+#endif
+    }
 
     if (flags & FAIL_FAST_NO_HARD_ERROR_DLG)
         TerminateProcess( GetCurrentProcess(), STATUS_FAIL_FAST_EXCEPTION );
@@ -545,6 +593,13 @@ static BOOL start_debugger( EXCEPTION_POINTERS *epointers, HANDLE event )
 
     format_exception_msg( epointers, buffer, sizeof(buffer) );
     MESSAGE( "wine: %s (thread %04lx), starting debugger...\n", buffer, GetCurrentThreadId() );
+
+    /* CMXP probe drain: an unhandled native exception (raw c0000005) reaches
+     * start_debugger in the dying process without RaiseFailFastException and
+     * without any further ALPC syscall, so the send-time and fail-fast drains
+     * never run. The trampoline snapshot slots are final here — drain them
+     * now (no-op when CoreMessagingXP.dll is not loaded). */
+    cmxp_probe_dump();
 
     InitializeObjectAttributes( &attr, &nameW, 0, 0, NULL );
     if (!NtOpenKey( &dbg_key, KEY_READ, &attr ))

@@ -838,6 +838,48 @@ DPI_AWARENESS_CONTEXT WINAPI SetThreadDpiAwarenessContext( DPI_AWARENESS_CONTEXT
     return ULongToHandle( set_thread_dpi_awareness_context( get_ntuser_dpi_context( context ) ) );
 }
 
+/***********************************************************************
+ *              user32_2557   (USER32.2557)
+ */
+BOOL WINAPI user32_2557( POINT *pt, DPI_AWARENESS_CONTEXT from, DPI_AWARENESS_CONTEXT to )
+{
+    UINT dpi_from, dpi_to;
+    TRACE("(%p, %p, %p)\n", pt, from, to);
+    if (!pt) return FALSE;
+    dpi_from = GetDpiFromDpiAwarenessContext( from );
+    dpi_to = GetDpiFromDpiAwarenessContext( to );
+    if (!dpi_from) dpi_from = USER_DEFAULT_SCREEN_DPI;
+    if (!dpi_to) dpi_to = USER_DEFAULT_SCREEN_DPI;
+    if (dpi_from != dpi_to)
+    {
+        pt->x = MulDiv( pt->x, dpi_to, dpi_from );
+        pt->y = MulDiv( pt->y, dpi_to, dpi_from );
+    }
+    return TRUE;
+}
+
+/***********************************************************************
+ *              user32_2558   (USER32.2558)
+ */
+BOOL WINAPI user32_2558( RECT *rc, DPI_AWARENESS_CONTEXT from, DPI_AWARENESS_CONTEXT to )
+{
+    UINT dpi_from, dpi_to;
+    TRACE("(%p, %p, %p)\n", rc, from, to);
+    if (!rc) return FALSE;
+    dpi_from = GetDpiFromDpiAwarenessContext( from );
+    dpi_to = GetDpiFromDpiAwarenessContext( to );
+    if (!dpi_from) dpi_from = USER_DEFAULT_SCREEN_DPI;
+    if (!dpi_to) dpi_to = USER_DEFAULT_SCREEN_DPI;
+    if (dpi_from != dpi_to)
+    {
+        rc->left = MulDiv( rc->left, dpi_to, dpi_from );
+        rc->top = MulDiv( rc->top, dpi_to, dpi_from );
+        rc->right = MulDiv( rc->right, dpi_to, dpi_from );
+        rc->bottom = MulDiv( rc->bottom, dpi_to, dpi_from );
+    }
+    return TRUE;
+}
+
 /**********************************************************************
  *              GetThreadDpiHostingBehavior   (USER32.@)
  */

@@ -642,6 +642,14 @@
 @ stdcall GetCurrentPackageId(ptr ptr) kernelbase.GetCurrentPackageId
 @ stdcall GetCurrentPackageInfo(long ptr ptr ptr) kernelbase.GetCurrentPackageInfo
 @ stdcall GetCurrentPackagePath(ptr ptr) kernelbase.GetCurrentPackagePath
+# package inventory forwards; the implementations live in kernelbase
+# (version.c / appmodel_fake.c)
+@ stdcall ClosePackageInfo(ptr) kernelbase.ClosePackageInfo
+@ stdcall GetPackageInfo(ptr long ptr ptr ptr) kernelbase.GetPackageInfo
+@ stdcall GetPackageInfo3(ptr long ptr ptr ptr) kernelbase.GetPackageInfo3
+@ stdcall OpenPackageInfoByFullName(wstr long ptr) kernelbase.OpenPackageInfoByFullName
+@ stdcall FindPackagesByPackageFamily(wstr long ptr ptr ptr ptr ptr) kernelbase.FindPackagesByPackageFamily
+@ stdcall FormatApplicationUserModelId(wstr wstr ptr ptr) kernelbase.FormatApplicationUserModelId
 @ stdcall -norelay GetCurrentProcess() KERNEL32_GetCurrentProcess
 @ stdcall -norelay GetCurrentProcessId() KERNEL32_GetCurrentProcessId
 @ stdcall GetCurrentProcessorNumber() NTDLL.NtGetCurrentProcessorNumber

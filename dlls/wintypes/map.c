@@ -454,8 +454,13 @@ static HRESULT WINAPI map_view_Lookup( IMapView_HSTRING_IInspectable *iface, HST
 
     TRACE( "iface %p, key %s, value %p\n", iface, debugstr_hstring( key ), value );
 
+    if (!value) return E_INVALIDARG;
     if (FAILED(hr = map_view_check_serial( impl ))) return hr;
-    if (!(entry = map_entries_lower_bound( impl->entries, impl->size, key, &order )) || order) return E_BOUNDS;
+    if (!(entry = map_entries_lower_bound( impl->entries, impl->size, key, &order )) || order)
+    {
+        *value = NULL;
+        return S_OK;
+    }
     IInspectable_AddRef( (*value = entry->value ));
     return S_OK;
 }
@@ -644,8 +649,8 @@ static HRESULT WINAPI map_inner_GetIids( IInspectable *iface, ULONG *iid_count, 
 
 static HRESULT WINAPI map_inner_GetRuntimeClassName( IInspectable *iface, HSTRING *class_name )
 {
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    static const WCHAR name[] = L"Windows.Foundation.Collections.PropertySet";
+    return WindowsCreateString( name, ARRAY_SIZE(name) - 1, class_name );
 }
 
 static HRESULT WINAPI map_inner_GetTrustLevel( IInspectable *iface, TrustLevel *trust_level )
@@ -676,7 +681,12 @@ static HRESULT WINAPI map_Lookup( IMap_HSTRING_IInspectable *iface, HSTRING key,
 
     TRACE( "iface %p, key %s, value %p\n", iface, debugstr_hstring( key ), value );
 
-    if (!(entry = map_entries_lower_bound( impl->entries, impl->size, key, &order )) || order) return E_BOUNDS;
+    if (!value) return E_INVALIDARG;
+    if (!(entry = map_entries_lower_bound( impl->entries, impl->size, key, &order )) || order)
+    {
+        *value = NULL;
+        return S_OK;
+    }
     IInspectable_AddRef( (*value = entry->value ));
     return S_OK;
 }
@@ -926,8 +936,8 @@ static HRESULT WINAPI locked_map_inner_GetIids( IInspectable *iface, ULONG *iid_
 
 static HRESULT WINAPI locked_map_inner_GetRuntimeClassName( IInspectable *iface, HSTRING *class_name )
 {
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    static const WCHAR name[] = L"Windows.Foundation.Collections.PropertySet";
+    return WindowsCreateString( name, ARRAY_SIZE(name) - 1, class_name );
 }
 
 static HRESULT WINAPI locked_map_inner_GetTrustLevel( IInspectable *iface, TrustLevel *trust_level )

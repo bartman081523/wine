@@ -189,6 +189,14 @@ static HRESULT WINAPI ftmarshaler_inner_QueryInterface(IUnknown *iface, REFIID r
         *obj = &marshaler->IUnknown_inner;
     else if (IsEqualIID(&IID_IMarshal, riid))
         *obj = &marshaler->IMarshal_iface;
+    else if (IsEqualIID(&IID_IAgileObject, riid))
+    {
+        /* The FTM is free-threaded by definition, and Windows' FTM answers
+         * IAgileObject — otherwise WinUI's agility wrappers loop retrying
+         * CoCreateFreeThreadedMarshaler until the 4 KiB mini-stack overflows
+         * (run63: stack overflow 1856 bytes, app died silently). */
+        *obj = &marshaler->IUnknown_inner;
+    }
     else
     {
         FIXME("No interface for %s\n", debugstr_guid(riid));

@@ -138,7 +138,7 @@
 @ stdcall ClearCommError(long ptr ptr)
 # @ stub CloseGlobalizationUserSettingsKey
 @ stdcall CloseHandle(long)
-# @ stub ClosePackageInfo
+@ stdcall ClosePackageInfo(ptr)
 # @ stub ClosePrivateNamespace
 @ stdcall ClosePseudoConsole(ptr)
 # @ stub CloseState
@@ -380,7 +380,7 @@
 @ stdcall FindNextFileW(long ptr)
 @ stdcall FindNextStreamW(long ptr)
 @ stdcall FindNextVolumeW(long ptr long)
-# @ stub FindPackagesByPackageFamily
+@ stdcall FindPackagesByPackageFamily(wstr long ptr ptr ptr ptr ptr)
 @ stdcall FindResourceExW(long wstr wstr long)
 @ stdcall FindResourceW(long wstr wstr)
 @ stdcall FindStringOrdinal(long wstr long wstr long long)
@@ -396,7 +396,9 @@
 @ stdcall FlushViewOfFile(ptr long)
 @ stdcall FoldStringW(long wstr long ptr long)
 # @ stub ForceSyncFgPolicyInternal
-# @ stub FormatApplicationUserModelId
+# two-step AUMID formatter backed by the seeded package table (see
+# appmodel_fake.c); apps reach it through the kernel32 forward
+@ stdcall FormatApplicationUserModelId(wstr wstr ptr ptr)
 @ stdcall FormatMessageA(long ptr long long ptr long ptr)
 @ stdcall FormatMessageW(long ptr long long ptr long ptr)
 @ stdcall FreeConsole()
@@ -634,7 +636,24 @@
 @ stdcall GetPackageFullName(long ptr ptr)
 # @ stub GetPackageFullNameFromToken
 # @ stub GetPackageId
-# @ stub GetPackageInfo
+@ stdcall GetPackageInfo(ptr long ptr ptr ptr)
+@ stdcall GetPackageInfo3(ptr long ptr ptr ptr)
+# wait completion packets (CoreMessagingXP probes the family); a real
+# NTSTATUS failure beats the loader stub exception — see ntdll.spec
+@ stdcall NtCreateWaitCompletionPacket(ptr long ptr)
+@ stdcall NtAssociateWaitCompletionPacket(ptr ptr ptr ptr ptr long long ptr)
+@ stdcall NtCancelWaitCompletionPacket(ptr long)
+# ALPC port facade (CoreMessagingXP imports the ntdll!NtAlpc* family);
+# implementations in appmodel_alpc.c — see ntdll.spec
+@ stdcall NtAlpcCreatePort(ptr ptr ptr)
+@ stdcall NtAlpcAcceptConnectPort(ptr ptr long ptr ptr ptr ptr ptr long)
+@ stdcall NtAlpcConnectPort(ptr ptr ptr ptr long ptr ptr ptr ptr ptr ptr)
+@ stdcall NtAlpcDisconnectPort(ptr long)
+@ stdcall NtAlpcQueryInformation(ptr long ptr long ptr)
+@ stdcall NtAlpcSendWaitReceivePort(ptr long ptr ptr ptr ptr ptr ptr)
+@ stdcall NtAlpcImpersonateClientOfPort(ptr ptr ptr)
+@ stdcall AlpcInitializeMessageAttribute(long ptr long ptr)
+@ stdcall AlpcGetMessageAttribute(ptr long)
 # @ stub GetPackageInstallTime
 # @ stub GetPackageOSMaxVersionTested
 @ stdcall GetPackagePath(ptr long ptr ptr)
@@ -1031,7 +1050,7 @@
 @ stdcall OpenFileMappingW(long long wstr)
 # @ stub OpenGlobalizationUserSettingsKey
 @ stdcall OpenMutexW(long long wstr)
-# @ stub OpenPackageInfoByFullName
+@ stdcall OpenPackageInfoByFullName(wstr long ptr)
 # @ stub OpenPackageInfoByFullNameForUser
 # @ stub OpenPrivateNamespaceW
 @ stdcall OpenProcess(long long long)
@@ -1049,7 +1068,7 @@
 @ stdcall OutputDebugStringA(str)
 @ stdcall OutputDebugStringW(wstr)
 # @ stub OverrideRoamingDataModificationTimesInRange
-# @ stub PackageFamilyNameFromFullName
+@ stdcall PackageFamilyNameFromFullName(wstr ptr ptr)
 # @ stub PackageFamilyNameFromId
 # @ stub PackageFamilyNameFromProductId
 @ stdcall PackageFullNameFromId(ptr ptr ptr)
@@ -1769,6 +1788,14 @@
 # @ stub WerpNotifyLoadStringResource
 # @ stub WerpNotifyUseStringResource
 @ stdcall WideCharToMultiByte(long long wstr long ptr long ptr ptr)
+# internal package inventory backing the AppModel functions below and
+# appxdeploymentclient (see appmodel_registry.c)
+@ stdcall WineAppModelGetCurrentEntry()
+@ stdcall WineAppModelGetEntriesByFamily(wstr ptr long)
+@ stdcall WineAppModelGetEntry(long)
+@ stdcall WineAppModelGetEntryByFullName(wstr)
+@ stdcall WineAppModelGetEntryCount()
+@ stdcall WineAppModelGetEntryIndex(ptr)
 @ stdcall Wow64DisableWow64FsRedirection(ptr)
 @ stdcall Wow64EnableWow64FsRedirection(long) kernelbase_Wow64EnableWow64FsRedirection
 @ stdcall Wow64GetThreadContext(long ptr)

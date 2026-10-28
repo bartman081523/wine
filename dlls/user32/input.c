@@ -811,61 +811,106 @@ BOOL WINAPI SetGestureConfig( HWND hwnd, DWORD reserved, UINT count,
 
 BOOL WINAPI GetPointerDevice( HANDLE device, POINTER_DEVICE_INFO *info )
 {
-    FIXME( "device %p, info %p stub.\n", device, info );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
-    return FALSE;
+    TRACE( "device %p, info %p\n", device, info );
+
+    if (!info)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    memset( info, 0, sizeof(*info) );
+    info->displayOrientation = 0;
+    info->device = device ? device : (HANDLE)1;
+    info->pointerDeviceType = POINTER_DEVICE_TYPE_INTEGRATED_PEN;
+    info->monitor = MonitorFromPoint( (POINT){0, 0}, MONITOR_DEFAULTTOPRIMARY );
+    info->startingCursorId = 0;
+    info->maxActiveContacts = 10;
+    lstrcpynW( info->productString, L"Wine Pointer Device", POINTER_DEVICE_PRODUCT_STRING_MAX );
+
+    SetLastError( ERROR_SUCCESS );
+    return TRUE;
 }
 
 BOOL WINAPI GetPointerDeviceProperties( HANDLE device, UINT32 *count,
                                         POINTER_DEVICE_PROPERTY *properties)
 {
-    FIXME( "device %p, count %p, info %p stub!\n", device, count, properties );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
-    return FALSE;
+    TRACE( "device %p, count %p, info %p\n", device, count, properties );
+    if (!count)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+    *count = 0;
+    SetLastError( ERROR_SUCCESS );
+    return TRUE;
 }
 
 BOOL WINAPI GetPointerDeviceRects( HANDLE device, RECT *device_rect, RECT *display_rect )
 {
-    FIXME( "device %p, device_rect %p, display_rect %p stub!\n",
-           device, device_rect, display_rect );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
-    return FALSE;
+    INT w = GetSystemMetrics( SM_CXSCREEN );
+    INT h = GetSystemMetrics( SM_CYSCREEN );
+
+    TRACE( "device %p, device_rect %p, display_rect %p\n", device, device_rect, display_rect );
+
+    if (!device_rect || !display_rect)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    if (w <= 0) w = 1920;
+    if (h <= 0) h = 1080;
+
+    display_rect->left = 0;
+    display_rect->top = 0;
+    display_rect->right = w;
+    display_rect->bottom = h;
+
+    /* HIMETRIC: 1 HIMETRIC = 0.01 mm. Standard 96 DPI: 1 inch = 96 px = 2540 HIMETRIC */
+    device_rect->left = 0;
+    device_rect->top = 0;
+    device_rect->right = MulDiv( w, 2540, 96 );
+    device_rect->bottom = MulDiv( h, 2540, 96 );
+
+    SetLastError( ERROR_SUCCESS );
+    return TRUE;
 }
 
 BOOL WINAPI GetPointerPenInfo( UINT32 id, POINTER_PEN_INFO *info )
 {
-    FIXME( "id %u, info %p stub!\n", id, info );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    TRACE( "id %u, info %p\n", id, info );
+    SetLastError( ERROR_INVALID_PARAMETER );
     return FALSE;
 }
 
 BOOL WINAPI GetPointerTouchInfo( UINT32 id, POINTER_TOUCH_INFO *info )
 {
-    FIXME( "id %u, info %p stub!\n", id, info );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    TRACE( "id %u, info %p\n", id, info );
+    SetLastError( ERROR_INVALID_PARAMETER );
     return FALSE;
 }
 
 BOOL WINAPI GetRawPointerDeviceData( UINT32 id, UINT32 hist_count, UINT32 prop_count,
                                      POINTER_DEVICE_PROPERTY *properties, LONG *values )
 {
-    FIXME( "id %u, count %u, prop_count %u, properties %p, values %p stub!\n",
+    TRACE( "id %u, count %u, prop_count %u, properties %p, values %p\n",
            id, hist_count, prop_count, properties, values );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    SetLastError( ERROR_INVALID_PARAMETER );
     return FALSE;
 }
 
 BOOL WINAPI GetPointerTouchInfoHistory( UINT32 id, UINT32 *count, POINTER_TOUCH_INFO *info )
 {
-    FIXME( "id %u, count %p, info %p stub!\n", id, count, info );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    TRACE( "id %u, count %p, info %p\n", id, count, info );
+    SetLastError( ERROR_INVALID_PARAMETER );
     return FALSE;
 }
 
 BOOL WINAPI GetPointerInfoHistory( UINT32 id, UINT32 *count, POINTER_INFO *info )
 {
-    FIXME( "id %u, count %p, info %p stub.\n", id, count, info );
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    TRACE( "id %u, count %p, info %p\n", id, count, info );
+    SetLastError( ERROR_INVALID_PARAMETER );
     return FALSE;
 }
 
@@ -933,4 +978,58 @@ HSYNTHETICPOINTERDEVICE WINAPI CreateSyntheticPointerDevice(POINTER_INPUT_TYPE t
     FIXME( "type %ld, max_count %ld, mode %d stub!\n", type, max_count, mode);
     SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
     return NULL;
+}
+
+/***********************************************************************
+ *           DelegateInput (USER32.@)
+ */
+BOOL WINAPI DelegateInput( HWND hwnd, void *arg2, void *arg3, void *arg4, ULONG arg5, DWORD arg6 )
+{
+    FIXME( "(%p, %p, %p, %p, %#lx, %#lx): semi-stub!\n", hwnd, arg2, arg3, arg4, arg5, arg6 );
+    return TRUE;
+}
+
+/***********************************************************************
+ *           UndelegateInput (USER32.@)
+ */
+BOOL WINAPI UndelegateInput( HWND hwnd, void *arg2 )
+{
+    FIXME( "(%p, %p): semi-stub!\n", hwnd, arg2 );
+    return TRUE;
+}
+
+/***********************************************************************
+ *           HandleDelegatedInput (USER32.@)
+ */
+BOOL WINAPI HandleDelegatedInput( void *arg1, DWORD arg2 )
+{
+    TRACE( "(%p, %#lx): semi-stub!\n", arg1, arg2 );
+    return TRUE;
+}
+
+/***********************************************************************
+ *           ShellHandwritingDelegateInput (USER32.@)
+ */
+BOOL WINAPI ShellHandwritingDelegateInput( HWND hwnd, void *arg2, void *arg3, void *arg4, ULONG arg5, DWORD arg6 )
+{
+    FIXME( "(%p, %p, %p, %p, %#lx, %#lx): semi-stub!\n", hwnd, arg2, arg3, arg4, arg5, arg6 );
+    return TRUE;
+}
+
+/***********************************************************************
+ *           ShellHandwritingUndelegateInput (USER32.@)
+ */
+BOOL WINAPI ShellHandwritingUndelegateInput( HWND hwnd, void *arg2 )
+{
+    FIXME( "(%p, %p): semi-stub!\n", hwnd, arg2 );
+    return TRUE;
+}
+
+/***********************************************************************
+ *           ShellHandwritingHandleDelegatedInput (USER32.@)
+ */
+BOOL WINAPI ShellHandwritingHandleDelegatedInput( void *arg1, DWORD arg2 )
+{
+    TRACE( "(%p, %#lx): semi-stub!\n", arg1, arg2 );
+    return TRUE;
 }

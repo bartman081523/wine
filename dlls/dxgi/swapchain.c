@@ -590,9 +590,20 @@ static HRESULT STDMETHODCALLTYPE d3d11_swapchain_GetContainingOutput(IDXGISwapCh
 static HRESULT STDMETHODCALLTYPE d3d11_swapchain_GetFrameStatistics(IDXGISwapChain4 *iface,
         DXGI_FRAME_STATISTICS *stats)
 {
-    FIXME("iface %p, stats %p stub!\n", iface, stats);
+    struct d3d11_swapchain *swapchain = d3d11_swapchain_from_IDXGISwapChain4(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, stats %p.\n", iface, stats);
+
+    if (!stats)
+        return E_INVALIDARG;
+
+    stats->PresentCount = swapchain->present_count;
+    stats->PresentRefreshCount = swapchain->present_count;
+    stats->SyncRefreshCount = swapchain->present_count;
+    QueryPerformanceCounter(&stats->SyncQPCTime);
+    QueryPerformanceCounter(&stats->SyncGPUTime);
+
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE d3d11_swapchain_GetLastPresentCount(IDXGISwapChain4 *iface,

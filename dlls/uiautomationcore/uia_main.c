@@ -438,6 +438,126 @@ static ULONG WINAPI uia_cf_AddRef(IClassFactory *iface)
     return ref;
 }
 
+struct uia_registrar
+{
+    IUIAutomationRegistrar IUIAutomationRegistrar_iface;
+    LONG ref;
+};
+
+static inline struct uia_registrar *impl_from_IUIAutomationRegistrar(IUIAutomationRegistrar *iface)
+{
+    return CONTAINING_RECORD(iface, struct uia_registrar, IUIAutomationRegistrar_iface);
+}
+
+static HRESULT WINAPI uia_registrar_QueryInterface(IUIAutomationRegistrar *iface, REFIID riid, void **ppv)
+{
+    struct uia_registrar *registrar = impl_from_IUIAutomationRegistrar(iface);
+
+    *ppv = NULL;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IUIAutomationRegistrar))
+        *ppv = &registrar->IUIAutomationRegistrar_iface;
+    else
+    {
+        WARN("Unsupported interface %s\n", debugstr_guid(riid));
+        return E_NOINTERFACE;
+    }
+
+    IUnknown_AddRef((IUnknown *)*ppv);
+    return S_OK;
+}
+
+static ULONG WINAPI uia_registrar_AddRef(IUIAutomationRegistrar *iface)
+{
+    struct uia_registrar *registrar = impl_from_IUIAutomationRegistrar(iface);
+    ULONG ref = InterlockedIncrement(&registrar->ref);
+
+    TRACE("%p, refcount %ld\n", registrar, ref);
+    return ref;
+}
+
+static ULONG WINAPI uia_registrar_Release(IUIAutomationRegistrar *iface)
+{
+    struct uia_registrar *registrar = impl_from_IUIAutomationRegistrar(iface);
+    ULONG ref = InterlockedDecrement(&registrar->ref);
+
+    TRACE("%p, refcount %ld\n", registrar, ref);
+    if (!ref)
+        free(registrar);
+    return ref;
+}
+
+static HRESULT WINAPI uia_registrar_RegisterProperty(IUIAutomationRegistrar *iface,
+    const struct UIAutomationPropertyInfo *property, PROPERTYID *propertyId)
+{
+    static int next_prop_id = 40000;
+    TRACE("(%p, %p, %p)\n", iface, property, propertyId);
+    if (!property || !propertyId)
+        return E_INVALIDARG;
+
+    *propertyId = InterlockedIncrement((LONG *)&next_prop_id);
+    return S_OK;
+}
+
+static HRESULT WINAPI uia_registrar_RegisterEvent(IUIAutomationRegistrar *iface,
+    const struct UIAutomationEventInfo *event, EVENTID *eventId)
+{
+    static int next_event_id = 50000;
+    TRACE("(%p, %p, %p)\n", iface, event, eventId);
+    if (!event || !eventId)
+        return E_INVALIDARG;
+
+    *eventId = InterlockedIncrement((LONG *)&next_event_id);
+    return S_OK;
+}
+
+static HRESULT WINAPI uia_registrar_RegisterPattern(IUIAutomationRegistrar *iface,
+    const struct UIAutomationPatternInfo *pattern, PATTERNID *pPatternId,
+    PROPERTYID *pPatternAvailablePropertyId, UINT propertyIdCount,
+    PROPERTYID *pPropertyIds, UINT eventIdCount, EVENTID *pEventIds)
+{
+    static int next_pattern_id = 60000;
+    UINT i;
+
+    TRACE("(%p, %p, %p, %p, %u, %p, %u, %p)\n", iface, pattern, pPatternId,
+          pPatternAvailablePropertyId, propertyIdCount, pPropertyIds, eventIdCount, pEventIds);
+
+    if (!pattern || !pPatternId || !pPatternAvailablePropertyId)
+        return E_INVALIDARG;
+
+    *pPatternId = InterlockedIncrement((LONG *)&next_pattern_id);
+    *pPatternAvailablePropertyId = InterlockedIncrement((LONG *)&next_pattern_id);
+
+    for (i = 0; i < propertyIdCount && pPropertyIds; ++i)
+        pPropertyIds[i] = InterlockedIncrement((LONG *)&next_pattern_id);
+
+    for (i = 0; i < eventIdCount && pEventIds; ++i)
+        pEventIds[i] = InterlockedIncrement((LONG *)&next_pattern_id);
+
+    return S_OK;
+}
+
+static const IUIAutomationRegistrarVtbl uia_registrar_vtbl =
+{
+    uia_registrar_QueryInterface,
+    uia_registrar_AddRef,
+    uia_registrar_Release,
+    uia_registrar_RegisterProperty,
+    uia_registrar_RegisterEvent,
+    uia_registrar_RegisterPattern,
+};
+
+static HRESULT create_uia_registrar_iface(IUnknown **out)
+{
+    struct uia_registrar *registrar = calloc(1, sizeof(*registrar));
+    if (!registrar)
+        return E_OUTOFMEMORY;
+
+    registrar->IUIAutomationRegistrar_iface.lpVtbl = &uia_registrar_vtbl;
+    registrar->ref = 1;
+    *out = (IUnknown *)&registrar->IUIAutomationRegistrar_iface;
+    return S_OK;
+}
+
 static ULONG WINAPI uia_cf_Release(IClassFactory *iface)
 {
     struct uia_cf *cf = impl_from_IClassFactory(iface);
@@ -467,6 +587,8 @@ static HRESULT WINAPI uia_cf_CreateInstance(IClassFactory *iface, IUnknown *pout
         hr = create_uia_iface(&obj, FALSE);
     else if (IsEqualGUID(cf->clsid, &CLSID_CUIAutomation8))
         hr = create_uia_iface(&obj, TRUE);
+    else if (IsEqualGUID(cf->clsid, &CLSID_CUIAutomationRegistrar))
+        hr = create_uia_registrar_iface(&obj);
     else
         return E_NOINTERFACE;
 
@@ -520,7 +642,8 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **ppv)
 {
     TRACE("(%s, %s, %p)\n", debugstr_guid(clsid), debugstr_guid(riid), ppv);
 
-    if (IsEqualGUID(clsid, &CLSID_CUIAutomation) || IsEqualGUID(clsid, &CLSID_CUIAutomation8))
+    if (IsEqualGUID(clsid, &CLSID_CUIAutomation) || IsEqualGUID(clsid, &CLSID_CUIAutomation8) ||
+        IsEqualGUID(clsid, &CLSID_CUIAutomationRegistrar))
         return create_uia_cf(clsid, riid, ppv);
 
     return CLASS_E_CLASSNOTAVAILABLE;

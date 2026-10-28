@@ -253,9 +253,7 @@ static BOOL STDMETHODCALLTYPE dxgi_factory_IsCurrent(IWineDXGIFactory *iface)
     static BOOL once = FALSE;
 
     if (!once++)
-        FIXME("iface %p stub!\n", iface);
-    else
-        WARN("iface %p stub!\n", iface);
+        TRACE("iface %p stub!\n", iface);
 
     return TRUE;
 }
@@ -378,13 +376,69 @@ static void STDMETHODCALLTYPE dxgi_factory_UnregisterOcclusionStatus(IWineDXGIFa
     FIXME("iface %p, cookie %#lx stub!\n", iface, cookie);
 }
 
+static BOOL CALLBACK find_host_proc(HWND hwnd, LPARAM lparam)
+{
+    HWND *out = (HWND *)lparam;
+    WCHAR title[256] = {0};
+    WCHAR class_name[256] = {0};
+
+    GetClassNameW(hwnd, class_name, ARRAY_SIZE(class_name));
+    GetWindowTextW(hwnd, title, ARRAY_SIZE(title));
+
+    if (wcsstr(class_name, L"WinUIDesktopWin32WindowClass"))
+    {
+        TRACE("find_host_proc matched by class: hwnd %p, title %s, class %s\n",
+                hwnd, debugstr_w(title), debugstr_w(class_name));
+        *out = hwnd;
+        return FALSE;
+    }
+
+    if (wcsstr(title, L"WhatsApp") || wcsstr(title, L"5319275A"))
+    {
+        TRACE("find_host_proc matched by title: hwnd %p, title %s, class %s\n",
+                hwnd, debugstr_w(title), debugstr_w(class_name));
+        *out = hwnd;
+        return FALSE;
+    }
+    return TRUE;
+}
+
 static HRESULT STDMETHODCALLTYPE dxgi_factory_CreateSwapChainForComposition(IWineDXGIFactory *iface,
         IUnknown *device, const DXGI_SWAP_CHAIN_DESC1 *desc, IDXGIOutput *output, IDXGISwapChain1 **swapchain)
 {
-    FIXME("iface %p, device %p, desc %p, output %p, swapchain %p stub!\n",
+    HWND host = NULL;
+    HRESULT hr;
+    int tries;
+
+    TRACE("iface %p, device %p, desc %p, output %p, swapchain %p.\n",
             iface, device, desc, output, swapchain);
 
-    return E_NOTIMPL;
+    if (!device || !desc || !swapchain)
+        return DXGI_ERROR_INVALID_CALL;
+
+    for (tries = 0; tries < 20 && !host; tries++)
+    {
+        EnumWindows(find_host_proc, (LPARAM)&host);
+        if (!host) Sleep(50);
+    }
+
+    if (!host)
+        host = (HWND)GetPropW(GetDesktopWindow(), L"__WineDCompTarget");
+
+    if (host)
+        host = GetAncestor(host, GA_ROOT);
+
+    if (!host)
+    {
+        WARN("Host window not found, falling back to desktop window.\n");
+        host = GetDesktopWindow();
+    }
+
+    hr = dxgi_factory_CreateSwapChainForHwnd(iface, device, host, desc, NULL, output, swapchain);
+
+    TRACE("CreateSwapChainForComposition bound to host %p, returned hr %#lx, swapchain %p\n",
+            host, hr, *swapchain);
+    return hr;
 }
 
 static UINT STDMETHODCALLTYPE dxgi_factory_GetCreationFlags(IWineDXGIFactory *iface)
@@ -487,17 +541,21 @@ static HRESULT STDMETHODCALLTYPE dxgi_factory_EnumAdapterByGpuPreference(IWineDX
 static HRESULT STDMETHODCALLTYPE dxgi_factory_RegisterAdaptersChangedEvent(IWineDXGIFactory *iface,
         HANDLE event, DWORD *cookie)
 {
-    FIXME("iface %p, event %p, cookie %p stub!\n", iface, event, cookie);
+    FIXME("iface %p, event %p, cookie %p semi-stub!\n", iface, event, cookie);
 
-    return E_NOTIMPL;
+    if (!cookie)
+        return E_INVALIDARG;
+
+    *cookie = 0x1234;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE dxgi_factory_UnregisterAdaptersChangedEvent(IWineDXGIFactory *iface,
         DWORD cookie)
 {
-    FIXME("iface %p, cookie %#lx stub!\n", iface, cookie);
+    FIXME("iface %p, cookie %#lx semi-stub!\n", iface, cookie);
 
-    return E_NOTIMPL;
+    return S_OK;
 }
 
 static const struct IWineDXGIFactoryVtbl dxgi_factory_vtbl =

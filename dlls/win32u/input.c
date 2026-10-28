@@ -2959,3 +2959,4 @@ BOOL WINAPI NtUserInitializeTouchInjection( UINT max_count, UINT mode )
     FIXME( "max_count %u, mode %#x stub!\n", max_count, mode );
     return TRUE;
 }
+

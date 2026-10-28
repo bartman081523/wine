@@ -1045,40 +1045,72 @@ DEFINE_IINSPECTABLE(application_languages_statics, IApplicationLanguagesStatics,
 static HRESULT STDMETHODCALLTYPE application_languages_statics_get_PrimaryLanguageOverride(
         IApplicationLanguagesStatics *iface, HSTRING *value)
 {
-    FIXME("iface %p, value %p stub!\n", iface, value);
-    return E_NOTIMPL;
+    /* Windows returns an empty string when no language override is set.
+     * Returning E_NOTIMPL here made CsWinRT raise NotImplementedException at
+     * XAML app.xaml load, which WinUI turns into
+     * RoFailFastWithErrorContextInternal2(E_NOTIMPL) (run64). */
+    TRACE("iface %p, value %p.\n", iface, value);
+
+    if (!value)
+        return E_POINTER;
+
+    return WindowsCreateString(L"", 0, value);
 }
 
 static HRESULT STDMETHODCALLTYPE application_languages_statics_put_PrimaryLanguageOverride(
         IApplicationLanguagesStatics *iface, HSTRING value)
 {
-    FIXME("iface %p, value %s stub!\n", iface, wine_dbgstr_hstring(value));
-    return E_NOTIMPL;
+    TRACE("iface %p, value %s.\n", iface, wine_dbgstr_hstring(value));
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE application_languages_statics_get_Languages(
         IApplicationLanguagesStatics *iface, IVectorView_HSTRING **value)
 {
     WCHAR locale[LOCALE_NAME_MAX_LENGTH];
-    HSTRING hstring;
+    HSTRING hstrings[2];
+    UINT32 count = 0;
     HRESULT hr;
 
-    FIXME("iface %p, out %p stub!\n", iface, value);
+    TRACE("iface %p, out %p\n", iface, value);
 
-    if (!GetUserDefaultLocaleName(locale, LOCALE_NAME_MAX_LENGTH))
-        return E_FAIL;
+    if (!value)
+        return E_POINTER;
 
-    if (FAILED(hr = WindowsCreateString(locale, wcslen(locale), &hstring)))
+    locale[0] = 0;
+    if (!GetUserDefaultLocaleName(locale, LOCALE_NAME_MAX_LENGTH) || !locale[0])
+        wcscpy(locale, L"en-US");
+
+    if (FAILED(hr = WindowsCreateString(locale, wcslen(locale), &hstrings[count++])))
         return hr;
 
-    return hstring_vector_create(&hstring, 1, value);
+    if (_wcsicmp(locale, L"en-US") != 0 && _wcsicmp(locale, L"en") != 0)
+    {
+        if (FAILED(hr = WindowsCreateString(L"en-US", 5, &hstrings[count++])))
+        {
+            WindowsDeleteString(hstrings[0]);
+            return hr;
+        }
+    }
+
+    return hstring_vector_create(hstrings, count, value);
 }
 
 static HRESULT STDMETHODCALLTYPE application_languages_statics_get_ManifestLanguages(
         IApplicationLanguagesStatics *iface, IVectorView_HSTRING **value)
 {
-    FIXME("iface %p, value %p stub!\n", iface, value);
-    return E_NOTIMPL;
+    HSTRING hstring;
+    HRESULT hr;
+
+    TRACE("iface %p, out %p\n", iface, value);
+
+    if (!value)
+        return E_POINTER;
+
+    if (FAILED(hr = WindowsCreateString(L"en-US", 5, &hstring)))
+        return hr;
+
+    return hstring_vector_create(&hstring, 1, value);
 }
 
 static const struct IApplicationLanguagesStaticsVtbl application_languages_statics_vtbl =
@@ -1102,6 +1134,174 @@ static struct application_languages application_languages =
 {
     {&application_languages_activation_factory_vtbl},
     {&application_languages_statics_vtbl},
+    1
+};
+
+/* -------------------------------------------------------------------------
+ * Windows.Globalization.Fonts.LanguageFontGroup Implementation
+ * ------------------------------------------------------------------------- */
+static const GUID IID_ILanguageFontGroupFactory = {0xfcaeac67, 0x4e77, 0x49c7, {0xb8, 0x56, 0xdd, 0xe9, 0x34, 0xfc, 0x73, 0x5b}};
+
+struct language_font_impl
+{
+    struct { const void *lpVtbl; } ILanguageFont_iface;
+};
+
+static HRESULT WINAPI font_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = This;
+    return S_OK;
+}
+static ULONG WINAPI font_AddRef(void *This) { return 2; }
+static ULONG WINAPI font_Release(void *This) { return 1; }
+static HRESULT WINAPI font_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI font_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Globalization.Fonts.LanguageFont", 40, n); }
+static HRESULT WINAPI font_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI font_get_FontFamily(void *This, HSTRING *value) { return WindowsCreateString(L"Segoe UI", 8, value); }
+static HRESULT WINAPI font_get_FontWeight(void *This, void *value) { if (value) *(INT32 *)value = 400; return S_OK; }
+static HRESULT WINAPI font_get_FontStyle(void *This, void *value) { if (value) *(INT32 *)value = 0; return S_OK; }
+static HRESULT WINAPI font_get_FontStretch(void *This, void *value) { if (value) *(INT32 *)value = 5; return S_OK; }
+static HRESULT WINAPI font_get_ScaleFactor(void *This, DOUBLE *value) { if (value) *value = 100.0; return S_OK; }
+
+static const void *language_font_vtbl[] = {
+    (void *)font_QueryInterface,
+    (void *)font_AddRef,
+    (void *)font_Release,
+    (void *)font_GetIids,
+    (void *)font_GetRuntimeClassName,
+    (void *)font_GetTrustLevel,
+    (void *)font_get_FontFamily,
+    (void *)font_get_FontWeight,
+    (void *)font_get_FontStyle,
+    (void *)font_get_FontStretch,
+    (void *)font_get_ScaleFactor
+};
+
+static struct language_font_impl default_language_font = { {language_font_vtbl} };
+
+struct font_group_impl
+{
+    struct { const void *lpVtbl; } ILanguageFontGroup_iface;
+};
+
+static HRESULT WINAPI group_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = This;
+    return S_OK;
+}
+static ULONG WINAPI group_AddRef(void *This) { return 2; }
+static ULONG WINAPI group_Release(void *This) { return 1; }
+static HRESULT WINAPI group_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI group_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Globalization.Fonts.LanguageFontGroup", 45, n); }
+static HRESULT WINAPI group_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI group_get_Font(void *This, void **value)
+{
+    if (!value) return E_POINTER;
+    *value = &default_language_font.ILanguageFont_iface;
+    return S_OK;
+}
+
+static const void *language_font_group_vtbl[32] = {
+    (void *)group_QueryInterface,
+    (void *)group_AddRef,
+    (void *)group_Release,
+    (void *)group_GetIids,
+    (void *)group_GetRuntimeClassName,
+    (void *)group_GetTrustLevel,
+    (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font,
+    (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font,
+    (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font,
+    (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font,
+    (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font,
+    (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font, (void *)group_get_Font,
+    (void *)group_get_Font, (void *)group_get_Font
+};
+
+static struct font_group_impl default_font_group = { {language_font_group_vtbl} };
+
+struct font_group_factory_impl
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } ILanguageFontGroupFactory_iface;
+    LONG ref;
+};
+
+#define impl_from_fg_fac(ptr) ((struct font_group_factory_impl *)((char *)(ptr) - offsetof(struct font_group_factory_impl, IActivationFactory_iface)))
+#define impl_from_fg_fac_iface(ptr) ((struct font_group_factory_impl *)((char *)(ptr) - offsetof(struct font_group_factory_impl, ILanguageFontGroupFactory_iface)))
+
+static HRESULT fg_fac_QI_internal(struct font_group_factory_impl *impl, REFIID riid, void **ppvObject)
+{
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppvObject = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_ILanguageFontGroupFactory))
+    {
+        *ppvObject = &impl->ILanguageFontGroupFactory_iface;
+        return S_OK;
+    }
+
+    TRACE("fg_fac %p: unhandled QI %s\n", impl, debugstr_guid(riid));
+    return E_NOINTERFACE;
+}
+
+static HRESULT WINAPI fg_fac_QueryInterface(IActivationFactory *iface, REFIID riid, void **ppvObject) { return fg_fac_QI_internal(impl_from_fg_fac(iface), riid, ppvObject); }
+static ULONG WINAPI fg_fac_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI fg_fac_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI fg_fac_GetIids(IActivationFactory *iface, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI fg_fac_GetRuntimeClassName(IActivationFactory *iface, HSTRING *n) { return WindowsCreateString(L"Windows.Globalization.Fonts.LanguageFontGroup", 45, n); }
+static HRESULT WINAPI fg_fac_GetTrustLevel(IActivationFactory *iface, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI fg_fac_ActivateInstance(IActivationFactory *iface, IInspectable **instance)
+{
+    if (!instance) return E_POINTER;
+    *instance = (IInspectable *)&default_font_group.ILanguageFontGroup_iface;
+    return S_OK;
+}
+
+static const IActivationFactoryVtbl fg_activation_factory_vtbl = {
+    fg_fac_QueryInterface,
+    fg_fac_AddRef,
+    fg_fac_Release,
+    fg_fac_GetIids,
+    fg_fac_GetRuntimeClassName,
+    fg_fac_GetTrustLevel,
+    fg_fac_ActivateInstance
+};
+
+static HRESULT WINAPI fg_fact_QI(void *This, REFIID riid, void **ppvObject) { return fg_fac_QI_internal(impl_from_fg_fac_iface(This), riid, ppvObject); }
+static ULONG WINAPI fg_fact_AddRef(void *This) { return 2; }
+static ULONG WINAPI fg_fact_Release(void *This) { return 1; }
+static HRESULT WINAPI fg_fact_Create(void *This, HSTRING tag, void **value)
+{
+    TRACE("tag %s, value %p\n", debugstr_hstring(tag), value);
+    if (!value) return E_POINTER;
+    *value = &default_font_group.ILanguageFontGroup_iface;
+    return S_OK;
+}
+
+static const void *fg_factory_vtbl[] = {
+    (void *)fg_fact_QI,
+    (void *)fg_fact_AddRef,
+    (void *)fg_fact_Release,
+    (void *)fg_fac_GetIids,
+    (void *)fg_fac_GetRuntimeClassName,
+    (void *)fg_fac_GetTrustLevel,
+    (void *)fg_fact_Create
+};
+
+static struct font_group_factory_impl font_group_factory = {
+    {&fg_activation_factory_vtbl},
+    {fg_factory_vtbl},
     1
 };
 
@@ -1137,6 +1337,11 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, IActivationFactory **fac
     else if (!wcscmp(name, RuntimeClass_Windows_Globalization_ApplicationLanguages))
     {
         *factory = &application_languages.IActivationFactory_iface;
+        IUnknown_AddRef(*factory);
+    }
+    else if (!wcscmp(name, L"Windows.Globalization.Fonts.LanguageFontGroup"))
+    {
+        *factory = &font_group_factory.IActivationFactory_iface;
         IUnknown_AddRef(*factory);
     }
 

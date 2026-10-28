@@ -2230,7 +2230,15 @@ static void update_load_config( void *module )
         cfg->SecurityCookie > (ULONG_PTR)module &&
         cfg->SecurityCookie < (ULONG_PTR)module + nt->OptionalHeader.SizeOfImage)
     {
-        set_security_cookie( (ULONG_PTR *)cfg->SecurityCookie );
+        void *addr = (void *)cfg->SecurityCookie;
+        SIZE_T len = sizeof(ULONG_PTR);
+        ULONG old_prot;
+
+        if (!NtProtectVirtualMemory( NtCurrentProcess(), &addr, &len, PAGE_READWRITE, &old_prot ))
+        {
+            set_security_cookie( (ULONG_PTR *)cfg->SecurityCookie );
+            NtProtectVirtualMemory( NtCurrentProcess(), &addr, &len, old_prot, &old_prot );
+        }
     }
 #ifdef __arm64ec__
     if (size > offsetof( IMAGE_LOAD_CONFIG_DIRECTORY, CHPEMetadataPointer ) &&
@@ -2831,13 +2839,17 @@ static NTSTATUS open_dll_file( UNICODE_STRING *nt_name, WINE_MODREF **pwm, HANDL
     if ((*pwm = find_fullname_module( nt_name ))) return STATUS_SUCCESS;
 
     InitializeObjectAttributes( &attr, nt_name, OBJ_CASE_INSENSITIVE, 0, NULL );
+    TRACE( "open_dll_file: opening %s\n", debugstr_us(nt_name) );
     if ((status = NtOpenFile( &handle, GENERIC_READ | SYNCHRONIZE, &attr, &io,
                               FILE_SHARE_READ | FILE_SHARE_DELETE,
                               FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE )))
     {
+        BOOL exists = !NtQueryAttributesFile( &attr, &info );
+        WARN( "open_dll_file: NtOpenFile %s failed status=%lx exists=%d\n",
+              debugstr_us(nt_name), (long)status, exists );
         if (status != STATUS_OBJECT_PATH_NOT_FOUND &&
             status != STATUS_OBJECT_NAME_NOT_FOUND &&
-            !NtQueryAttributesFile( &attr, &info ))
+            exists)
         {
             /* if the file exists but failed to open, report the error */
             return status;
@@ -2876,6 +2888,8 @@ static NTSTATUS open_dll_file( UNICODE_STRING *nt_name, WINE_MODREF **pwm, HANDL
         }
     }
     NtClose( handle );
+    if (status) WARN( "open_dll_file: NtCreateSection %s failed status=%lx\n",
+                      debugstr_us(nt_name), (long)status );
     return status;
 }
 
@@ -2898,7 +2912,11 @@ static NTSTATUS open_known_dll( const WCHAR *libname, UNICODE_STRING *nt_name, W
 #endif
     RtlInitUnicodeString( &str, libname );
     InitializeObjectAttributes( &attr, &str, OBJ_CASE_INSENSITIVE, known_dlls_ntdir, NULL );
-    if ((status = NtOpenSection( mapping, MAXIMUM_ALLOWED, &attr ))) return status;
+    if ((status = NtOpenSection( mapping, MAXIMUM_ALLOWED, &attr )))
+    {
+        TRACE( "known dlls open of %s failed; status=%lx\n", debugstr_w(libname), (long)status );
+        return status;
+    }
     build_sysdir_nt_name( libname, nt_name );
     if ((*pwm = find_fullname_module( nt_name )))
     {
@@ -3376,9 +3394,14 @@ static NTSTATUS search_dll_file( LPCWSTR paths, LPCWSTR search, UNICODE_STRING *
         wcscpy( name + len, search );
 
         nt_name->Buffer = NULL;
-        if ((status = RtlDosPathNameToNtPathName_U_WithStatus( name, nt_name, NULL, NULL ))) goto done;
+        if ((status = RtlDosPathNameToNtPathName_U_WithStatus( name, nt_name, NULL, NULL )))
+        {
+            WARN( "path conv failed for %s; status=%lx\n", debugstr_w(name), (long)status );
+            goto done;
+        }
 
         status = open_dll_file( nt_name, pwm, mapping, image_info, id );
+        TRACE( "search got %s -> status %lx\n", debugstr_w(name), (long)status );
         if (status == STATUS_NOT_SUPPORTED) found_image = TRUE;
         else if (status != STATUS_DLL_NOT_FOUND) goto done;
         RtlFreeUnicodeString( nt_name );
@@ -3425,17 +3448,28 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname, UNI
     if (!contains_path( libname ))
     {
         status = find_apiset_dll( libname, &fullname );
-        if (status == STATUS_DLL_NOT_FOUND) return status;
+        if (status == STATUS_DLL_NOT_FOUND)
+        {
+            WARN( "apiset dll not found for %s\n", debugstr_w(libname) );
+            return status;
+        }
 
         if (status)
         {
             status = find_actctx_dll( libname, &fullname );
-            if (status == STATUS_SUCCESS) *redirected = TRUE;
+            if (status == STATUS_SUCCESS)
+            {
+                *redirected = TRUE;
+                WARN( "actctx redirects %s to %s\n", debugstr_w(libname), debugstr_w(fullname) );
+            }
+            else if (status != STATUS_SXS_KEY_NOT_FOUND)
+                WARN( "actctx search failed for %s; status=%lx\n", debugstr_w(libname), (long)status );
         }
 
         if (status == STATUS_SUCCESS)
         {
             TRACE ("found %s for %s\n", debugstr_w(fullname), debugstr_w(libname) );
+            WARN( "actctx/ apiset fullname used: %s (libname %s)\n", debugstr_w(fullname), debugstr_w(libname) );
 #if !defined(__arm64ec__) && !defined(__aarch64__)
             {
                 static const WCHAR ucrtbase[] = L"ucrtbase.dll";
@@ -4084,7 +4118,15 @@ fail:
     delayinfo.ThunkAddress = addr;
     delayinfo.TargetDllName = name;
     delayinfo.TargetApiDescriptor.ImportDescribedByName = !IMAGE_SNAP_BY_ORDINAL(pINT[id].u1.Ordinal);
-    delayinfo.TargetApiDescriptor.Description.Ordinal = LOWORD(pINT[id].u1.Ordinal);
+    if (delayinfo.TargetApiDescriptor.ImportDescribedByName)
+    {
+        const IMAGE_IMPORT_BY_NAME* iibn = get_rva(base, pINT[id].u1.AddressOfData);
+        delayinfo.TargetApiDescriptor.Description.Name = (const char*)iibn->Name;
+    }
+    else
+    {
+        delayinfo.TargetApiDescriptor.Description.Ordinal = LOWORD(pINT[id].u1.Ordinal);
+    }
     delayinfo.TargetModuleBase = *phmod;
     delayinfo.Unused = NULL;
     delayinfo.LastError = nts;
@@ -4127,6 +4169,13 @@ void WINAPI LdrShutdownProcess(void)
  */
 void WINAPI RtlExitUserProcess( DWORD status )
 {
+    void *stack[16];
+    WORD c = RtlCaptureStackBackTrace( 0, 16, stack, NULL );
+    WORD j;
+    ERR( "RtlExitUserProcess called with status %lu (0x%lx), backtrace:\n", (unsigned long)status, (unsigned long)status );
+    for (j = 0; j < c; j++)
+        ERR( "  exit_frame[%02u]: %p\n", j, stack[j] );
+
     RtlEnterCriticalSection( &loader_section );
     RtlAcquirePebLock();
     NtTerminateProcess( 0, status );

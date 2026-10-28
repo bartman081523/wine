@@ -24,23 +24,38 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(appx);
 
-HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID riid, void **out )
-{
-    FIXME( "clsid %s, riid %s, out %p stub!\n", debugstr_guid(clsid), debugstr_guid(riid), out );
-    return CLASS_E_CLASSNOTAVAILABLE;
+HRESULT __stdcall __wine_register_resources(void);
+HRESULT __stdcall __wine_unregister_resources(void);
+
+HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out) {
+  FIXME("clsid %s, riid %s, out %p stub!\n", debugstr_guid(clsid),
+        debugstr_guid(riid), out);
+  return CLASS_E_CLASSNOTAVAILABLE;
 }
 
-HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **factory )
-{
-    const WCHAR *buffer = WindowsGetStringRawBuffer( classid, NULL );
+HRESULT WINAPI DllGetActivationFactory(HSTRING classid,
+                                       IActivationFactory **factory) {
+  const WCHAR *buffer = WindowsGetStringRawBuffer(classid, NULL);
 
-    TRACE( "class %s, factory %p.\n", debugstr_hstring(classid), factory );
+  TRACE("class %s, factory %p.\n", debugstr_hstring(classid), factory);
+  ERR("AppxDeploymentClient: DllGetActivationFactory called for %s\n",
+      debugstr_hstring(classid));
 
-    *factory = NULL;
+  *factory = NULL;
 
-    if (!wcscmp( buffer, RuntimeClass_Windows_Management_Deployment_PackageManager ))
-        IActivationFactory_QueryInterface( package_manager_factory, &IID_IActivationFactory, (void **)factory );
+  if (!wcscmp(buffer,
+              RuntimeClass_Windows_Management_Deployment_PackageManager))
+    IActivationFactory_QueryInterface(
+        package_manager_factory, &IID_IActivationFactory, (void **)factory);
 
-    if (*factory) return S_OK;
-    return CLASS_E_CLASSNOTAVAILABLE;
+  if (*factory)
+    return S_OK;
+  return CLASS_E_CLASSNOTAVAILABLE;
 }
+
+HRESULT WINAPI DllRegisterServer(void) {
+  /* FIXME: __wine_register_resources() missing in 32-bit? */
+  return S_OK;
+}
+
+HRESULT WINAPI DllUnregisterServer(void) { return S_OK; }

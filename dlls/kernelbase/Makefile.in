@@ -8,6 +8,9 @@ i386_EXTRADLLFLAGS = -Wl,--image-base,0x7b000000
 x86_64_EXTRADLLFLAGS = -Wl,--image-base,0x174000000
 
 SOURCES = \
+	appmodel_alpc.c \
+	appmodel_fake.c \
+	appmodel_registry.c \
 	console.c \
 	debug.c \
 	file.c \

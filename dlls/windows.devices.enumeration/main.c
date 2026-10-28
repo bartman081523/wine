@@ -778,6 +778,28 @@ static HRESULT find_all_async( IUnknown *invoker, IUnknown *param, PROPVARIANT *
     return hr;
 }
 
+static const WCHAR *get_aqs_filter_from_device_class( DeviceClass device_class )
+{
+    switch (device_class)
+    {
+    case DeviceClass_AudioCapture:
+        return L"System.Devices.InterfaceClassGuid:=\"{2eef81be-33fa-4800-9670-1cd474972c3f}\" AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
+    case DeviceClass_AudioRender:
+        return L"System.Devices.InterfaceClassGuid:=\"{e6327cad-dcec-4949-ae8a-991e976a79d2}\" AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
+    case DeviceClass_PortableStorageDevice:
+        return L"System.Devices.InterfaceClassGuid:=\"{6ac27878-a6fa-4155-ba85-f98f491d4f33}\" AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
+    case DeviceClass_VideoCapture:
+        return L"System.Devices.InterfaceClassGuid:=\"{e5323777-f976-4f5b-9b55-b94699c46e44}\" AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
+    case DeviceClass_ImageScanner:
+        return L"System.Devices.InterfaceClassGuid:=\"{bba83e54-4928-444f-8017-f40f0653695e}\" AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
+    case DeviceClass_Location:
+        return L"System.Devices.InterfaceClassGuid:=\"{51206379-4056-4de6-9783-8802f6259f7b}\" AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
+    case DeviceClass_All:
+    default:
+        return L"";
+    }
+}
+
 static HRESULT WINAPI device_statics_FindAllAsync( IDeviceInformationStatics *iface,
                                                    IAsyncOperation_DeviceInformationCollection **op )
 {
@@ -788,8 +810,15 @@ static HRESULT WINAPI device_statics_FindAllAsync( IDeviceInformationStatics *if
 static HRESULT WINAPI device_statics_FindAllAsyncDeviceClass( IDeviceInformationStatics *iface, DeviceClass class,
                                                               IAsyncOperation_DeviceInformationCollection **op )
 {
-    FIXME( "iface %p, class %d, op %p stub!\n", iface, class, op );
-    return E_NOTIMPL;
+    const WCHAR *str = get_aqs_filter_from_device_class( class );
+    HSTRING filter = NULL;
+    HRESULT hr;
+
+    TRACE( "iface %p, class %d, op %p\n", iface, class, op );
+    if (str && *str) WindowsCreateString( str, wcslen(str), &filter );
+    hr = IDeviceInformationStatics_FindAllAsyncAqsFilterAndAdditionalProperties( iface, filter, NULL, op );
+    if (filter) WindowsDeleteString( filter );
+    return hr;
 }
 
 static HRESULT WINAPI device_statics_FindAllAsyncAqsFilter( IDeviceInformationStatics *iface, HSTRING filter,
@@ -839,8 +868,15 @@ static HRESULT WINAPI device_statics_CreateWatcher( IDeviceInformationStatics *i
 
 static HRESULT WINAPI device_statics_CreateWatcherDeviceClass( IDeviceInformationStatics *iface, DeviceClass class, IDeviceWatcher **watcher )
 {
-    FIXME( "iface %p, class %d, watcher %p stub!\n", iface, class, watcher );
-    return E_NOTIMPL;
+    const WCHAR *str = get_aqs_filter_from_device_class( class );
+    HSTRING filter = NULL;
+    HRESULT hr;
+
+    TRACE( "iface %p, class %d, watcher %p\n", iface, class, watcher );
+    if (str && *str) WindowsCreateString( str, wcslen(str), &filter );
+    hr = device_watcher_create( filter, NULL, DeviceInformationKind_DeviceInterface, watcher );
+    if (filter) WindowsDeleteString( filter );
+    return hr;
 }
 
 static HRESULT WINAPI device_statics_CreateWatcherAqsFilter( IDeviceInformationStatics *iface, HSTRING filter, IDeviceWatcher **watcher )
@@ -883,8 +919,11 @@ DEFINE_IINSPECTABLE( device_statics2, IDeviceInformationStatics2, struct device_
 static HRESULT WINAPI device_statics2_GetAqsFilterFromDeviceClass( IDeviceInformationStatics2 *iface, DeviceClass device_class,
                                                                    HSTRING *filter )
 {
-    FIXME( "iface %p, device_class %u, filter %p stub!\n", iface, device_class, filter );
-    return E_NOTIMPL;
+    const WCHAR *str = get_aqs_filter_from_device_class( device_class );
+
+    TRACE( "iface %p, device_class %u, filter %p\n", iface, device_class, filter );
+    if (!filter) return E_INVALIDARG;
+    return WindowsCreateString( str, wcslen(str), filter );
 }
 
 static HRESULT WINAPI device_statics2_CreateFromIdAsync( IDeviceInformationStatics2 *iface, HSTRING device_id,

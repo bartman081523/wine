@@ -45,9 +45,14 @@ HRESULT async_operation_buffer_uint32_create( IUnknown *invoker, IUnknown *param
         IAsyncOperationWithProgress_IBuffer_UINT32 **out );
 HRESULT async_operation_uint32_uint32_create( IUnknown *invoker, IUnknown *param, async_operation_callback callback,
         IAsyncOperationWithProgress_UINT32_UINT32 **out );
+HRESULT async_operation_boolean_create( IUnknown *invoker, IUnknown *param, async_operation_callback callback,
+        IAsyncOperation_boolean **out );
 
 extern IActivationFactory *random_access_stream_reference_factory;
 extern IActivationFactory *memory_stream_activation_factory;
+extern IActivationFactory *storage_file_factory;
+
+HRESULT memory_stream_from_file( const WCHAR *path, const WCHAR *content_type, IRandomAccessStream **out );
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

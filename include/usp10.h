@@ -308,6 +308,10 @@ HRESULT WINAPI ScriptTextOut(const HDC hdc, SCRIPT_CACHE *psc, int x, int y, UIN
 const int* WINAPI ScriptString_pcOutChars(SCRIPT_STRING_ANALYSIS ssa);
 const SCRIPT_LOGATTR* WINAPI ScriptString_pLogAttr(SCRIPT_STRING_ANALYSIS ssa);
 const SIZE* WINAPI ScriptString_pSize(SCRIPT_STRING_ANALYSIS ssa);
+HRESULT WINAPI ScriptSubstituteSingleGlyph(HDC hdc, SCRIPT_CACHE *psc, SCRIPT_ANALYSIS *psa,
+                                           OPENTYPE_TAG tagScript, OPENTYPE_TAG tagLangSys,
+                                           OPENTYPE_TAG tagFeature, LONG lParameter,
+                                           WORD wGlyphIn, WORD *pwGlyphOut);
 
 #ifdef __cplusplus
 } /* extern "C" */

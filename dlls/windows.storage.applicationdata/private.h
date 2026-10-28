@@ -28,6 +28,7 @@
 #include "winstring.h"
 
 #include "activation.h"
+#include "roapi.h"
 
 #define WIDL_using_Windows_Foundation
 #define WIDL_using_Windows_Foundation_Collections
@@ -36,6 +37,24 @@
 #include "windows.storage.h"
 
 extern IActivationFactory *application_data_factory;
+extern IActivationFactory *app_data_manager_factory;
+
+typedef struct IApplicationDataManagerStatics IApplicationDataManagerStatics;
+typedef struct IApplicationDataManagerStaticsVtbl
+{
+    HRESULT (WINAPI *QueryInterface)(IApplicationDataManagerStatics *This, REFIID riid, void **ppvObject);
+    ULONG (WINAPI *AddRef)(IApplicationDataManagerStatics *This);
+    ULONG (WINAPI *Release)(IApplicationDataManagerStatics *This);
+    HRESULT (WINAPI *GetIids)(IApplicationDataManagerStatics *This, ULONG *iidCount, IID **iids);
+    HRESULT (WINAPI *GetRuntimeClassName)(IApplicationDataManagerStatics *This, HSTRING *className);
+    HRESULT (WINAPI *GetTrustLevel)(IApplicationDataManagerStatics *This, TrustLevel *trustLevel);
+    HRESULT (WINAPI *CreateForPackageFamily)(IApplicationDataManagerStatics *This, HSTRING packageFamilyName, IApplicationData **result);
+} IApplicationDataManagerStaticsVtbl;
+
+struct IApplicationDataManagerStatics
+{
+    const IApplicationDataManagerStaticsVtbl *lpVtbl;
+};
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

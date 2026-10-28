@@ -899,6 +899,18 @@ BOOL WINAPI DECLSPEC_HOTPATCH CreateProcessInternalW( HANDLE token, const WCHAR 
                         machine = *(USHORT *)attrs->attrs[i].value;
                         TRACE( "PROC_THREAD_ATTRIBUTE_MACHINE %x.\n", machine );
                         break;
+                    case PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY:
+                        TRACE( "PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY %lx.\n", *(DWORD *)attrs->attrs[i].value );
+                        break;
+                    case PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY:
+                        TRACE( "PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY %lx.\n", *(DWORD *)attrs->attrs[i].value );
+                        break;
+                    case PROC_THREAD_ATTRIBUTE_WIN32K_FILTER:
+                        TRACE( "PROC_THREAD_ATTRIBUTE_WIN32K_FILTER %lx.\n", *(DWORD *)attrs->attrs[i].value );
+                        break;
+                    case PROC_THREAD_ATTRIBUTE_PROTECTION_LEVEL:
+                        TRACE( "PROC_THREAD_ATTRIBUTE_PROTECTION_LEVEL %lx.\n", *(DWORD *)attrs->attrs[i].value );
+                        break;
                     default:
                         FIXME("Unsupported attribute %#Ix.\n", attrs->attrs[i].attr);
                         break;
@@ -2152,6 +2164,12 @@ static inline DWORD validate_proc_thread_attribute( DWORD_PTR attr, SIZE_T size 
         break;
     case PROC_THREAD_ATTRIBUTE_GROUP_AFFINITY:
         if (size != sizeof(GROUP_AFFINITY)) return ERROR_BAD_LENGTH;
+        break;
+    case PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY:
+    case PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY:
+    case PROC_THREAD_ATTRIBUTE_WIN32K_FILTER:
+    case PROC_THREAD_ATTRIBUTE_PROTECTION_LEVEL:
+        if (size != sizeof(DWORD) && size != sizeof(DWORD64)) return ERROR_BAD_LENGTH;
         break;
     default:
         FIXME( "Unhandled attribute %Iu\n", attr & PROC_THREAD_ATTRIBUTE_NUMBER );

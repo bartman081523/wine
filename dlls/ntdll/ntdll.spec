@@ -202,6 +202,19 @@
 @ stdcall -syscall NtCreateTimer(ptr long ptr long)
 @ stdcall -syscall NtCreateToken(ptr long ptr long ptr ptr ptr ptr ptr ptr ptr ptr ptr)
 @ stdcall -syscall NtCreateTransaction(ptr long ptr ptr long long long long ptr ptr)
+@ stdcall NtCreateWaitCompletionPacket(ptr long ptr) kernelbase.NtCreateWaitCompletionPacket
+@ stdcall NtAssociateWaitCompletionPacket(ptr ptr ptr ptr ptr long long ptr) kernelbase.NtAssociateWaitCompletionPacket
+@ stdcall NtCancelWaitCompletionPacket(ptr long) kernelbase.NtCancelWaitCompletionPacket
+# ALPC port facade, implemented by kernelbase's appmodel_alpc.c
+@ stdcall NtAlpcCreatePort(ptr ptr ptr) kernelbase.NtAlpcCreatePort
+@ stdcall NtAlpcAcceptConnectPort(ptr ptr long ptr ptr ptr ptr ptr long) kernelbase.NtAlpcAcceptConnectPort
+@ stdcall NtAlpcConnectPort(ptr ptr ptr ptr long ptr ptr ptr ptr ptr ptr) kernelbase.NtAlpcConnectPort
+@ stdcall NtAlpcDisconnectPort(ptr long) kernelbase.NtAlpcDisconnectPort
+@ stdcall NtAlpcQueryInformation(ptr long ptr long ptr) kernelbase.NtAlpcQueryInformation
+@ stdcall NtAlpcSendWaitReceivePort(ptr long ptr ptr ptr ptr ptr ptr) kernelbase.NtAlpcSendWaitReceivePort
+@ stdcall NtAlpcImpersonateClientOfPort(ptr ptr ptr) kernelbase.NtAlpcImpersonateClientOfPort
+@ stdcall AlpcInitializeMessageAttribute(long ptr long ptr) kernelbase.AlpcInitializeMessageAttribute
+@ stdcall AlpcGetMessageAttribute(ptr long) kernelbase.AlpcGetMessageAttribute
 @ stdcall -syscall NtCreateUserProcess(ptr ptr long long ptr ptr long long ptr ptr ptr)
 # @ stub NtCreateWaitablePort
 @ stdcall -arch=i386 NtCurrentTeb()
@@ -345,6 +358,7 @@
 @ stdcall -syscall=0x0017 NtQueryValueKey(long ptr long ptr long ptr)
 @ stdcall -syscall=0x0023 NtQueryVirtualMemory(long ptr long ptr long ptr)
 @ stdcall -syscall=0x0049 NtQueryVolumeInformationFile(long ptr ptr long long)
+@ stdcall NtQueryWnfStateData(ptr ptr ptr ptr ptr ptr)
 @ stdcall -syscall=0x0045 NtQueueApcThread(long ptr long long long)
 @ stdcall -syscall NtQueueApcThreadEx(long long ptr long long long)
 @ stdcall -syscall NtQueueApcThreadEx2(long long long ptr long long long)
@@ -638,6 +652,7 @@
 @ stdcall RtlDestroyProcessParameters(ptr)
 @ stdcall RtlDestroyQueryDebugBuffer(ptr)
 @ stdcall RtlDetermineDosPathNameType_U(wstr)
+@ stdcall RtlDisownModuleHeapAllocation(ptr ptr)
 @ stdcall RtlDllShutdownInProgress()
 # @ stub RtlDnsHostNameToComputerName
 @ stdcall RtlDoesFileExists_U(wstr)
@@ -732,6 +747,7 @@
 @ stub RtlGenerate8dot3Name
 @ stdcall RtlGetAce(ptr long ptr)
 @ stdcall RtlGetActiveActivationContext(ptr)
+@ stdcall RtlGetAppContainerNamedObjectPath(ptr ptr long ptr)
 @ stdcall RtlGetCallersAddress(ptr ptr)
 @ stdcall RtlGetCompressionWorkSpaceSize(long ptr ptr)
 @ stdcall RtlGetControlSecurityDescriptor(ptr ptr ptr)
@@ -1053,6 +1069,8 @@
 @ stdcall RtlStringFromGUID(ptr ptr)
 @ stdcall RtlSubAuthorityCountSid(ptr)
 @ stdcall RtlSubAuthoritySid(ptr long)
+@ stdcall RtlSubscribeWnfStateChangeNotification(ptr int64 long ptr ptr ptr long long)
+@ stdcall RtlUnsubscribeWnfStateChangeNotification(ptr)
 @ stdcall RtlSubtreePredecessor(ptr)
 @ stdcall RtlSubtreeSuccessor(ptr)
 @ stdcall RtlSystemTimeToLocalTime(ptr ptr)
@@ -1418,6 +1436,7 @@
 @ stdcall -private ZwQueryValueKey(long ptr long ptr long ptr) NtQueryValueKey
 @ stdcall -private ZwQueryVirtualMemory(long ptr long ptr long ptr) NtQueryVirtualMemory
 @ stdcall -private ZwQueryVolumeInformationFile(long ptr ptr long long) NtQueryVolumeInformationFile
+@ stdcall -private ZwQueryWnfStateData(ptr ptr ptr ptr ptr ptr) NtQueryWnfStateData
 @ stdcall -private ZwQueueApcThread(long ptr long long long) NtQueueApcThread
 @ stdcall -private ZwQueueApcThreadEx(long long ptr long long long) NtQueueApcThreadEx
 @ stdcall -private ZwQueueApcThreadEx2(long long long ptr long long long) NtQueueApcThreadEx2

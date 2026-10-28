@@ -34,10 +34,21 @@ import "windows.ui.core.idl";
 import "windows.ui.input.idl";
 import "windows.ui.windowmanagement.idl";
 import "windows.ui.viewmanagement.idl";
+import "windows.ui.notifications.idl";
 
 namespace Windows.UI.ViewManagement {
     runtimeclass AccessibilitySettings;
     runtimeclass UISettings;
     runtimeclass UIViewSettings;
     runtimeclass InputPane;
+}
+
+namespace Windows.UI.Core {
+    runtimeclass CoreWindow;
+}
+
+namespace Windows.UI.Notifications {
+    runtimeclass BadgeUpdateManager;
+    runtimeclass ToastNotificationManager;
+    runtimeclass TileUpdateManager;
 }

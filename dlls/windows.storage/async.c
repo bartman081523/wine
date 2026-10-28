@@ -540,3 +540,144 @@ DEFINE_IASYNCOPERATIONWITHPROGRESS( IAsyncOperationWithProgress_UINT32_UINT32, \
         IAsyncOperationProgressHandler_UINT32_UINT32, \
         IAsyncOperationWithProgressCompletedHandler_UINT32_UINT32, \
         "UInt32,UInt32", async_uint32_uint32, UINT32, VT_UI4, ulVal, async_operation_uint32_uint32_create )
+
+struct async_bool
+{
+    IAsyncOperation_boolean IAsyncOperation_boolean_iface;
+    IAsyncInfoImpl *IAsyncInfoImpl_inner;
+    LONG ref;
+};
+
+static inline struct async_bool *impl_from_IAsyncOperation_boolean( IAsyncOperation_boolean *iface )
+{
+    return CONTAINING_RECORD( iface, struct async_bool, IAsyncOperation_boolean_iface );
+}
+
+static HRESULT WINAPI async_bool_QueryInterface( IAsyncOperation_boolean *iface, REFIID iid, void **out )
+{
+    struct async_bool *impl = impl_from_IAsyncOperation_boolean( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) ||
+        IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
+        IsEqualGUID( iid, &IID_IAsyncOperation_boolean ))
+    {
+        IInspectable_AddRef( (*out = &impl->IAsyncOperation_boolean_iface) );
+        return S_OK;
+    }
+
+    return IAsyncInfoImpl_QueryInterface( impl->IAsyncInfoImpl_inner, iid, out );
+}
+
+static ULONG WINAPI async_bool_AddRef( IAsyncOperation_boolean *iface )
+{
+    struct async_bool *impl = impl_from_IAsyncOperation_boolean( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI async_bool_Release( IAsyncOperation_boolean *iface )
+{
+    struct async_bool *impl = impl_from_IAsyncOperation_boolean( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+    TRACE( "iface %p, ref %lu.\n", iface, ref );
+
+    if (!ref)
+    {
+        InterlockedIncrement( &impl->ref );
+        IAsyncInfoImpl_Release( impl->IAsyncInfoImpl_inner );
+        free( impl );
+    }
+
+    return ref;
+}
+
+static HRESULT WINAPI async_bool_GetIids( IAsyncOperation_boolean *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_bool_GetRuntimeClassName( IAsyncOperation_boolean *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.Foundation.IAsyncOperation`1<Boolean>",
+                                ARRAY_SIZE(L"Windows.Foundation.IAsyncOperation`1<Boolean>"),
+                                class_name );
+}
+
+static HRESULT WINAPI async_bool_GetTrustLevel( IAsyncOperation_boolean *iface, TrustLevel *trust_level )
+{
+    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_bool_put_Completed( IAsyncOperation_boolean *iface, IAsyncOperationCompletedHandler_boolean *bool_handler )
+{
+    IAsyncOperationCompletedHandlerImpl *handler = (IAsyncOperationCompletedHandlerImpl *)bool_handler;
+    struct async_bool *impl = impl_from_IAsyncOperation_boolean( iface );
+    TRACE( "iface %p, handler %p.\n", iface, handler );
+    return IAsyncInfoImpl_put_Completed( impl->IAsyncInfoImpl_inner, handler );
+}
+
+static HRESULT WINAPI async_bool_get_Completed( IAsyncOperation_boolean *iface, IAsyncOperationCompletedHandler_boolean **bool_handler )
+{
+    IAsyncOperationCompletedHandlerImpl **handler = (IAsyncOperationCompletedHandlerImpl **)bool_handler;
+    struct async_bool *impl = impl_from_IAsyncOperation_boolean( iface );
+    TRACE( "iface %p, handler %p.\n", iface, handler );
+    return IAsyncInfoImpl_get_Completed( impl->IAsyncInfoImpl_inner, handler );
+}
+
+static HRESULT WINAPI async_bool_GetResults( IAsyncOperation_boolean *iface, BOOLEAN *results )
+{
+    struct async_bool *impl = impl_from_IAsyncOperation_boolean( iface );
+    PROPVARIANT result = {.vt = VT_BOOL};
+    HRESULT hr;
+
+    TRACE( "iface %p, results %p.\n", iface, results );
+
+    hr = IAsyncInfoImpl_get_Result( impl->IAsyncInfoImpl_inner, &result );
+
+    *results = result.boolVal;
+    PropVariantClear( &result );
+    return hr;
+}
+
+static const struct IAsyncOperation_booleanVtbl async_bool_vtbl =
+{
+    async_bool_QueryInterface,
+    async_bool_AddRef,
+    async_bool_Release,
+    async_bool_GetIids,
+    async_bool_GetRuntimeClassName,
+    async_bool_GetTrustLevel,
+    async_bool_put_Completed,
+    async_bool_get_Completed,
+    async_bool_GetResults,
+};
+
+HRESULT async_operation_boolean_create( IUnknown *invoker, IUnknown *param, async_operation_callback callback,
+                                        IAsyncOperation_boolean **out )
+{
+    struct async_bool *impl;
+    HRESULT hr;
+
+    *out = NULL;
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+    impl->IAsyncOperation_boolean_iface.lpVtbl = &async_bool_vtbl;
+    impl->ref = 1;
+
+    if (FAILED(hr = async_info_create( invoker, param, callback, (IInspectable *)&impl->IAsyncOperation_boolean_iface, &impl->IAsyncInfoImpl_inner )) ||
+        FAILED(hr = IAsyncInfoImpl_Start( impl->IAsyncInfoImpl_inner )))
+    {
+        if (impl->IAsyncInfoImpl_inner) IAsyncInfoImpl_Release( impl->IAsyncInfoImpl_inner );
+        free( impl );
+        return hr;
+    }
+
+    *out = &impl->IAsyncOperation_boolean_iface;
+    TRACE( "created IAsyncOperation_boolean %p\n", *out );
+    return S_OK;
+}

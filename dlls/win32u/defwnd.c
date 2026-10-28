@@ -2642,9 +2642,20 @@ LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam, 
     case WM_ERASEBKGND:
     case WM_ICONERASEBKGND:
         {
+            static const WCHAR winuiW[] = {'W','i','n','U','I','D','e','s','k','t','o','p','W','i','n','3','2','W','i','n','d','o','w','C','l','a','s','s'};
+            WCHAR class_name[64];
+            UNICODE_STRING str;
             RECT rect;
             HDC hdc = (HDC)wparam;
-            HBRUSH hbr = UlongToHandle( get_class_long( hwnd, GCLP_HBRBACKGROUND, FALSE ));
+            HBRUSH hbr;
+
+            str.Buffer = class_name;
+            str.Length = 0;
+            str.MaximumLength = sizeof(class_name);
+            if (NtUserGetClassName( hwnd, FALSE, &str ) && !wcsnicmp( class_name, winuiW, ARRAY_SIZE(winuiW) ))
+                return 1;
+
+            hbr = UlongToHandle( get_class_long( hwnd, GCLP_HBRBACKGROUND, FALSE ));
             if (!hbr) break;
 
             if (get_class_long( hwnd, GCL_STYLE, FALSE ) & CS_PARENTDC)

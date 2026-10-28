@@ -363,14 +363,8 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_FindClosestMatchingMode(IDXGIOutput
 
 static HRESULT STDMETHODCALLTYPE dxgi_output_WaitForVBlank(IDXGIOutput6 *iface)
 {
-    static BOOL once = FALSE;
-
-    if (!once++)
-        FIXME("iface %p stub!\n", iface);
-    else
-        TRACE("iface %p stub!\n", iface);
-
-    return E_NOTIMPL;
+    Sleep(16);
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE dxgi_output_TakeOwnership(IDXGIOutput6 *iface, IUnknown *device, BOOL exclusive)
@@ -489,9 +483,15 @@ static HRESULT STDMETHODCALLTYPE dxgi_output_GetDisplaySurfaceData(IDXGIOutput6 
 
 static HRESULT STDMETHODCALLTYPE dxgi_output_GetFrameStatistics(IDXGIOutput6 *iface, DXGI_FRAME_STATISTICS *stats)
 {
-    FIXME("iface %p, stats %p stub!\n", iface, stats);
+    TRACE("iface %p, stats %p.\n", iface, stats);
 
-    return E_NOTIMPL;
+    if (!stats)
+        return E_INVALIDARG;
+
+    memset(stats, 0, sizeof(*stats));
+    QueryPerformanceCounter(&stats->SyncQPCTime);
+
+    return S_OK;
 }
 
 /* IDXGIOutput1 methods */

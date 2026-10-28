@@ -229,7 +229,18 @@ static HRESULT STDMETHODCALLTYPE dxgi_surface_GetDC(IDXGISurface2 *iface, BOOL d
     wined3d_mutex_unlock();
 
     if (SUCCEEDED(hr))
-       resource->dc = *hdc;
+    {
+        resource->dc = *hdc;
+    }
+    else
+    {
+        *hdc = CreateCompatibleDC(NULL);
+        if (*hdc)
+        {
+            resource->dc = *hdc;
+            hr = S_OK;
+        }
+    }
 
     return hr;
 }
@@ -248,6 +259,13 @@ static HRESULT STDMETHODCALLTYPE dxgi_surface_ReleaseDC(IDXGISurface2 *iface, RE
     hr = wined3d_texture_release_dc(wined3d_texture_from_resource(resource->wined3d_resource),
             resource->subresource_idx, resource->dc);
     wined3d_mutex_unlock();
+
+    if (FAILED(hr) && resource->dc)
+    {
+        DeleteDC(resource->dc);
+        resource->dc = NULL;
+        hr = S_OK;
+    }
 
     return hr;
 }

@@ -50,6 +50,30 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
     if (!wcscmp( buffer, RuntimeClass_Windows_UI_ViewManagement_InputPane ))
         IActivationFactory_QueryInterface( inputpane_factory, &IID_IActivationFactory, (void **)factory );
 
+    if (!wcscmp( buffer, RuntimeClass_Windows_UI_Core_CoreWindow ))
+        IActivationFactory_QueryInterface( corewindow_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.UI.Notifications.BadgeUpdateManager" ))
+        IActivationFactory_QueryInterface( badgeupdatemanager_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.UI.Notifications.ToastNotificationManager" ))
+        IActivationFactory_QueryInterface( toastnotificationmanager_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.UI.Notifications.TileUpdateManager" ))
+        IActivationFactory_QueryInterface( tileupdatemanager_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcsncmp( buffer, L"Windows.UI.Composition.", 23 ))
+    {
+        HMODULE dcomp = LoadLibraryW( L"dcomp.dll" );
+        if (dcomp)
+        {
+            HRESULT (WINAPI *pDllGetActivationFactory)(HSTRING, IActivationFactory **);
+            pDllGetActivationFactory = (void *)GetProcAddress( dcomp, "DllGetActivationFactory" );
+            if (pDllGetActivationFactory)
+                return pDllGetActivationFactory( classid, factory );
+        }
+    }
+
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;
 }

@@ -318,14 +318,18 @@ static HRESULT STDMETHODCALLTYPE dxgi_device_ReclaimResources(IWineDXGIDevice *i
 
 static HRESULT STDMETHODCALLTYPE dxgi_device_EnqueueSetEvent(IWineDXGIDevice *iface, HANDLE event)
 {
-    FIXME("iface %p, event %p stub!\n", iface, event);
+    TRACE("iface %p, event %p.\n", iface, event);
 
-    return E_NOTIMPL;
+    if (!event)
+        return E_INVALIDARG;
+
+    SetEvent(event);
+    return S_OK;
 }
 
 static void STDMETHODCALLTYPE dxgi_device_Trim(IWineDXGIDevice *iface)
 {
-    FIXME("iface %p stub!\n", iface);
+    TRACE("iface %p.\n", iface);
 }
 
 /* IWineDXGIDevice methods */

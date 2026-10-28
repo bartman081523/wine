@@ -1,9 +1,10 @@
 MODULE  = windows.storage.dll
-IMPORTS = shell32 combase
+IMPORTS = shell32 combase kernelbase
 
 SOURCES = \
 	async.c \
 	async_private.idl \
 	classes.idl \
+	file.c \
 	main.c \
 	streams.c

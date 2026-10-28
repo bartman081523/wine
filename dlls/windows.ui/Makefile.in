@@ -4,8 +4,10 @@ IMPORTS = combase advapi32 user32
 SOURCES = \
 	accessibilitysettings.c \
 	classes.idl \
+	corewindow.c \
 	inputpane.c \
 	main.c \
+	notifications.c \
 	uisettings.c \
 	uiviewsettings.c \
 	weakref.c

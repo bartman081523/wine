@@ -1506,3 +1506,55 @@ done:
     }
     return ret;
 }
+
+/******************************************************************
+ *              RtlSubscribeWnfStateChangeNotification (NTDLL.@)
+ */
+NTSTATUS WINAPI RtlSubscribeWnfStateChangeNotification( void **subscription_out,
+                                                        ULONGLONG state_name,
+                                                        ULONG change_stamp,
+                                                        void *callback,
+                                                        void *context,
+                                                        void *type_id,
+                                                        ULONG serialization_group,
+                                                        ULONG flags )
+{
+    static volatile LONG dummy_sub_id = 0;
+    ULONG id;
+
+    TRACE( "(%p, %s, %lx, %p, %p, %p, %lx, %lx)\n",
+           subscription_out, wine_dbgstr_longlong(state_name), (unsigned long)change_stamp,
+           callback, context, type_id, (unsigned long)serialization_group, (unsigned long)flags );
+
+    if (!subscription_out)
+        return STATUS_INVALID_PARAMETER;
+
+    id = (ULONG)InterlockedIncrement( &dummy_sub_id );
+    *subscription_out = (void *)(ULONG_PTR)(0x10000000 | id);
+    return STATUS_SUCCESS;
+}
+
+/******************************************************************
+ *              RtlUnsubscribeWnfStateChangeNotification (NTDLL.@)
+ */
+NTSTATUS WINAPI RtlUnsubscribeWnfStateChangeNotification( void *subscription )
+{
+    TRACE( "(%p)\n", subscription );
+    return STATUS_SUCCESS;
+}
+
+/******************************************************************
+ *              NtQueryWnfStateData (NTDLL.@)
+ */
+NTSTATUS WINAPI NtQueryWnfStateData( const ULONGLONG *state_name, const void *type_id,
+                                     const void *explicit_scope, ULONG *change_stamp,
+                                     void *buffer, ULONG *buffer_size )
+{
+    TRACE( "(%p, %p, %p, %p, %p, %p)\n",
+           state_name, type_id, explicit_scope, change_stamp, buffer, buffer_size );
+    if (change_stamp)
+        *change_stamp = 1;
+    if (buffer_size)
+        *buffer_size = 0;
+    return STATUS_SUCCESS;
+}

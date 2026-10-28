@@ -555,6 +555,8 @@ static unsigned long get_mwm_decorations_for_style( DWORD style, DWORD ex_style 
  */
 static unsigned long get_mwm_decorations( struct x11drv_win_data *data, DWORD style, DWORD ex_style )
 {
+    /* Always honor window decorations for captioned windows */
+    if ((style & WS_CAPTION) == WS_CAPTION) return get_mwm_decorations_for_style( style, ex_style );
     if (EqualRect( &data->rects.window, &data->rects.visible )) return 0;
     return get_mwm_decorations_for_style( style, ex_style );
 }

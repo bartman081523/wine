@@ -1837,3 +1837,36 @@ WORD WINAPI TileChildWindows( HWND parent, UINT flags )
 {
     return TileWindows( parent, flags, NULL, 0, NULL );
 }
+
+/**********************************************************************
+ *              IsShellFrameWindow (USER32.2573)
+ */
+BOOL WINAPI IsShellFrameWindow( HWND hwnd )
+{
+    TRACE( "(%p)\n", hwnd );
+    return FALSE;
+}
+
+/**********************************************************************
+ *              IsShellManagedWindow (USER32.2574)
+ */
+BOOL WINAPI IsShellManagedWindow( HWND hwnd )
+{
+    TRACE( "(%p)\n", hwnd );
+    return FALSE;
+}
+
+/**********************************************************************
+ *              GetWindowBand (USER32.@)
+ */
+BOOL WINAPI GetWindowBand( HWND hwnd, DWORD *band )
+{
+    TRACE( "(%p, %p)\n", hwnd, band );
+    if (!band)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+    *band = 1; /* ZBID_DEFAULT */
+    return TRUE;
+}

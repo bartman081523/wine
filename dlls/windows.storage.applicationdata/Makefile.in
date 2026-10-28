@@ -1,5 +1,5 @@
 MODULE  = windows.storage.applicationdata.dll
-IMPORTS = combase
+IMPORTS = combase kernel32
 
 SOURCES = \
 	applicationdata.c \

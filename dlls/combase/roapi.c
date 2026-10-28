@@ -22,8 +22,10 @@
 #include "roapi.h"
 #include "roparameterizediid.h"
 #include "roerrorapi.h"
+#include "restrictederrorinfo.h"
 #include "winstring.h"
 #include "errhandlingapi.h"
+#include "oleauto.h"
 
 #include "combase_private.h"
 
@@ -67,8 +69,84 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
         return REGDB_E_READREGDB;
     if (RegOpenKeyExW(hkey_root, classid, 0, KEY_READ, &hkey_class))
     {
-        WARN("Class %s not found in registry\n", debugstr_w(classid));
         RegCloseKey(hkey_root);
+        if (!wcscmp(classid, L"Windows.Security.Cryptography.DataProtection.DataProtectionProvider"))
+        {
+            *out = wcsdup(L"cryptowinrt.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.ApplicationModel.", 25))
+        {
+            *out = wcsdup(L"windows.applicationmodel.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.UI.Composition.", 23))
+        {
+            *out = wcsdup(L"dcomp.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Networking.PushNotifications.", 37))
+        {
+            *out = wcsdup(L"windows.networking.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.System.Threading.", 25))
+        {
+            *out = wcsdup(L"threadpoolwinrt.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Services.Store.", 23))
+        {
+            *out = wcsdup(L"windows.applicationmodel.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Management.Core.", 24))
+        {
+            *out = wcsdup(L"windows.storage.applicationdata.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.UI.Xaml.", 16))
+        {
+            *out = wcsdup(L"windows.ui.xaml.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Microsoft.UI.Xaml.", 18))
+        {
+            *out = wcsdup(L"Microsoft.UI.Xaml.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.System.MemoryManager", 28))
+        {
+            *out = wcsdup(L"windows.applicationmodel.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.System.User", 19))
+        {
+            *out = wcsdup(L"windows.ui.xaml.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"CalculatorApp.ViewModel.", 24) ||
+            !wcsncmp(classid, L"CalculatorApp.", 14))
+        {
+            *out = wcsdup(L"CalcViewModel.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"GraphControl.", 13))
+        {
+            *out = wcsdup(L"GraphControl.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"TraceLogging.", 13))
+        {
+            *out = wcsdup(L"TraceLogging.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Microsoft.Web.WebView2.Core.", 29))
+        {
+            *out = wcsdup(L"Microsoft.Web.WebView2.Core.dll");
+            return S_OK;
+        }
+        ERR("Class %s not found in registry\n", debugstr_w(classid));
         return REGDB_E_CLASSNOTREG;
     }
     RegCloseKey(hkey_root);
@@ -428,14 +506,6 @@ HRESULT WINAPI RoGetAgileReference(enum AgileReferenceOptions option, REFIID rii
     return S_OK;
 }
 
-/***********************************************************************
- *      RoFailFastWithErrorContextInternal2 (combase.@)
- */
-void WINAPI RoFailFastWithErrorContextInternal2(HRESULT error, ULONG exception_count, /* PSTOWED_EXCEPTION_INFORMATION_V2 */void *information)
-{
-    FIXME("%#lx, %lu, %p stub.\n", error, exception_count, information);
-    RaiseFailFastException(NULL, NULL, 0);
-}
 
 /***********************************************************************
  *      RoGetApartmentIdentifier (combase.@)
@@ -493,57 +563,319 @@ HRESULT WINAPI RoRegisterActivationFactories(HSTRING *classes, PFNGETACTIVATIONF
     return S_OK;
 }
 
+/* Restricted error info: Windows stores one IRestrictedErrorInfo per thread
+ * (per RoOriginateError / SetRestrictedErrorInfo) and hands it back through
+ * GetRestrictedErrorInfo. Callers rely on the S_OK/S_FALSE split: E_NOTIMPL
+ * (the old stub behaviour) made CsWinRT turn every failure round-trip into an
+ * extra unimplemented-exception path (run65: ApplicationData.LocalFolder
+ * E_NOTIMPL was followed by GetRestrictedErrorInfo E_NOTIMPL and surfaced as
+ * NotImplementedException -> RoFailFastWithErrorContextInternal2 -> c0000602).
+ * A process-global single slot is enough for our current consumers; a real
+ * per-thread slot can be added when cross-thread flows show up. */
+
+struct restricted_error_info
+{
+    IRestrictedErrorInfo IRestrictedErrorInfo_iface;
+    LONG ref;
+    BSTR description;
+    BSTR restricted_description;
+    HRESULT error;
+};
+
+static void restricted_error_info_store( IRestrictedErrorInfo *new_iface )
+{
+    struct tlsdata *tlsdata;
+    IRestrictedErrorInfo *old;
+
+    if (FAILED(com_get_tlsdata(&tlsdata))) return;
+
+    old = tlsdata->restricted_error_info;
+    if (new_iface) IRestrictedErrorInfo_AddRef( new_iface );
+    tlsdata->restricted_error_info = new_iface;
+    if (old) IRestrictedErrorInfo_Release( old );
+}
+
+static struct restricted_error_info *impl_from_IRestrictedErrorInfo( IRestrictedErrorInfo *iface )
+{
+    return CONTAINING_RECORD( iface, struct restricted_error_info, IRestrictedErrorInfo_iface );
+}
+
+static HRESULT WINAPI restricted_error_info_QueryInterface( IRestrictedErrorInfo *iface, REFIID iid, void **out )
+{
+    struct restricted_error_info *impl = impl_from_IRestrictedErrorInfo( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IRestrictedErrorInfo ))
+    {
+        IRestrictedErrorInfo_AddRef( (*out = &impl->IRestrictedErrorInfo_iface) );
+        return S_OK;
+    }
+
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI restricted_error_info_AddRef( IRestrictedErrorInfo *iface )
+{
+    struct restricted_error_info *impl = impl_from_IRestrictedErrorInfo( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p increasing refcount to %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI restricted_error_info_Release( IRestrictedErrorInfo *iface )
+{
+    struct restricted_error_info *impl = impl_from_IRestrictedErrorInfo( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+
+    TRACE( "iface %p decreasing refcount to %lu.\n", iface, ref );
+
+    if (!ref)
+    {
+        SysFreeString( impl->description );
+        SysFreeString( impl->restricted_description );
+        free( impl );
+    }
+    return ref;
+}
+
+static HRESULT WINAPI restricted_error_info_GetErrorDetails( IRestrictedErrorInfo *iface, BSTR *desc,
+        HRESULT *error, BSTR *restricted_desc, BSTR *sid )
+{
+    struct restricted_error_info *impl = impl_from_IRestrictedErrorInfo( iface );
+
+    TRACE( "iface %p, desc %p, error %p, restricted_desc %p, sid %p.\n",
+           iface, desc, error, restricted_desc, sid );
+
+    if (desc)
+    {
+        *desc = NULL;
+        if (impl->description && !(*desc = SysAllocStringLen( impl->description,
+                SysStringLen( impl->description ) )))
+            return E_OUTOFMEMORY;
+    }
+    if (error) *error = impl->error;
+    if (restricted_desc)
+    {
+        *restricted_desc = NULL;
+        if (impl->restricted_description && !(*restricted_desc = SysAllocStringLen(
+                impl->restricted_description, SysStringLen( impl->restricted_description ))))
+            return E_OUTOFMEMORY;
+    }
+    if (sid) *sid = NULL;
+
+    return S_OK;
+}
+
+static HRESULT WINAPI restricted_error_info_GetReference( IRestrictedErrorInfo *iface, BSTR *reference )
+{
+    TRACE( "iface %p, reference %p.\n", iface, reference );
+
+    if (!reference) return E_POINTER;
+    *reference = NULL;
+    return S_OK;
+}
+
+static const struct IRestrictedErrorInfoVtbl restricted_error_info_vtbl =
+{
+    restricted_error_info_QueryInterface,
+    restricted_error_info_AddRef,
+    restricted_error_info_Release,
+    restricted_error_info_GetErrorDetails,
+    restricted_error_info_GetReference,
+};
+
+/* Windows semantics: PrimaryLanguageOverride empty string etc. — restricted
+ * error descriptions mirror the originating message. */
+static void restricted_error_info_create( HRESULT error, const WCHAR *str, ULONG str_len )
+{
+    struct restricted_error_info *impl;
+
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return;
+    impl->IRestrictedErrorInfo_iface.lpVtbl = &restricted_error_info_vtbl;
+    impl->ref = 1;
+    impl->error = error;
+    if (str_len && str && !(impl->description = SysAllocStringLen( str, str_len )))
+    {
+        free( impl );
+        return;
+    }
+
+    restricted_error_info_store( &impl->IRestrictedErrorInfo_iface );
+    IRestrictedErrorInfo_Release( &impl->IRestrictedErrorInfo_iface );
+}
+
 /***********************************************************************
  *      GetRestrictedErrorInfo (combase.@)
  */
-HRESULT WINAPI GetRestrictedErrorInfo(IRestrictedErrorInfo **info)
+HRESULT WINAPI GetRestrictedErrorInfo( IRestrictedErrorInfo **info )
 {
-    FIXME( "(%p)\n", info );
-    return E_NOTIMPL;
+    struct tlsdata *tlsdata;
+    IRestrictedErrorInfo *current;
+    HRESULT hr;
+
+    TRACE( "(%p)\n", info );
+
+    if (!info) return E_POINTER;
+    *info = NULL;
+
+    if (FAILED(hr = com_get_tlsdata(&tlsdata))) return hr;
+
+    current = tlsdata->restricted_error_info;
+    tlsdata->restricted_error_info = NULL;
+
+    if (!current) return S_FALSE;
+    *info = current;
+    return S_OK;
 }
 
 /***********************************************************************
  *      SetRestrictedErrorInfo (combase.@)
  */
-HRESULT WINAPI SetRestrictedErrorInfo(IRestrictedErrorInfo *info)
+HRESULT WINAPI SetRestrictedErrorInfo( IRestrictedErrorInfo *info )
 {
-    FIXME( "(%p)\n", info );
-    return E_NOTIMPL;
+    TRACE( "(%p)\n", info );
+
+    if (info)
+    {
+        /* Windows also QIs the object to validate it; our callers hand us
+         * the object they just created (CsWinRT path in run65). */
+        restricted_error_info_store( info );
+    }
+    else
+    {
+        restricted_error_info_store( NULL );
+    }
+
+    return S_OK;
 }
 
-/***********************************************************************
- *      RoOriginateLanguageException (combase.@)
- */
-BOOL WINAPI RoOriginateLanguageException(HRESULT error, HSTRING message, IUnknown *language_exception)
+/* RoOriginate* only records the slot; the full context chain (stowed exception
+ * object) is out of scope for now and documented as a limitation. */
+static BOOL ro_originate_error_common( HRESULT error, const WCHAR *message, UINT32 message_len )
 {
-    FIXME("%#lx, %s, %p: stub\n", error, debugstr_hstring(message), language_exception);
-    return FALSE;
+    FIXME( "error %#lx, message %s, caller %p.\n",
+           error, message ? debugstr_wn( message, message_len ) : "(null)", __builtin_return_address(0) );
+    restricted_error_info_create( error, message, message_len );
+    return TRUE;
 }
 
 /***********************************************************************
  *      RoOriginateError (combase.@)
  */
-BOOL WINAPI RoOriginateError(HRESULT error, HSTRING message)
+BOOL WINAPI RoOriginateError( HRESULT error, HSTRING message )
 {
-    FIXME("%#lx, %s: stub\n", error, debugstr_hstring(message));
-    return FALSE;
+    const WCHAR *buffer = WindowsGetStringRawBuffer( message, NULL );
+
+    return ro_originate_error_common( error, buffer, message ? WindowsGetStringLen( message ) : 0 );
 }
 
 /***********************************************************************
  *      RoOriginateErrorW (combase.@)
  */
-BOOL WINAPI RoOriginateErrorW(HRESULT error, UINT max_len, const WCHAR *message)
+BOOL WINAPI RoOriginateErrorW( HRESULT error, UINT max_len, const WCHAR *message )
 {
-    FIXME("%#lx, %u, %p: stub\n", error, max_len, message);
-    return FALSE;
+    return ro_originate_error_common( error, message, max_len );
 }
+
+/***********************************************************************
+ *      RoOriginateLanguageException (combase.@)
+ */
+BOOL WINAPI RoOriginateLanguageException( HRESULT error, HSTRING message, IUnknown *language_exception )
+{
+    const WCHAR *buffer = WindowsGetStringRawBuffer( message, NULL );
+    void *frames[16];
+    USHORT count = RtlCaptureStackBackTrace( 0, 16, frames, NULL );
+    USHORT i;
+
+    WARN( "error %#lx, message %s, language_exception %p, caller %p (not stowed).\n",
+          error, message ? debugstr_wn( buffer, WindowsGetStringLen( message ) ) : "(null)",
+          language_exception, __builtin_return_address(0) );
+    for (i = 0; i < count; i++)
+        WARN( "  frame[%02u]: %p\n", i, frames[i] );
+    restricted_error_info_create( error, buffer, message ? WindowsGetStringLen( message ) : 0 );
+    return TRUE;
+}
+
+/***********************************************************************
+ *      RoFailFastWithErrorContextInternal2 (combase.@)
+ */
+void WINAPI RoFailFastWithErrorContextInternal2( HRESULT hrError, ULONG cbStowedException, void *pvStowedException )
+{
+    IRestrictedErrorInfo *info = NULL;
+    HRESULT error = hrError;
+    BSTR desc = NULL;
+    void *frames[32];
+    USHORT frame_count, i;
+
+    /* Dump the failing context before terminating so run logs answer
+     * "which stub returned this error" without a fresh +relay autopsy. */
+    ERR( "fail-fast: hrError %#08lx, cbStowedException %lu, pvStowedException %p.\n", hrError, cbStowedException, pvStowedException );
+
+    if (SUCCEEDED( GetRestrictedErrorInfo( &info ) ) && info)
+    {
+        if (SUCCEEDED( IRestrictedErrorInfo_GetErrorDetails( info, &desc, &error, NULL, NULL ) ) && desc)
+            ERR( "fail-fast: restricted error hr %#08lx, details: %s.\n", error, debugstr_w( desc ) );
+        else
+            ERR( "fail-fast: restricted error info %p unreadable or empty (GetErrorDetails hr %#08lx).\n", info, error );
+        if (desc) SysFreeString( desc );
+        IRestrictedErrorInfo_Release( info );
+    }
+    else
+    {
+        ERR( "fail-fast: no restricted error info recorded (GetRestrictedErrorInfo hr %#08lx).\n", hrError );
+    }
+
+    if (pvStowedException && cbStowedException)
+    {
+        ERR( "fail-fast: stowed exception context present at %p (%#lx bytes), first bytes %#08x.\n",
+             pvStowedException, (ULONG)cbStowedException, *(UINT32 *)pvStowedException );
+    }
+
+    frame_count = RtlCaptureStackBackTrace( 0, ARRAY_SIZE( frames ), frames, NULL );
+    for (i = 0; i < frame_count; ++i)
+        ERR( "fail-fast: stack[%02u] %p.\n", i, frames[i] );
+
+    RaiseFailFastException( NULL, NULL, 0 );
+}
+
 
 /***********************************************************************
  *      RoReportUnhandledError (combase.@)
  */
 HRESULT WINAPI RoReportUnhandledError(IRestrictedErrorInfo *info)
 {
-    FIXME("(%p): stub\n", info);
+    BSTR desc = NULL, restricted_desc = NULL, sid = NULL;
+    HRESULT error = 0;
+    BOOL release_info = FALSE;
+
+    ERR("(%p): unhandled error reported!\n", info);
+    if (!info)
+    {
+        if (SUCCEEDED(GetRestrictedErrorInfo(&info)) && info)
+            release_info = TRUE;
+    }
+
+    if (info && SUCCEEDED(IRestrictedErrorInfo_GetErrorDetails(info, &desc, &error, &restricted_desc, &sid)))
+    {
+        ERR("  hr %#08lx, details: %s, restricted: %s, sid: %s\n",
+            error, debugstr_w(desc), debugstr_w(restricted_desc), debugstr_w(sid));
+        if (desc) SysFreeString(desc);
+        if (restricted_desc) SysFreeString(restricted_desc);
+        if (sid) SysFreeString(sid);
+    }
+    if (release_info && info)
+        IRestrictedErrorInfo_Release(info);
+
+    {
+        void *frames[32];
+        USHORT frame_count, i;
+        frame_count = RtlCaptureStackBackTrace( 0, ARRAY_SIZE( frames ), frames, NULL );
+        for (i = 0; i < frame_count; ++i)
+            ERR("  unhandled-error: stack[%02u] %p.\n", i, frames[i]);
+    }
+
     return S_OK;
 }
 

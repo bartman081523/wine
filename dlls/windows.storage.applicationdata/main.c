@@ -40,6 +40,8 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     if (!wcscmp( buffer, RuntimeClass_Windows_Storage_ApplicationData ))
         IActivationFactory_QueryInterface( application_data_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Management.Core.ApplicationDataManager" ))
+        IActivationFactory_QueryInterface( app_data_manager_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;
