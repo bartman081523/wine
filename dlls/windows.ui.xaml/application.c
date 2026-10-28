@@ -3731,15 +3731,8 @@ static HRESULT page_QI_internal(struct page_impl *impl, REFIID riid, void **ppvO
     if (IsEqualGUID(riid, &IID_IComponentConnector_local) ||
         IsEqualGUID(riid, &IID_IComponentConnector2_local))
     {
-        if (impl->outer)
-        {
-            void **ovtbl = *(void ***)impl->outer;
-            if (ovtbl && (ULONG_PTR)ovtbl[0] > 0x10000)
-            {
-                HRESULT (WINAPI *pQI)(void *, REFIID, void **) = (void *)ovtbl[0];
-                return pQI(impl->outer, riid, ppvObject);
-            }
-        }
+        /* Avoid ping-pong recursion with outer CCW wrapper */
+        return E_NOINTERFACE;
     }
 
     TRACE("page %p: unhandled QI %s\n", impl, debugstr_guid(riid));
