@@ -185,10 +185,201 @@ static HRESULT WINAPI dispatcher_queue_controller_GetTrustLevel( IDispatcherQueu
     return E_NOTIMPL;
 }
 
+struct dispatcher_queue
+{
+    IDispatcherQueue IDispatcherQueue_iface;
+    IDispatcherQueue2 IDispatcherQueue2_iface;
+    LONG ref;
+};
+
+static inline struct dispatcher_queue *impl_from_IDispatcherQueue( IDispatcherQueue *iface )
+{
+    return CONTAINING_RECORD( iface, struct dispatcher_queue, IDispatcherQueue_iface );
+}
+
+static inline struct dispatcher_queue *impl_from_IDispatcherQueue2( IDispatcherQueue2 *iface )
+{
+    return CONTAINING_RECORD( iface, struct dispatcher_queue, IDispatcherQueue2_iface );
+}
+
+static HRESULT WINAPI dispatcher_queue_QueryInterface( IDispatcherQueue *iface, REFIID iid, void **out )
+{
+    struct dispatcher_queue *impl = impl_from_IDispatcherQueue( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) ||
+        IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
+        IsEqualGUID( iid, &IID_IDispatcherQueue ))
+    {
+        *out = &impl->IDispatcherQueue_iface;
+        IInspectable_AddRef( (IInspectable *)*out );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( iid, &IID_IDispatcherQueue2 ))
+    {
+        *out = &impl->IDispatcherQueue2_iface;
+        IInspectable_AddRef( (IInspectable *)*out );
+        return S_OK;
+    }
+
+    FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI dispatcher_queue_AddRef( IDispatcherQueue *iface )
+{
+    struct dispatcher_queue *impl = impl_from_IDispatcherQueue( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p increasing ref to %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI dispatcher_queue_Release( IDispatcherQueue *iface )
+{
+    struct dispatcher_queue *impl = impl_from_IDispatcherQueue( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+    TRACE( "iface %p decreasing ref to %lu.\n", iface, ref );
+    return ref;
+}
+
+static HRESULT WINAPI dispatcher_queue_GetIids( IDispatcherQueue *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI dispatcher_queue_GetRuntimeClassName( IDispatcherQueue *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( RuntimeClass_Windows_System_DispatcherQueue, wcslen( RuntimeClass_Windows_System_DispatcherQueue ), class_name );
+}
+
+static HRESULT WINAPI dispatcher_queue_GetTrustLevel( IDispatcherQueue *iface, TrustLevel *trust_level )
+{
+    if (trust_level) *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI dispatcher_queue_CreateTimer( IDispatcherQueue *iface, IDispatcherQueueTimer **result )
+{
+    FIXME( "iface %p, result %p stub!\n", iface, result );
+    if (result) *result = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI dispatcher_queue_TryEnqueue( IDispatcherQueue *iface, IDispatcherQueueHandler *callback, boolean *result )
+{
+    TRACE( "iface %p, callback %p, result %p.\n", iface, callback, result );
+    if (callback) IDispatcherQueueHandler_Invoke( callback );
+    if (result) *result = TRUE;
+    return S_OK;
+}
+
+static HRESULT WINAPI dispatcher_queue_TryEnqueueWithPriority( IDispatcherQueue *iface, DispatcherQueuePriority priority, IDispatcherQueueHandler *callback, boolean *result )
+{
+    TRACE( "iface %p, priority %d, callback %p, result %p.\n", iface, priority, callback, result );
+    if (callback) IDispatcherQueueHandler_Invoke( callback );
+    if (result) *result = TRUE;
+    return S_OK;
+}
+
+static HRESULT WINAPI dispatcher_queue_add_ShutdownStarting( IDispatcherQueue *iface, __FITypedEventHandler_2_Windows__CSystem__CDispatcherQueue_Windows__CSystem__CDispatcherQueueShutdownStartingEventArgs *handler, EventRegistrationToken *token )
+{
+    if (token) token->value = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI dispatcher_queue_remove_ShutdownStarting( IDispatcherQueue *iface, EventRegistrationToken token )
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI dispatcher_queue_add_ShutdownCompleted( IDispatcherQueue *iface, __FITypedEventHandler_2_Windows__CSystem__CDispatcherQueue_IInspectable *handler, EventRegistrationToken *token )
+{
+    if (token) token->value = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI dispatcher_queue_remove_ShutdownCompleted( IDispatcherQueue *iface, EventRegistrationToken token )
+{
+    return S_OK;
+}
+
+static const struct IDispatcherQueueVtbl dispatcher_queue_vtbl =
+{
+    dispatcher_queue_QueryInterface,
+    dispatcher_queue_AddRef,
+    dispatcher_queue_Release,
+    dispatcher_queue_GetIids,
+    dispatcher_queue_GetRuntimeClassName,
+    dispatcher_queue_GetTrustLevel,
+    dispatcher_queue_CreateTimer,
+    dispatcher_queue_TryEnqueue,
+    dispatcher_queue_TryEnqueueWithPriority,
+    dispatcher_queue_add_ShutdownStarting,
+    dispatcher_queue_remove_ShutdownStarting,
+    dispatcher_queue_add_ShutdownCompleted,
+    dispatcher_queue_remove_ShutdownCompleted,
+};
+
+static HRESULT WINAPI dq2_QueryInterface( IDispatcherQueue2 *iface, REFIID iid, void **out )
+{
+    return dispatcher_queue_QueryInterface( &impl_from_IDispatcherQueue2( iface )->IDispatcherQueue_iface, iid, out );
+}
+static ULONG WINAPI dq2_AddRef( IDispatcherQueue2 *iface )
+{
+    return dispatcher_queue_AddRef( &impl_from_IDispatcherQueue2( iface )->IDispatcherQueue_iface );
+}
+static ULONG WINAPI dq2_Release( IDispatcherQueue2 *iface )
+{
+    return dispatcher_queue_Release( &impl_from_IDispatcherQueue2( iface )->IDispatcherQueue_iface );
+}
+static HRESULT WINAPI dq2_GetIids( IDispatcherQueue2 *iface, ULONG *iid_count, IID **iids )
+{
+    return dispatcher_queue_GetIids( &impl_from_IDispatcherQueue2( iface )->IDispatcherQueue_iface, iid_count, iids );
+}
+static HRESULT WINAPI dq2_GetRuntimeClassName( IDispatcherQueue2 *iface, HSTRING *class_name )
+{
+    return dispatcher_queue_GetRuntimeClassName( &impl_from_IDispatcherQueue2( iface )->IDispatcherQueue_iface, class_name );
+}
+static HRESULT WINAPI dq2_GetTrustLevel( IDispatcherQueue2 *iface, TrustLevel *trust_level )
+{
+    return dispatcher_queue_GetTrustLevel( &impl_from_IDispatcherQueue2( iface )->IDispatcherQueue_iface, trust_level );
+}
+static HRESULT WINAPI dq2_get_HasThreadAccess( IDispatcherQueue2 *iface, boolean *value )
+{
+    if (value) *value = TRUE;
+    return S_OK;
+}
+
+static const struct IDispatcherQueue2Vtbl dispatcher_queue2_vtbl =
+{
+    dq2_QueryInterface,
+    dq2_AddRef,
+    dq2_Release,
+    dq2_GetIids,
+    dq2_GetRuntimeClassName,
+    dq2_GetTrustLevel,
+    dq2_get_HasThreadAccess,
+};
+
+static struct dispatcher_queue default_dispatcher_queue =
+{
+    {&dispatcher_queue_vtbl},
+    {&dispatcher_queue2_vtbl},
+    1000,
+};
+
 static HRESULT WINAPI dispatcher_queue_controller_get_DispatcherQueue( IDispatcherQueueController *iface, IDispatcherQueue **value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p.\n", iface, value );
+    if (!value) return E_POINTER;
+    *value = &default_dispatcher_queue.IDispatcherQueue_iface;
+    IDispatcherQueue_AddRef( *value );
+    return S_OK;
 }
 
 static HRESULT shutdown_queue_async( IUnknown *invoker, IUnknown *param, PROPVARIANT *result, BOOL called_async )
@@ -251,6 +442,150 @@ static struct dispatcher_queue_controller_statics dispatcher_queue_controller_st
 
 static IActivationFactory *dispatcher_queue_controller_factory = &dispatcher_queue_controller_statics.IActivationFactory_iface;
 
+struct dispatcher_queue_statics
+{
+    IActivationFactory IActivationFactory_iface;
+    IDispatcherQueueStatics IDispatcherQueueStatics_iface;
+    LONG ref;
+};
+
+static inline struct dispatcher_queue_statics *impl_from_IActivationFactory_dq( IActivationFactory *iface )
+{
+    return CONTAINING_RECORD( iface, struct dispatcher_queue_statics, IActivationFactory_iface );
+}
+
+static HRESULT WINAPI dq_factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out )
+{
+    struct dispatcher_queue_statics *impl = impl_from_IActivationFactory_dq( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) ||
+        IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
+        IsEqualGUID( iid, &IID_IActivationFactory ))
+    {
+        *out = &impl->IActivationFactory_iface;
+        IInspectable_AddRef( (IInspectable *)*out );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( iid, &IID_IDispatcherQueueStatics ))
+    {
+        *out = &impl->IDispatcherQueueStatics_iface;
+        IInspectable_AddRef( (IInspectable *)*out );
+        return S_OK;
+    }
+
+    FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI dq_factory_AddRef( IActivationFactory *iface )
+{
+    struct dispatcher_queue_statics *impl = impl_from_IActivationFactory_dq( iface );
+    return InterlockedIncrement( &impl->ref );
+}
+
+static ULONG WINAPI dq_factory_Release( IActivationFactory *iface )
+{
+    struct dispatcher_queue_statics *impl = impl_from_IActivationFactory_dq( iface );
+    return InterlockedDecrement( &impl->ref );
+}
+
+static HRESULT WINAPI dq_factory_GetIids( IActivationFactory *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "stub!\n" );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI dq_factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( RuntimeClass_Windows_System_DispatcherQueue, wcslen( RuntimeClass_Windows_System_DispatcherQueue ), class_name );
+}
+
+static HRESULT WINAPI dq_factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *trust_level )
+{
+    if (trust_level) *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI dq_factory_ActivateInstance( IActivationFactory *iface, IInspectable **instance )
+{
+    FIXME( "stub!\n" );
+    return E_NOTIMPL;
+}
+
+static const struct IActivationFactoryVtbl dq_factory_vtbl =
+{
+    dq_factory_QueryInterface,
+    dq_factory_AddRef,
+    dq_factory_Release,
+    dq_factory_GetIids,
+    dq_factory_GetRuntimeClassName,
+    dq_factory_GetTrustLevel,
+    dq_factory_ActivateInstance,
+};
+
+static inline struct dispatcher_queue_statics *impl_from_IDispatcherQueueStatics( IDispatcherQueueStatics *iface )
+{
+    return CONTAINING_RECORD( iface, struct dispatcher_queue_statics, IDispatcherQueueStatics_iface );
+}
+
+static HRESULT WINAPI dispatcher_queue_statics_QueryInterface( IDispatcherQueueStatics *iface, REFIID iid, void **out )
+{
+    return dq_factory_QueryInterface( &impl_from_IDispatcherQueueStatics( iface )->IActivationFactory_iface, iid, out );
+}
+static ULONG WINAPI dispatcher_queue_statics_AddRef( IDispatcherQueueStatics *iface )
+{
+    return dq_factory_AddRef( &impl_from_IDispatcherQueueStatics( iface )->IActivationFactory_iface );
+}
+static ULONG WINAPI dispatcher_queue_statics_Release( IDispatcherQueueStatics *iface )
+{
+    return dq_factory_Release( &impl_from_IDispatcherQueueStatics( iface )->IActivationFactory_iface );
+}
+static HRESULT WINAPI dispatcher_queue_statics_GetIids( IDispatcherQueueStatics *iface, ULONG *iid_count, IID **iids )
+{
+    return dq_factory_GetIids( &impl_from_IDispatcherQueueStatics( iface )->IActivationFactory_iface, iid_count, iids );
+}
+static HRESULT WINAPI dispatcher_queue_statics_GetRuntimeClassName( IDispatcherQueueStatics *iface, HSTRING *class_name )
+{
+    return dq_factory_GetRuntimeClassName( &impl_from_IDispatcherQueueStatics( iface )->IActivationFactory_iface, class_name );
+}
+static HRESULT WINAPI dispatcher_queue_statics_GetTrustLevel( IDispatcherQueueStatics *iface, TrustLevel *trust_level )
+{
+    return dq_factory_GetTrustLevel( &impl_from_IDispatcherQueueStatics( iface )->IActivationFactory_iface, trust_level );
+}
+static HRESULT WINAPI dispatcher_queue_statics_GetForCurrentThread( IDispatcherQueueStatics *iface, IDispatcherQueue **result )
+{
+    TRACE( "iface %p, result %p.\n", iface, result );
+    if (!result) return E_POINTER;
+    *result = &default_dispatcher_queue.IDispatcherQueue_iface;
+    IDispatcherQueue_AddRef( *result );
+    return S_OK;
+}
+
+static const struct IDispatcherQueueStaticsVtbl dispatcher_queue_statics_vtbl =
+{
+    dispatcher_queue_statics_QueryInterface,
+    dispatcher_queue_statics_AddRef,
+    dispatcher_queue_statics_Release,
+    dispatcher_queue_statics_GetIids,
+    dispatcher_queue_statics_GetRuntimeClassName,
+    dispatcher_queue_statics_GetTrustLevel,
+    dispatcher_queue_statics_GetForCurrentThread,
+};
+
+static struct dispatcher_queue_statics dispatcher_queue_statics =
+{
+    {&dq_factory_vtbl},
+    {&dispatcher_queue_statics_vtbl},
+    1,
+};
+
+static IActivationFactory *dispatcher_queue_factory = &dispatcher_queue_statics.IActivationFactory_iface;
+
 HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **factory )
 {
     const WCHAR *name = WindowsGetStringRawBuffer( classid, NULL );
@@ -261,6 +596,9 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     if (!wcscmp( name, RuntimeClass_Windows_System_DispatcherQueueController ))
         IActivationFactory_QueryInterface( dispatcher_queue_controller_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( name, RuntimeClass_Windows_System_DispatcherQueue ))
+        IActivationFactory_QueryInterface( dispatcher_queue_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

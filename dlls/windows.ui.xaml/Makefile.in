@@ -1,9 +1,10 @@
 MODULE  = windows.ui.xaml.dll
-IMPORTS = combase user32
+IMPORTS = combase user32 gdi32
 
 SOURCES = \
 	application.c \
 	classes.idl \
 	color_helper.c \
+	controls.c \
 	main.c \
 	property_metadata.c

@@ -406,6 +406,8 @@ struct language_factory
 {
     IActivationFactory IActivationFactory_iface;
     ILanguageFactory ILanguageFactory_iface;
+    ILanguageStatics ILanguageStatics_iface;
+    ILanguageStatics2 ILanguageStatics2_iface;
     LONG ref;
 };
 
@@ -837,6 +839,20 @@ static HRESULT STDMETHODCALLTYPE windows_globalization_language_factory_QueryInt
         return S_OK;
     }
 
+    if (IsEqualGUID(iid, &IID_ILanguageStatics))
+    {
+        IUnknown_AddRef(iface);
+        *out = &factory->ILanguageStatics_iface;
+        return S_OK;
+    }
+
+    if (IsEqualGUID(iid, &IID_ILanguageStatics2))
+    {
+        IUnknown_AddRef(iface);
+        *out = &factory->ILanguageStatics2_iface;
+        return S_OK;
+    }
+
     FIXME("%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid(iid));
     *out = NULL;
     return E_NOINTERFACE;
@@ -934,6 +950,59 @@ static HRESULT STDMETHODCALLTYPE language_factory_CreateLanguage(
     return S_OK;
 }
 
+DEFINE_IINSPECTABLE_(language_statics, ILanguageStatics, struct language_factory, impl_from_ILanguageStatics, ILanguageStatics_iface, &impl->IActivationFactory_iface)
+DEFINE_IINSPECTABLE_(language_statics2, ILanguageStatics2, struct language_factory, impl_from_ILanguageStatics2, ILanguageStatics2_iface, &impl->IActivationFactory_iface)
+
+static HRESULT WINAPI language_statics_IsWellFormed(ILanguageStatics *iface, HSTRING tag, BOOLEAN *result)
+{
+    TRACE("iface %p, tag %s, result %p.\n", iface, debugstr_hstring(tag), result);
+    if (!result) return E_INVALIDARG;
+    *result = TRUE;
+    return S_OK;
+}
+
+static HRESULT WINAPI language_statics_get_CurrentInputMethodLanguageTag(ILanguageStatics *iface, HSTRING *value)
+{
+    TRACE("iface %p, value %p.\n", iface, value);
+    if (!value) return E_INVALIDARG;
+    return WindowsCreateString(L"en-US", 5, value);
+}
+
+static const struct ILanguageStaticsVtbl language_statics_vtbl =
+{
+    language_statics_QueryInterface,
+    language_statics_AddRef,
+    language_statics_Release,
+    /* IInspectable methods */
+    language_statics_GetIids,
+    language_statics_GetRuntimeClassName,
+    language_statics_GetTrustLevel,
+    /* ILanguageStatics methods */
+    language_statics_IsWellFormed,
+    language_statics_get_CurrentInputMethodLanguageTag,
+};
+
+static HRESULT WINAPI language_statics2_TrySetInputMethodLanguageTag(ILanguageStatics2 *iface, HSTRING tag, BOOLEAN *result)
+{
+    TRACE("iface %p, tag %s, result %p.\n", iface, debugstr_hstring(tag), result);
+    if (!result) return E_INVALIDARG;
+    *result = TRUE;
+    return S_OK;
+}
+
+static const struct ILanguageStatics2Vtbl language_statics2_vtbl =
+{
+    language_statics2_QueryInterface,
+    language_statics2_AddRef,
+    language_statics2_Release,
+    /* IInspectable methods */
+    language_statics2_GetIids,
+    language_statics2_GetRuntimeClassName,
+    language_statics2_GetTrustLevel,
+    /* ILanguageStatics2 methods */
+    language_statics2_TrySetInputMethodLanguageTag,
+};
+
 static const struct ILanguageFactoryVtbl language_factory_vtbl =
 {
     language_factory_QueryInterface,
@@ -951,6 +1020,8 @@ static struct language_factory language_factory =
 {
     {&activation_factory_language_vtbl},
     {&language_factory_vtbl},
+    {&language_statics_vtbl},
+    {&language_statics2_vtbl},
     0
 };
 
@@ -1305,6 +1376,707 @@ static struct font_group_factory_impl font_group_factory = {
     1
 };
 
+/*
+ *
+ * Windows.Globalization.NumberFormatting.DecimalFormatter
+ *
+ */
+
+static const GUID IID_IDecimalFormatterFactory = {0x0D018C9A, 0xE393, 0x46B8, {0xB8, 0x30, 0x7A, 0x69, 0xC8, 0xF8, 0x9F, 0xBB}};
+static const GUID IID_INumberFormatter = {0xA5007C49, 0x7676, 0x4DB7, {0x86, 0x31, 0x1B, 0x6F, 0xF2, 0x65, 0xCA, 0xA9}};
+static const GUID IID_INumberFormatter2 = {0xD4A8C1F0, 0x80D0, 0x4B0D, {0xA8, 0x9E, 0x88, 0x2C, 0x1E, 0x8F, 0x83, 0x10}};
+static const GUID IID_INumberFormatterOptions = {0x80332D21, 0xAEE1, 0x4A39, {0xBA, 0xA2, 0x07, 0xED, 0x8C, 0x96, 0xDA, 0xF6}};
+static const GUID IID_INumberParser = {0xE6659412, 0x4A13, 0x4A53, {0x83, 0xA1, 0x39, 0x2F, 0xBE, 0x4C, 0xFF, 0x9F}};
+static const GUID IID_INumberRounderOption = {0x3B088433, 0x646F, 0x4EFE, {0x8D, 0x48, 0x66, 0xEB, 0x2E, 0x49, 0xE7, 0x36}};
+static const GUID IID_ISignificantDigitsOption = {0x1D4DFCDD, 0x2D43, 0x4EE8, {0xBB, 0xF1, 0xC1, 0xB2, 0x6A, 0x71, 0x1A, 0x58}};
+static const GUID IID_ISignedZeroOption = {0xFD1CDD31, 0x0A3C, 0x49C4, {0xA6, 0x42, 0x96, 0xA1, 0x56, 0x4F, 0x4F, 0x30}};
+
+struct decimal_formatter
+{
+    struct { const void *lpVtbl; } INumberFormatter_iface;
+    struct { const void *lpVtbl; } INumberFormatter2_iface;
+    struct { const void *lpVtbl; } INumberFormatterOptions_iface;
+    struct { const void *lpVtbl; } INumberParser_iface;
+    struct { const void *lpVtbl; } INumberRounderOption_iface;
+    struct { const void *lpVtbl; } ISignificantDigitsOption_iface;
+    struct { const void *lpVtbl; } ISignedZeroOption_iface;
+    LONG ref;
+
+    INT32 fraction_digits;
+    INT32 integer_digits;
+    boolean is_grouped;
+    boolean is_dp_always_displayed;
+    WCHAR resolved_language[64];
+    WCHAR geographic_region[64];
+};
+
+#define impl_from_df_formatter(ptr) ((struct decimal_formatter *)((char *)(ptr) - offsetof(struct decimal_formatter, INumberFormatter_iface)))
+#define impl_from_df_formatter2(ptr) ((struct decimal_formatter *)((char *)(ptr) - offsetof(struct decimal_formatter, INumberFormatter2_iface)))
+#define impl_from_df_options(ptr) ((struct decimal_formatter *)((char *)(ptr) - offsetof(struct decimal_formatter, INumberFormatterOptions_iface)))
+#define impl_from_df_parser(ptr) ((struct decimal_formatter *)((char *)(ptr) - offsetof(struct decimal_formatter, INumberParser_iface)))
+#define impl_from_df_rounder(ptr) ((struct decimal_formatter *)((char *)(ptr) - offsetof(struct decimal_formatter, INumberRounderOption_iface)))
+#define impl_from_df_sigdigits(ptr) ((struct decimal_formatter *)((char *)(ptr) - offsetof(struct decimal_formatter, ISignificantDigitsOption_iface)))
+#define impl_from_df_signedzero(ptr) ((struct decimal_formatter *)((char *)(ptr) - offsetof(struct decimal_formatter, ISignedZeroOption_iface)))
+
+#define df_from_formatter impl_from_df_formatter
+#define df_from_formatter2 impl_from_df_formatter2
+#define df_from_options impl_from_df_options
+#define df_from_parser impl_from_df_parser
+#define df_from_rounder impl_from_df_rounder
+#define df_from_sigdigits impl_from_df_sigdigits
+#define df_from_signedzero impl_from_df_signedzero
+
+static HRESULT WINAPI df_QI_internal(struct decimal_formatter *impl, REFIID riid, void **out)
+{
+    if (!out) return E_POINTER;
+    *out = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_INumberFormatter))
+    {
+        *out = &impl->INumberFormatter_iface;
+    }
+    else if (IsEqualGUID(riid, &IID_INumberFormatter2))
+    {
+        *out = &impl->INumberFormatter2_iface;
+    }
+    else if (IsEqualGUID(riid, &IID_INumberFormatterOptions))
+    {
+        *out = &impl->INumberFormatterOptions_iface;
+    }
+    else if (IsEqualGUID(riid, &IID_INumberParser))
+    {
+        *out = &impl->INumberParser_iface;
+    }
+    else if (IsEqualGUID(riid, &IID_INumberRounderOption))
+    {
+        *out = &impl->INumberRounderOption_iface;
+    }
+    else if (IsEqualGUID(riid, &IID_ISignificantDigitsOption))
+    {
+        *out = &impl->ISignificantDigitsOption_iface;
+    }
+    else if (IsEqualGUID(riid, &IID_ISignedZeroOption))
+    {
+        *out = &impl->ISignedZeroOption_iface;
+    }
+    else
+    {
+        WARN("unsupported iid %s\n", debugstr_guid(riid));
+        return E_NOINTERFACE;
+    }
+
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
+}
+
+static ULONG WINAPI df_AddRef_internal(struct decimal_formatter *impl)
+{
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI df_Release_internal(struct decimal_formatter *impl)
+{
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI df_GetIids(void *This, ULONG *iid_count, IID **iids)
+{
+    if (iid_count) *iid_count = 0;
+    if (iids) *iids = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_GetRuntimeClassName(void *This, HSTRING *class_name)
+{
+    return WindowsCreateString(L"Windows.Globalization.NumberFormatting.DecimalFormatter", 55, class_name);
+}
+
+static HRESULT WINAPI df_GetTrustLevel(void *This, TrustLevel *trust_level)
+{
+    if (trust_level) *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_FormatInt(void *This, INT64 value, HSTRING *result)
+{
+    WCHAR buf[64];
+    swprintf(buf, ARRAY_SIZE(buf), L"%I64d", value);
+    return WindowsCreateString(buf, wcslen(buf), result);
+}
+
+static HRESULT WINAPI df_FormatUInt(void *This, UINT64 value, HSTRING *result)
+{
+    WCHAR buf[64];
+    swprintf(buf, ARRAY_SIZE(buf), L"%I64u", value);
+    return WindowsCreateString(buf, wcslen(buf), result);
+}
+
+static HRESULT WINAPI df_FormatDouble(void *This, DOUBLE value, HSTRING *result)
+{
+    struct decimal_formatter *impl = df_from_formatter(This);
+    WCHAR buf[64];
+    if (impl->fraction_digits == 0)
+        swprintf(buf, ARRAY_SIZE(buf), L"%.0f", value);
+    else if (impl->fraction_digits > 0)
+        swprintf(buf, ARRAY_SIZE(buf), L"%.*f", impl->fraction_digits, value);
+    else
+        swprintf(buf, ARRAY_SIZE(buf), L"%g", value);
+    return WindowsCreateString(buf, wcslen(buf), result);
+}
+
+static HRESULT WINAPI df_formatter_QI(void *This, REFIID riid, void **out) { return df_QI_internal(df_from_formatter(This), riid, out); }
+static ULONG WINAPI df_formatter_AddRef(void *This) { return df_AddRef_internal(df_from_formatter(This)); }
+static ULONG WINAPI df_formatter_Release(void *This) { return df_Release_internal(df_from_formatter(This)); }
+
+static HRESULT WINAPI df_formatter2_QI(void *This, REFIID riid, void **out) { return df_QI_internal(df_from_formatter2(This), riid, out); }
+static ULONG WINAPI df_formatter2_AddRef(void *This) { return df_AddRef_internal(df_from_formatter2(This)); }
+static ULONG WINAPI df_formatter2_Release(void *This) { return df_Release_internal(df_from_formatter2(This)); }
+
+static HRESULT WINAPI df_options_QI(void *This, REFIID riid, void **out) { return df_QI_internal(df_from_options(This), riid, out); }
+static ULONG WINAPI df_options_AddRef(void *This) { return df_AddRef_internal(df_from_options(This)); }
+static ULONG WINAPI df_options_Release(void *This) { return df_Release_internal(df_from_options(This)); }
+
+static HRESULT WINAPI df_options_get_Languages(void *This, void **value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    HSTRING str;
+    if (!value) return E_POINTER;
+    WindowsCreateString(impl->resolved_language, wcslen(impl->resolved_language), &str);
+    return hstring_vector_create(&str, 1, (IVectorView_HSTRING **)value);
+}
+
+static HRESULT WINAPI df_options_get_GeographicRegion(void *This, HSTRING *value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    return WindowsCreateString(impl->geographic_region, wcslen(impl->geographic_region), value);
+}
+
+static HRESULT WINAPI df_options_get_IntegerDigits(void *This, INT32 *value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    if (!value) return E_POINTER;
+    *value = impl->integer_digits;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_put_IntegerDigits(void *This, INT32 value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    impl->integer_digits = value;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_get_FractionDigits(void *This, INT32 *value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    if (!value) return E_POINTER;
+    *value = impl->fraction_digits;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_put_FractionDigits(void *This, INT32 value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    impl->fraction_digits = value;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_get_IsGrouped(void *This, boolean *value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    if (!value) return E_POINTER;
+    *value = impl->is_grouped;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_put_IsGrouped(void *This, boolean value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    impl->is_grouped = value;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_get_IsDecimalPointAlwaysDisplayed(void *This, boolean *value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    if (!value) return E_POINTER;
+    *value = impl->is_dp_always_displayed;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_put_IsDecimalPointAlwaysDisplayed(void *This, boolean value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    impl->is_dp_always_displayed = value;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_get_NumeralSystem(void *This, HSTRING *value)
+{
+    return WindowsCreateString(L"Latn", 4, value);
+}
+
+static HRESULT WINAPI df_options_put_NumeralSystem(void *This, HSTRING value)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI df_options_get_ResolvedLanguage(void *This, HSTRING *value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    return WindowsCreateString(impl->resolved_language, wcslen(impl->resolved_language), value);
+}
+
+static HRESULT WINAPI df_options_get_ResolvedGeographicRegion(void *This, HSTRING *value)
+{
+    struct decimal_formatter *impl = df_from_options(This);
+    return WindowsCreateString(impl->geographic_region, wcslen(impl->geographic_region), value);
+}
+
+static HRESULT WINAPI df_parser_QI(void *This, REFIID riid, void **out) { return df_QI_internal(df_from_parser(This), riid, out); }
+static ULONG WINAPI df_parser_AddRef(void *This) { return df_AddRef_internal(df_from_parser(This)); }
+static ULONG WINAPI df_parser_Release(void *This) { return df_Release_internal(df_from_parser(This)); }
+
+static HRESULT WINAPI df_parser_ParseInt(void *This, HSTRING text, void **result)
+{
+    if (result) *result = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_parser_ParseUInt(void *This, HSTRING text, void **result)
+{
+    if (result) *result = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_parser_ParseDouble(void *This, HSTRING text, void **result)
+{
+    if (result) *result = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_rounder_QI(void *This, REFIID riid, void **out) { return df_QI_internal(df_from_rounder(This), riid, out); }
+static ULONG WINAPI df_rounder_AddRef(void *This) { return df_AddRef_internal(df_from_rounder(This)); }
+static ULONG WINAPI df_rounder_Release(void *This) { return df_Release_internal(df_from_rounder(This)); }
+
+static HRESULT WINAPI df_rounder_get_NumberRounder(void *This, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_rounder_put_NumberRounder(void *This, void *value)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI df_sigdigits_QI(void *This, REFIID riid, void **out) { return df_QI_internal(df_from_sigdigits(This), riid, out); }
+static ULONG WINAPI df_sigdigits_AddRef(void *This) { return df_AddRef_internal(df_from_sigdigits(This)); }
+static ULONG WINAPI df_sigdigits_Release(void *This) { return df_Release_internal(df_from_sigdigits(This)); }
+
+static HRESULT WINAPI df_sigdigits_get_SignificantDigits(void *This, INT32 *value)
+{
+    if (value) *value = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_sigdigits_put_SignificantDigits(void *This, INT32 value)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI df_signedzero_QI(void *This, REFIID riid, void **out) { return df_QI_internal(df_from_signedzero(This), riid, out); }
+static ULONG WINAPI df_signedzero_AddRef(void *This) { return df_AddRef_internal(df_from_signedzero(This)); }
+static ULONG WINAPI df_signedzero_Release(void *This) { return df_Release_internal(df_from_signedzero(This)); }
+
+static HRESULT WINAPI df_signedzero_get_IsZeroSigned(void *This, boolean *value)
+{
+    if (value) *value = FALSE;
+    return S_OK;
+}
+
+static HRESULT WINAPI df_signedzero_put_IsZeroSigned(void *This, boolean value)
+{
+    return S_OK;
+}
+
+static const void *decimal_formatter_vtbl[] = {
+    (void *)df_formatter_QI,
+    (void *)df_formatter_AddRef,
+    (void *)df_formatter_Release,
+    (void *)df_GetIids,
+    (void *)df_GetRuntimeClassName,
+    (void *)df_GetTrustLevel,
+    (void *)df_FormatInt,
+    (void *)df_FormatUInt,
+    (void *)df_FormatDouble
+};
+
+static const void *decimal_formatter2_vtbl[] = {
+    (void *)df_formatter2_QI,
+    (void *)df_formatter2_AddRef,
+    (void *)df_formatter2_Release,
+    (void *)df_GetIids,
+    (void *)df_GetRuntimeClassName,
+    (void *)df_GetTrustLevel,
+    (void *)df_FormatInt,
+    (void *)df_FormatUInt,
+    (void *)df_FormatDouble
+};
+
+static const void *decimal_formatter_options_vtbl[] = {
+    (void *)df_options_QI,
+    (void *)df_options_AddRef,
+    (void *)df_options_Release,
+    (void *)df_GetIids,
+    (void *)df_GetRuntimeClassName,
+    (void *)df_GetTrustLevel,
+    (void *)df_options_get_Languages,
+    (void *)df_options_get_GeographicRegion,
+    (void *)df_options_get_IntegerDigits,
+    (void *)df_options_put_IntegerDigits,
+    (void *)df_options_get_FractionDigits,
+    (void *)df_options_put_FractionDigits,
+    (void *)df_options_get_IsGrouped,
+    (void *)df_options_put_IsGrouped,
+    (void *)df_options_get_IsDecimalPointAlwaysDisplayed,
+    (void *)df_options_put_IsDecimalPointAlwaysDisplayed,
+    (void *)df_options_get_NumeralSystem,
+    (void *)df_options_put_NumeralSystem,
+    (void *)df_options_get_ResolvedLanguage,
+    (void *)df_options_get_ResolvedGeographicRegion
+};
+
+static const void *decimal_formatter_parser_vtbl[] = {
+    (void *)df_parser_QI,
+    (void *)df_parser_AddRef,
+    (void *)df_parser_Release,
+    (void *)df_GetIids,
+    (void *)df_GetRuntimeClassName,
+    (void *)df_GetTrustLevel,
+    (void *)df_parser_ParseInt,
+    (void *)df_parser_ParseUInt,
+    (void *)df_parser_ParseDouble
+};
+
+static const void *decimal_formatter_rounder_vtbl[] = {
+    (void *)df_rounder_QI,
+    (void *)df_rounder_AddRef,
+    (void *)df_rounder_Release,
+    (void *)df_GetIids,
+    (void *)df_GetRuntimeClassName,
+    (void *)df_GetTrustLevel,
+    (void *)df_rounder_get_NumberRounder,
+    (void *)df_rounder_put_NumberRounder
+};
+
+static const void *decimal_formatter_sigdigits_vtbl[] = {
+    (void *)df_sigdigits_QI,
+    (void *)df_sigdigits_AddRef,
+    (void *)df_sigdigits_Release,
+    (void *)df_GetIids,
+    (void *)df_GetRuntimeClassName,
+    (void *)df_GetTrustLevel,
+    (void *)df_sigdigits_get_SignificantDigits,
+    (void *)df_sigdigits_put_SignificantDigits
+};
+
+static const void *decimal_formatter_signedzero_vtbl[] = {
+    (void *)df_signedzero_QI,
+    (void *)df_signedzero_AddRef,
+    (void *)df_signedzero_Release,
+    (void *)df_GetIids,
+    (void *)df_GetRuntimeClassName,
+    (void *)df_GetTrustLevel,
+    (void *)df_signedzero_get_IsZeroSigned,
+    (void *)df_signedzero_put_IsZeroSigned
+};
+
+static HRESULT decimal_formatter_create(const WCHAR *lang, const WCHAR *region, struct decimal_formatter **out)
+{
+    struct decimal_formatter *impl;
+
+    if (!(impl = calloc(1, sizeof(*impl)))) return E_OUTOFMEMORY;
+    impl->INumberFormatter_iface.lpVtbl = decimal_formatter_vtbl;
+    impl->INumberFormatter2_iface.lpVtbl = decimal_formatter2_vtbl;
+    impl->INumberFormatterOptions_iface.lpVtbl = decimal_formatter_options_vtbl;
+    impl->INumberParser_iface.lpVtbl = decimal_formatter_parser_vtbl;
+    impl->INumberRounderOption_iface.lpVtbl = decimal_formatter_rounder_vtbl;
+    impl->ISignificantDigitsOption_iface.lpVtbl = decimal_formatter_sigdigits_vtbl;
+    impl->ISignedZeroOption_iface.lpVtbl = decimal_formatter_signedzero_vtbl;
+    impl->ref = 1;
+    impl->fraction_digits = 2;
+    impl->integer_digits = 1;
+    impl->is_grouped = FALSE;
+    impl->is_dp_always_displayed = FALSE;
+    lstrcpynW(impl->resolved_language, lang && *lang ? lang : L"en-US", ARRAY_SIZE(impl->resolved_language));
+    lstrcpynW(impl->geographic_region, region && *region ? region : L"US", ARRAY_SIZE(impl->geographic_region));
+
+    *out = impl;
+    return S_OK;
+}
+
+struct decimal_formatter_factory_impl
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } IDecimalFormatterFactory_iface;
+    LONG ref;
+};
+
+#define impl_from_df_fac(ptr) ((struct decimal_formatter_factory_impl *)((char *)(ptr) - offsetof(struct decimal_formatter_factory_impl, IActivationFactory_iface)))
+#define impl_from_df_fact_iface(ptr) ((struct decimal_formatter_factory_impl *)((char *)(ptr) - offsetof(struct decimal_formatter_factory_impl, IDecimalFormatterFactory_iface)))
+
+static HRESULT df_fac_QI_internal(struct decimal_formatter_factory_impl *impl, REFIID riid, void **ppvObject)
+{
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppvObject = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IDecimalFormatterFactory))
+    {
+        *ppvObject = &impl->IDecimalFormatterFactory_iface;
+        return S_OK;
+    }
+
+    WARN("df_fac %p: unhandled QI %s\n", impl, debugstr_guid(riid));
+    return E_NOINTERFACE;
+}
+
+static HRESULT WINAPI df_fac_QueryInterface(IActivationFactory *iface, REFIID riid, void **ppvObject)
+{
+    return df_fac_QI_internal(impl_from_df_fac(iface), riid, ppvObject);
+}
+static ULONG WINAPI df_fac_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI df_fac_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI df_fac_GetIids(IActivationFactory *iface, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI df_fac_GetRuntimeClassName(IActivationFactory *iface, HSTRING *n)
+{
+    return WindowsCreateString(L"Windows.Globalization.NumberFormatting.DecimalFormatter", 55, n);
+}
+static HRESULT WINAPI df_fac_GetTrustLevel(IActivationFactory *iface, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI df_fac_ActivateInstance(IActivationFactory *iface, IInspectable **instance)
+{
+    struct decimal_formatter *df;
+    HRESULT hr;
+
+    if (!instance) return E_POINTER;
+    hr = decimal_formatter_create(L"en-US", L"US", &df);
+    if (SUCCEEDED(hr))
+        *instance = (IInspectable *)&df->INumberFormatter_iface;
+    return hr;
+}
+
+static const IActivationFactoryVtbl df_activation_factory_vtbl = {
+    df_fac_QueryInterface,
+    df_fac_AddRef,
+    df_fac_Release,
+    df_fac_GetIids,
+    df_fac_GetRuntimeClassName,
+    df_fac_GetTrustLevel,
+    df_fac_ActivateInstance
+};
+
+static HRESULT WINAPI df_fact_QI(void *This, REFIID riid, void **ppvObject)
+{
+    return df_fac_QI_internal(impl_from_df_fact_iface(This), riid, ppvObject);
+}
+static ULONG WINAPI df_fact_AddRef(void *This) { return 2; }
+static ULONG WINAPI df_fact_Release(void *This) { return 1; }
+static HRESULT WINAPI df_fact_Create(void *This, void *languages, HSTRING geographicRegion, void **result)
+{
+    struct decimal_formatter *df;
+    const WCHAR *region_w = WindowsGetStringRawBuffer(geographicRegion, NULL);
+    const WCHAR *lang_w = NULL;
+    IIterable_HSTRING *iterable = (IIterable_HSTRING *)languages;
+    IIterator_HSTRING *iterator = NULL;
+    HSTRING first_str = NULL;
+    boolean has_current = FALSE;
+    HRESULT hr;
+
+    TRACE("languages %p, geographicRegion %s, result %p\n", languages, debugstr_hstring(geographicRegion), result);
+
+    if (!result) return E_POINTER;
+
+    if (iterable && SUCCEEDED(IIterable_HSTRING_First(iterable, &iterator)) && iterator)
+    {
+        if (SUCCEEDED(IIterator_HSTRING_get_HasCurrent(iterator, &has_current)) && has_current)
+        {
+            if (SUCCEEDED(IIterator_HSTRING_get_Current(iterator, &first_str)) && first_str)
+            {
+                lang_w = WindowsGetStringRawBuffer(first_str, NULL);
+            }
+        }
+        IIterator_HSTRING_Release(iterator);
+    }
+
+    hr = decimal_formatter_create(lang_w, region_w, &df);
+    if (SUCCEEDED(hr))
+        *result = &df->INumberFormatter_iface;
+    return hr;
+}
+
+static const void *df_factory_vtbl[] = {
+    (void *)df_fact_QI,
+    (void *)df_fact_AddRef,
+    (void *)df_fact_Release,
+    (void *)df_fac_GetIids,
+    (void *)df_fac_GetRuntimeClassName,
+    (void *)df_fac_GetTrustLevel,
+    (void *)df_fact_Create
+};
+
+static struct decimal_formatter_factory_impl decimal_formatter_factory = {
+    {&df_activation_factory_vtbl},
+    {df_factory_vtbl},
+    1
+};
+
+/*
+ *
+ * Windows.Globalization.CalendarIdentifiers
+ *
+ */
+static const GUID IID_ICalendarIdentifiersStatics  = {0x80653f68, 0x2cb2, 0x4c1f, {0xb5, 0x90, 0xf0, 0xf5, 0x2b, 0xf4, 0xfd, 0x1a}};
+static const GUID IID_ICalendarIdentifiersStatics2 = {0x7df4d488, 0x5fd0, 0x42a7, {0x95, 0xb5, 0x7d, 0x98, 0xd8, 0x23, 0x07, 0x5f}};
+static const GUID IID_ICalendarIdentifiersStatics3 = {0x2c225423, 0x1fad, 0x40c0, {0x93, 0x34, 0xa8, 0xeb, 0x90, 0xdb, 0x04, 0xf5}};
+
+struct calendar_identifiers_statics
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } ICalendarIdentifiersStatics_iface;
+    struct { const void *lpVtbl; } ICalendarIdentifiersStatics2_iface;
+    struct { const void *lpVtbl; } ICalendarIdentifiersStatics3_iface;
+};
+
+#define impl_from_cal_factory(ptr) ((struct calendar_identifiers_statics *)((char *)(ptr) - offsetof(struct calendar_identifiers_statics, IActivationFactory_iface)))
+#define impl_from_cal_s1(ptr)      ((struct calendar_identifiers_statics *)((char *)(ptr) - offsetof(struct calendar_identifiers_statics, ICalendarIdentifiersStatics_iface)))
+#define impl_from_cal_s2(ptr)      ((struct calendar_identifiers_statics *)((char *)(ptr) - offsetof(struct calendar_identifiers_statics, ICalendarIdentifiersStatics2_iface)))
+#define impl_from_cal_s3(ptr)      ((struct calendar_identifiers_statics *)((char *)(ptr) - offsetof(struct calendar_identifiers_statics, ICalendarIdentifiersStatics3_iface)))
+
+static HRESULT WINAPI cal_fac_QueryInterface(IActivationFactory *iface, REFIID iid, void **out)
+{
+    struct calendar_identifiers_statics *impl = impl_from_cal_factory(iface);
+    if (!out) return E_POINTER;
+    *out = NULL;
+    if (IsEqualGUID(iid, &IID_IUnknown) ||
+        IsEqualGUID(iid, &IID_IInspectable) ||
+        IsEqualGUID(iid, &IID_IAgileObject) ||
+        IsEqualGUID(iid, &IID_IActivationFactory))
+    {
+        *out = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(iid, &IID_ICalendarIdentifiersStatics))
+    {
+        *out = &impl->ICalendarIdentifiersStatics_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(iid, &IID_ICalendarIdentifiersStatics2))
+    {
+        *out = &impl->ICalendarIdentifiersStatics2_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(iid, &IID_ICalendarIdentifiersStatics3))
+    {
+        *out = &impl->ICalendarIdentifiersStatics3_iface;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI cal_fac_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI cal_fac_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI cal_fac_GetIids(IActivationFactory *iface, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI cal_fac_GetRuntimeClassName(IActivationFactory *iface, HSTRING *n) { return WindowsCreateString(L"Windows.Globalization.CalendarIdentifiers", 41, n); }
+static HRESULT WINAPI cal_fac_GetTrustLevel(IActivationFactory *iface, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI cal_fac_ActivateInstance(IActivationFactory *iface, IInspectable **instance) { return CLASS_E_NOTLICENSED; }
+
+static const struct IActivationFactoryVtbl cal_activation_factory_vtbl = {
+    cal_fac_QueryInterface,
+    cal_fac_AddRef,
+    cal_fac_Release,
+    cal_fac_GetIids,
+    cal_fac_GetRuntimeClassName,
+    cal_fac_GetTrustLevel,
+    cal_fac_ActivateInstance
+};
+
+static HRESULT WINAPI cal_s1_QI(void *This, REFIID iid, void **out) { return cal_fac_QueryInterface(&impl_from_cal_s1(This)->IActivationFactory_iface, iid, out); }
+static ULONG WINAPI cal_s1_AddRef(void *This) { return 2; }
+static ULONG WINAPI cal_s1_Release(void *This) { return 1; }
+static HRESULT WINAPI cal_s1_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI cal_s1_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Globalization.CalendarIdentifiers", 41, n); }
+static HRESULT WINAPI cal_s1_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI cal_s1_get_Gregorian(void *This, HSTRING *val) { return WindowsCreateString(L"GregorianCalendar", 17, val); }
+static HRESULT WINAPI cal_s1_get_Hebrew(void *This, HSTRING *val) { return WindowsCreateString(L"HebrewCalendar", 14, val); }
+static HRESULT WINAPI cal_s1_get_Hijri(void *This, HSTRING *val) { return WindowsCreateString(L"HijriCalendar", 13, val); }
+static HRESULT WINAPI cal_s1_get_Japanese(void *This, HSTRING *val) { return WindowsCreateString(L"JapaneseCalendar", 16, val); }
+static HRESULT WINAPI cal_s1_get_Julian(void *This, HSTRING *val) { return WindowsCreateString(L"JulianCalendar", 14, val); }
+static HRESULT WINAPI cal_s1_get_Korean(void *This, HSTRING *val) { return WindowsCreateString(L"KoreanCalendar", 14, val); }
+static HRESULT WINAPI cal_s1_get_Taiwan(void *This, HSTRING *val) { return WindowsCreateString(L"TaiwanCalendar", 14, val); }
+static HRESULT WINAPI cal_s1_get_Thai(void *This, HSTRING *val) { return WindowsCreateString(L"ThaiCalendar", 12, val); }
+static HRESULT WINAPI cal_s1_get_UmAlQura(void *This, HSTRING *val) { return WindowsCreateString(L"UmAlQuraCalendar", 16, val); }
+
+static const void *cal_s1_vtbl[] = {
+    (void *)cal_s1_QI, (void *)cal_s1_AddRef, (void *)cal_s1_Release,
+    (void *)cal_s1_GetIids, (void *)cal_s1_GetRuntimeClassName, (void *)cal_s1_GetTrustLevel,
+    (void *)cal_s1_get_Gregorian,
+    (void *)cal_s1_get_Hebrew,
+    (void *)cal_s1_get_Hijri,
+    (void *)cal_s1_get_Japanese,
+    (void *)cal_s1_get_Julian,
+    (void *)cal_s1_get_Korean,
+    (void *)cal_s1_get_Taiwan,
+    (void *)cal_s1_get_Thai,
+    (void *)cal_s1_get_UmAlQura
+};
+
+static HRESULT WINAPI cal_s2_QI(void *This, REFIID iid, void **out) { return cal_fac_QueryInterface(&impl_from_cal_s2(This)->IActivationFactory_iface, iid, out); }
+static HRESULT WINAPI cal_s2_get_Persian(void *This, HSTRING *val) { return WindowsCreateString(L"PersianCalendar", 15, val); }
+
+static const void *cal_s2_vtbl[] = {
+    (void *)cal_s2_QI, (void *)cal_s1_AddRef, (void *)cal_s1_Release,
+    (void *)cal_s1_GetIids, (void *)cal_s1_GetRuntimeClassName, (void *)cal_s1_GetTrustLevel,
+    (void *)cal_s2_get_Persian
+};
+
+static HRESULT WINAPI cal_s3_QI(void *This, REFIID iid, void **out) { return cal_fac_QueryInterface(&impl_from_cal_s3(This)->IActivationFactory_iface, iid, out); }
+static HRESULT WINAPI cal_s3_get_ChineseLunar(void *This, HSTRING *val) { return WindowsCreateString(L"ChineseLunarCalendar", 20, val); }
+static HRESULT WINAPI cal_s3_get_JapaneseLunar(void *This, HSTRING *val) { return WindowsCreateString(L"JapaneseLunarCalendar", 21, val); }
+static HRESULT WINAPI cal_s3_get_KoreanLunar(void *This, HSTRING *val) { return WindowsCreateString(L"KoreanLunarCalendar", 19, val); }
+static HRESULT WINAPI cal_s3_get_TaiwanLunar(void *This, HSTRING *val) { return WindowsCreateString(L"TaiwanLunarCalendar", 19, val); }
+static HRESULT WINAPI cal_s3_get_VietnameseLunar(void *This, HSTRING *val) { return WindowsCreateString(L"VietnameseLunarCalendar", 23, val); }
+
+static const void *cal_s3_vtbl[] = {
+    (void *)cal_s3_QI, (void *)cal_s1_AddRef, (void *)cal_s1_Release,
+    (void *)cal_s1_GetIids, (void *)cal_s1_GetRuntimeClassName, (void *)cal_s1_GetTrustLevel,
+    (void *)cal_s3_get_ChineseLunar,
+    (void *)cal_s3_get_JapaneseLunar,
+    (void *)cal_s3_get_KoreanLunar,
+    (void *)cal_s3_get_TaiwanLunar,
+    (void *)cal_s3_get_VietnameseLunar
+};
+
+static struct calendar_identifiers_statics calendar_identifiers_factory = {
+    { &cal_activation_factory_vtbl },
+    { cal_s1_vtbl },
+    { cal_s2_vtbl },
+    { cal_s3_vtbl }
+};
+
 HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out)
 {
     FIXME("clsid %s, riid %s, out %p stub!\n", debugstr_guid(clsid), debugstr_guid(riid), out);
@@ -1342,6 +2114,16 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, IActivationFactory **fac
     else if (!wcscmp(name, L"Windows.Globalization.Fonts.LanguageFontGroup"))
     {
         *factory = &font_group_factory.IActivationFactory_iface;
+        IUnknown_AddRef(*factory);
+    }
+    else if (!wcscmp(name, L"Windows.Globalization.NumberFormatting.DecimalFormatter"))
+    {
+        *factory = &decimal_formatter_factory.IActivationFactory_iface;
+        IUnknown_AddRef(*factory);
+    }
+    else if (!wcscmp(name, L"Windows.Globalization.CalendarIdentifiers"))
+    {
+        *factory = &calendar_identifiers_factory.IActivationFactory_iface;
         IUnknown_AddRef(*factory);
     }
 

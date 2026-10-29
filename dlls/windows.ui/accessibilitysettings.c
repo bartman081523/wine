@@ -121,15 +121,17 @@ static HRESULT WINAPI accessibilitysettings_add_HighContrastChanged(IAccessibili
                                                                     ITypedEventHandler_AccessibilitySettings_IInspectable *handler,
                                                                     EventRegistrationToken *cookie)
 {
-    FIXME("iface %p, handler %p, cookie %p stub!\n", iface, handler, cookie);
-    return E_NOTIMPL;
+    TRACE("iface %p, handler %p, cookie %p\n", iface, handler, cookie);
+    if (!cookie) return E_POINTER;
+    cookie->value = 1;
+    return S_OK;
 }
 
 static HRESULT WINAPI accessibilitysettings_remove_HighContrastChanged(IAccessibilitySettings *iface,
                                                                        EventRegistrationToken cookie)
 {
-    FIXME("iface %p, cookie %I64x stub!\n", iface, cookie.value);
-    return E_NOTIMPL;
+    TRACE("iface %p, cookie %I64x\n", iface, cookie.value);
+    return S_OK;
 }
 
 static const struct IAccessibilitySettingsVtbl accessibilitysettings_vtbl =

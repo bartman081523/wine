@@ -139,6 +139,7 @@ struct application_view_impl
     struct { const void *lpVtbl; } IApplicationView_iface;
     struct { const void *lpVtbl; } IApplicationView2_iface;
     struct { const void *lpVtbl; } IApplicationView3_iface;
+    struct { const void *lpVtbl; } IApplicationView4_iface;
     struct { const void *lpVtbl; } IRedhawkInterop_iface;
     LONG ref;
 };
@@ -146,6 +147,7 @@ struct application_view_impl
 #define impl_from_IApplicationView(ptr)  ((struct application_view_impl *)((char *)(ptr) - offsetof(struct application_view_impl, IApplicationView_iface)))
 #define impl_from_IApplicationView2(ptr) ((struct application_view_impl *)((char *)(ptr) - offsetof(struct application_view_impl, IApplicationView2_iface)))
 #define impl_from_IApplicationView3(ptr) ((struct application_view_impl *)((char *)(ptr) - offsetof(struct application_view_impl, IApplicationView3_iface)))
+#define impl_from_IApplicationView4(ptr) ((struct application_view_impl *)((char *)(ptr) - offsetof(struct application_view_impl, IApplicationView4_iface)))
 
 static HRESULT view_QI_internal(struct application_view_impl *impl, REFIID riid, void **ppvObject)
 {
@@ -173,6 +175,13 @@ static HRESULT view_QI_internal(struct application_view_impl *impl, REFIID riid,
     if (IsEqualGUID(riid, &IID_IApplicationView3))
     {
         *ppvObject = &impl->IApplicationView3_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IApplicationView4))
+    {
+        *ppvObject = &impl->IApplicationView4_iface;
         InterlockedIncrement(&impl->ref);
         return S_OK;
     }
@@ -414,6 +423,65 @@ static const void *application_view3_vtbl[] = {
     (void *)view3_SetPreferredMinSize
 };
 
+static HRESULT WINAPI view4_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    return view_QI_internal(impl_from_IApplicationView4(This), riid, ppvObject);
+}
+static ULONG WINAPI view4_AddRef(void *This)
+{
+    return InterlockedIncrement(&impl_from_IApplicationView4(This)->ref);
+}
+static ULONG WINAPI view4_Release(void *This)
+{
+    return InterlockedDecrement(&impl_from_IApplicationView4(This)->ref);
+}
+static HRESULT WINAPI view4_get_ViewMode(void *This, ApplicationViewMode *value)
+{
+    TRACE("ApplicationView4::get_ViewMode\n");
+    if (!value) return E_POINTER;
+    *value = ApplicationViewMode_Default;
+    return S_OK;
+}
+static HRESULT WINAPI view4_IsViewModeSupported(void *This, ApplicationViewMode mode, boolean *is_mode_supported)
+{
+    TRACE("ApplicationView4::IsViewModeSupported mode=%d\n", mode);
+    if (!is_mode_supported) return E_POINTER;
+    *is_mode_supported = TRUE;
+    return S_OK;
+}
+static HRESULT WINAPI view4_TryEnterViewModeAsync(void *This, ApplicationViewMode mode, void **operation)
+{
+    TRACE("ApplicationView4::TryEnterViewModeAsync mode=%d\n", mode);
+    if (operation) *operation = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI view4_TryEnterViewModeWithPreferencesAsync(void *This, ApplicationViewMode mode, void *preferences, void **operation)
+{
+    TRACE("ApplicationView4::TryEnterViewModeWithPreferencesAsync mode=%d\n", mode);
+    if (operation) *operation = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI view4_TryConsolidateAsync(void *This, void **operation)
+{
+    TRACE("ApplicationView4::TryConsolidateAsync\n");
+    if (operation) *operation = NULL;
+    return S_OK;
+}
+
+static const void *application_view4_vtbl[] = {
+    (void *)view4_QueryInterface,
+    (void *)view4_AddRef,
+    (void *)view4_Release,
+    (void *)view_GetIids,
+    (void *)view_GetRuntimeClassName,
+    (void *)view_GetTrustLevel,
+    (void *)view4_get_ViewMode,
+    (void *)view4_IsViewModeSupported,
+    (void *)view4_TryEnterViewModeAsync,
+    (void *)view4_TryEnterViewModeWithPreferencesAsync,
+    (void *)view4_TryConsolidateAsync
+};
+
 static const void *redhawk_view_vtbl[] = {
     (void *)view_QueryInterface,
     (void *)view_AddRef,
@@ -423,6 +491,9 @@ static const void *redhawk_view_vtbl[] = {
     (void *)view_GetTrustLevel,
     (void *)view_get_Id,
     (void *)redhawk_interop_m3, /* slot 7 safe hook */
+    (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3,
+    (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3,
+    (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3,
     (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3
 };
 
@@ -430,6 +501,7 @@ static struct application_view_impl current_view = {
     {application_view_vtbl},
     {application_view2_vtbl},
     {application_view3_vtbl},
+    {application_view4_vtbl},
     {redhawk_view_vtbl},
     1
 };
@@ -443,15 +515,17 @@ struct factory
     struct { const void *lpVtbl; } IApplicationViewStatics_iface;
     struct { const void *lpVtbl; } IApplicationViewStatics2_iface;
     struct { const void *lpVtbl; } IApplicationViewStatics3_iface;
+    struct { const void *lpVtbl; } IApplicationViewInteropStatics_iface;
     struct { const void *lpVtbl; } IRedhawkInterop_iface;
     LONG ref;
 };
 
-#define impl_from_fac(ptr)       ((struct factory *)((char *)(ptr) - offsetof(struct factory, IActivationFactory_iface)))
-#define impl_from_fac_s1(ptr)    ((struct factory *)((char *)(ptr) - offsetof(struct factory, IApplicationViewStatics_iface)))
-#define impl_from_fac_s2(ptr)    ((struct factory *)((char *)(ptr) - offsetof(struct factory, IApplicationViewStatics2_iface)))
-#define impl_from_fac_s3(ptr)    ((struct factory *)((char *)(ptr) - offsetof(struct factory, IApplicationViewStatics3_iface)))
-#define impl_from_fac_red(ptr)   ((struct factory *)((char *)(ptr) - offsetof(struct factory, IRedhawkInterop_iface)))
+#define impl_from_fac(ptr)         ((struct factory *)((char *)(ptr) - offsetof(struct factory, IActivationFactory_iface)))
+#define impl_from_fac_s1(ptr)      ((struct factory *)((char *)(ptr) - offsetof(struct factory, IApplicationViewStatics_iface)))
+#define impl_from_fac_s2(ptr)      ((struct factory *)((char *)(ptr) - offsetof(struct factory, IApplicationViewStatics2_iface)))
+#define impl_from_fac_s3(ptr)      ((struct factory *)((char *)(ptr) - offsetof(struct factory, IApplicationViewStatics3_iface)))
+#define impl_from_fac_interop(ptr) ((struct factory *)((char *)(ptr) - offsetof(struct factory, IApplicationViewInteropStatics_iface)))
+#define impl_from_fac_red(ptr)     ((struct factory *)((char *)(ptr) - offsetof(struct factory, IRedhawkInterop_iface)))
 
 static HRESULT fac_QI_internal(struct factory *impl, REFIID riid, void **out)
 {
@@ -486,6 +560,13 @@ static HRESULT fac_QI_internal(struct factory *impl, REFIID riid, void **out)
     if (IsEqualGUID(riid, &IID_IApplicationViewStatics3))
     {
         *out = &impl->IApplicationViewStatics3_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IApplicationViewInteropStatics))
+    {
+        *out = &impl->IApplicationViewInteropStatics_iface;
         InterlockedIncrement(&impl->ref);
         return S_OK;
     }
@@ -641,6 +722,31 @@ static const void *statics3_vtbl[] = {
     (void *)statics3_put_PreferredLaunchViewSize
 };
 
+/* IApplicationViewInteropStatics */
+static HRESULT WINAPI statics_interop_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    return fac_QI_internal(impl_from_fac_interop(This), riid, ppvObject);
+}
+static ULONG WINAPI statics_interop_AddRef(void *This) { return fac_AddRef(impl_from_fac_interop(This)); }
+static ULONG WINAPI statics_interop_Release(void *This) { return fac_Release(impl_from_fac_interop(This)); }
+static HRESULT WINAPI statics_interop_GetApplicationViewIdForWindow(void *This, void *window, INT32 *id)
+{
+    TRACE("ApplicationViewInteropStatics::GetApplicationViewIdForWindow window=%p\n", window);
+    if (!id) return E_POINTER;
+    *id = 1;
+    return S_OK;
+}
+
+static const void *statics_interop_vtbl[] = {
+    (void *)statics_interop_QueryInterface,
+    (void *)statics_interop_AddRef,
+    (void *)statics_interop_Release,
+    (void *)fac_GetIids,
+    (void *)fac_GetRuntimeClassName,
+    (void *)fac_GetTrustLevel,
+    (void *)statics_interop_GetApplicationViewIdForWindow
+};
+
 static HRESULT WINAPI redhawk_fac_QI(void *This, REFIID riid, void **ppvObject)
 {
     return fac_QI_internal(impl_from_fac_red(This), riid, ppvObject);
@@ -666,6 +772,7 @@ static struct factory default_application_view_factory =
     {statics1_vtbl},
     {statics2_vtbl},
     {statics3_vtbl},
+    {statics_interop_vtbl},
     {redhawk_factory_vtbl},
     1,
 };

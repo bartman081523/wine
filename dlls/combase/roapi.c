@@ -105,6 +105,11 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
             *out = wcsdup(L"windows.storage.applicationdata.dll");
             return S_OK;
         }
+        if (!wcsncmp(classid, L"Windows.Globalization.", 22))
+        {
+            *out = wcsdup(L"windows.globalization.dll");
+            return S_OK;
+        }
         if (!wcsncmp(classid, L"Windows.UI.Xaml.", 16))
         {
             *out = wcsdup(L"windows.ui.xaml.dll");
@@ -777,6 +782,25 @@ BOOL WINAPI RoOriginateError( HRESULT error, HSTRING message )
 BOOL WINAPI RoOriginateErrorW( HRESULT error, UINT max_len, const WCHAR *message )
 {
     return ro_originate_error_common( error, message, max_len );
+}
+
+/***********************************************************************
+ *      RoTransformError (combase.@)
+ */
+BOOL WINAPI RoTransformError( HRESULT old_error, HRESULT new_error, HSTRING message )
+{
+    const WCHAR *buffer = WindowsGetStringRawBuffer( message, NULL );
+    TRACE( "old_error %#lx, new_error %#lx, message %s.\n", old_error, new_error, debugstr_hstring( message ) );
+    return ro_originate_error_common( new_error, buffer, message ? WindowsGetStringLen( message ) : 0 );
+}
+
+/***********************************************************************
+ *      RoTransformErrorW (combase.@)
+ */
+BOOL WINAPI RoTransformErrorW( HRESULT old_error, HRESULT new_error, UINT max_len, const WCHAR *message )
+{
+    TRACE( "old_error %#lx, new_error %#lx, message %s.\n", old_error, new_error, message ? debugstr_wn( message, max_len ) : "(null)" );
+    return ro_originate_error_common( new_error, message, max_len );
 }
 
 /***********************************************************************

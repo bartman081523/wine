@@ -50,6 +50,46 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( frame_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Page" ))
         IActivationFactory_QueryInterface( page_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Grid" ))
+        IActivationFactory_QueryInterface( grid_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Control" ))
+        IActivationFactory_QueryInterface( control_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Button" ))
+        IActivationFactory_QueryInterface( button_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Primitives.ButtonBase" ))
+        IActivationFactory_QueryInterface( button_base_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.TextBlock" ))
+        IActivationFactory_QueryInterface( textblock_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Border" ))
+        IActivationFactory_QueryInterface( border_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.StackPanel" ))
+        IActivationFactory_QueryInterface( stackpanel_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.UserControl" ))
+        IActivationFactory_QueryInterface( usercontrol_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.ContentControl" ))
+        IActivationFactory_QueryInterface( contentcontrol_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.RowDefinition" ))
+        IActivationFactory_QueryInterface( rowdef_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.ColumnDefinition" ))
+        IActivationFactory_QueryInterface( coldef_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Automation.AutomationProperties" ))
+        IActivationFactory_QueryInterface( automation_properties_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Flyout" ))
+        IActivationFactory_QueryInterface( flyout_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.MenuFlyout" ))
+        IActivationFactory_QueryInterface( menuflyout_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.MenuFlyoutItem" ))
+        IActivationFactory_QueryInterface( menuflyoutitem_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Setter" ))
+        IActivationFactory_QueryInterface( setter_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Style" ))
+        IActivationFactory_QueryInterface( style_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Data.Binding" ))
+        IActivationFactory_QueryInterface( binding_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.PropertyPath" ))
+        IActivationFactory_QueryInterface( property_path_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Data.PropertyChangedEventArgs" ))
+        IActivationFactory_QueryInterface( property_changed_event_args_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

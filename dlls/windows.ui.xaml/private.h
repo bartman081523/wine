@@ -47,6 +47,42 @@ extern IActivationFactory *user_factory;
 extern IActivationFactory *size_helper_factory;
 extern IActivationFactory *frame_factory;
 extern IActivationFactory *page_factory;
+extern IActivationFactory *grid_factory;
+extern IActivationFactory *control_factory;
+extern IActivationFactory *button_factory;
+extern IActivationFactory *button_base_factory;
+extern IActivationFactory *textblock_factory;
+extern IActivationFactory *border_factory;
+extern IActivationFactory *stackpanel_factory;
+extern IActivationFactory *usercontrol_factory;
+extern IActivationFactory *contentcontrol_factory;
+extern IActivationFactory *rowdef_factory;
+extern IActivationFactory *coldef_factory;
+extern IActivationFactory *automation_properties_factory;
+extern IActivationFactory *flyout_factory;
+extern IActivationFactory *menuflyout_factory;
+extern IActivationFactory *menuflyoutitem_factory;
+extern IActivationFactory *setter_factory;
+extern IActivationFactory *style_factory;
+extern IActivationFactory *binding_factory;
+extern IActivationFactory *property_path_factory;
+extern IActivationFactory *property_changed_event_args_factory;
+
+void *create_dependency_property_named(const WCHAR *name);
+struct dp_entry
+{
+    void *dp;
+    IInspectable *value;
+};
+HRESULT dependency_property_get_default_value(void *dp, IInspectable **value);
+HRESULT get_global_dispatcher(void **value);
+HRESULT xaml_load_component(void *component, void *locator);
+void xaml_window_init(HWND hwnd);
+void xaml_fire_loaded_events(void);
+HRESULT create_resource_dictionary_instance(void **value);
+HRESULT create_menu_flyout_instance(void **value);
+HRESULT create_menu_flyout_item_instance(const WCHAR *name, void **value);
+LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \
@@ -85,5 +121,8 @@ extern IActivationFactory *page_factory;
     }
 #define DEFINE_IINSPECTABLE( pfx, iface_type, impl_type, base_iface )                              \
     DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from_##iface_type, iface_type##_iface, &impl->base_iface )
+
+extern void *global_xaml_metadata_provider;
+HRESULT xaml_create_instance_by_name(const WCHAR *class_name, void **instance);
 
 #endif

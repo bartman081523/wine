@@ -26,8 +26,10 @@ static const GUID IID_IDependencyPropertyStatics = {0x49e5f28f, 0x8259, 0x4d5c, 
 static const GUID IID_IDependencyObject = {0x5c526665, 0xf60e, 0x4912, {0xaf, 0x59, 0x5f, 0xe0, 0x68, 0x0f, 0x08, 0x9d}};
 static const GUID IID_IDependencyObject2 = {0x29fed85d, 0x3d22, 0x43a1, {0xad, 0xd0, 0x17, 0x02, 0x7c, 0x08, 0xb2, 0x12}};
 static const GUID IID_IDependencyObjectFactory = {0x9a03af92, 0x7d8a, 0x4937, {0x88, 0x4f, 0xec, 0xf3, 0x4f, 0xe0, 0x2a, 0xcb}};
+static const GUID IID_IWeakReferenceSource = {0x00000038, 0x0000, 0x0000, {0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+static const GUID IID_IWeakReference       = {0x00000037, 0x0000, 0x0000, {0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
 
-static const GUID IID_ComWrappers_internal = {0x247e6ffb, 0x5524, 0x54bf, {0xa2, 0x75, 0x82, 0x3d, 0x16, 0x77, 0x57, 0x68}};
+static const GUID IID_ComWrappers_internal = {0x11d3b13a, 0x180e, 0x4789, {0xa8, 0xbe, 0x77, 0x12, 0x88, 0x28, 0x93, 0xe6}};
 
 struct TypeName_raw
 {
@@ -37,7 +39,6 @@ struct TypeName_raw
 
 /* Redhawk safe hooks */
 static HRESULT WINAPI redhawk_safe_stub(void *This) { return S_OK; }
-static HRESULT WINAPI redhawk_safe_stub_arg(void *This, void *arg) { return S_OK; }
 
 /* -------------------------------------------------------------------------
  * PropertyMetadata Instance
@@ -154,10 +155,28 @@ static const struct {
     pm_get_CreateDefaultValueCallback
 };
 
+static HRESULT WINAPI pm_redhawk_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    struct property_metadata_impl *impl = impl_from_IRedhawk_pm(This);
+    return pm_QueryInterface(&impl->IPropertyMetadata_iface, riid, ppvObject);
+}
+
+static ULONG WINAPI pm_redhawk_AddRef(void *This)
+{
+    struct property_metadata_impl *impl = impl_from_IRedhawk_pm(This);
+    return pm_AddRef(&impl->IPropertyMetadata_iface);
+}
+
+static ULONG WINAPI pm_redhawk_Release(void *This)
+{
+    struct property_metadata_impl *impl = impl_from_IRedhawk_pm(This);
+    return pm_Release(&impl->IPropertyMetadata_iface);
+}
+
 static const void *redhawk_pm_vtbl[16] = {
-    pm_QueryInterface, pm_AddRef, pm_Release,
+    pm_redhawk_QueryInterface, pm_redhawk_AddRef, pm_redhawk_Release,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
-    pm_get_DefaultValue, redhawk_safe_stub, redhawk_safe_stub,
+    redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub
@@ -288,7 +307,20 @@ static const struct IActivationFactoryVtbl pm_activation_factory_vtbl = {
 /* IPropertyMetadataFactory */
 static HRESULT WINAPI pm_f_QueryInterface(void *This, REFIID riid, void **ppvObject)
 {
-    return pm_fac_QueryInterface((IActivationFactory *)impl_from_pm_IFactory(This), riid, ppvObject);
+    struct property_metadata_factory_impl *impl = impl_from_pm_IFactory(This);
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IPropertyMetadataFactory))
+    {
+        *ppvObject = &impl->IPropertyMetadataFactory_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return pm_fac_QueryInterface(&impl->IActivationFactory_iface, riid, ppvObject);
 }
 static ULONG WINAPI pm_f_AddRef(void *This)
 {
@@ -362,7 +394,20 @@ static const struct {
 /* IPropertyMetadataStatics */
 static HRESULT WINAPI pm_s_QueryInterface(void *This, REFIID riid, void **ppvObject)
 {
-    return pm_fac_QueryInterface((IActivationFactory *)impl_from_pm_IStatics(This), riid, ppvObject);
+    struct property_metadata_factory_impl *impl = impl_from_pm_IStatics(This);
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IPropertyMetadataStatics))
+    {
+        *ppvObject = &impl->IPropertyMetadataStatics_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return pm_fac_QueryInterface(&impl->IActivationFactory_iface, riid, ppvObject);
 }
 static ULONG WINAPI pm_s_AddRef(void *This)
 {
@@ -447,10 +492,28 @@ static const struct {
     pm_s_CreateWithFactoryAndCallback
 };
 
+static HRESULT WINAPI pm_fac_redhawk_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    struct property_metadata_factory_impl *impl = impl_from_pm_IRedhawk(This);
+    return pm_fac_QueryInterface(&impl->IActivationFactory_iface, riid, ppvObject);
+}
+
+static ULONG WINAPI pm_fac_redhawk_AddRef(void *This)
+{
+    struct property_metadata_factory_impl *impl = impl_from_pm_IRedhawk(This);
+    return pm_fac_AddRef(&impl->IActivationFactory_iface);
+}
+
+static ULONG WINAPI pm_fac_redhawk_Release(void *This)
+{
+    struct property_metadata_factory_impl *impl = impl_from_pm_IRedhawk(This);
+    return pm_fac_Release(&impl->IActivationFactory_iface);
+}
+
 static const void *redhawk_pm_fac_vtbl[16] = {
-    pm_fac_QueryInterface, pm_fac_AddRef, pm_fac_Release,
+    pm_fac_redhawk_QueryInterface, pm_fac_redhawk_AddRef, pm_fac_redhawk_Release,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
-    pm_s_CreateWithDefaultValue, redhawk_safe_stub, redhawk_safe_stub,
+    redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub
@@ -573,10 +636,30 @@ static const struct {
     dp_GetMetadata
 };
 
+#define impl_from_dp_IRedhawk(ptr) ((struct dependency_property_impl *)((char *)(ptr) - offsetof(struct dependency_property_impl, IRedhawkInterop_iface)))
+
+static HRESULT WINAPI dp_redhawk_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    struct dependency_property_impl *impl = impl_from_dp_IRedhawk(This);
+    return dp_QueryInterface(&impl->IDependencyProperty_iface, riid, ppvObject);
+}
+
+static ULONG WINAPI dp_redhawk_AddRef(void *This)
+{
+    struct dependency_property_impl *impl = impl_from_dp_IRedhawk(This);
+    return dp_AddRef(&impl->IDependencyProperty_iface);
+}
+
+static ULONG WINAPI dp_redhawk_Release(void *This)
+{
+    struct dependency_property_impl *impl = impl_from_dp_IRedhawk(This);
+    return dp_Release(&impl->IDependencyProperty_iface);
+}
+
 static const void *redhawk_dp_vtbl[16] = {
-    dp_QueryInterface, dp_AddRef, dp_Release,
+    dp_redhawk_QueryInterface, dp_redhawk_AddRef, dp_redhawk_Release,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
-    dp_GetMetadata, redhawk_safe_stub, redhawk_safe_stub,
+    redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub
@@ -593,6 +676,16 @@ static struct dependency_property_impl *create_dependency_property(HSTRING name,
     impl->metadata = metadata;
     if (impl->metadata) IInspectable_AddRef((IInspectable *)impl->metadata);
     return impl;
+}
+
+void *create_dependency_property_named(const WCHAR *name)
+{
+    HSTRING str = NULL;
+    struct dependency_property_impl *dp;
+    if (name) WindowsCreateString(name, wcslen(name), &str);
+    dp = create_dependency_property(str, NULL);
+    if (str) WindowsDeleteString(str);
+    return dp ? &dp->IDependencyProperty_iface : NULL;
 }
 
 /* -------------------------------------------------------------------------
@@ -693,7 +786,20 @@ static const struct IActivationFactoryVtbl dp_activation_factory_vtbl = {
 /* IDependencyPropertyStatics */
 static HRESULT WINAPI dps_QueryInterface(void *This, REFIID riid, void **ppvObject)
 {
-    return dp_fac_QueryInterface((IActivationFactory *)impl_from_dp_IStatics(This), riid, ppvObject);
+    struct dependency_property_factory_impl *impl = impl_from_dp_IStatics(This);
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IDependencyPropertyStatics))
+    {
+        *ppvObject = &impl->IDependencyPropertyStatics_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return dp_fac_QueryInterface(&impl->IActivationFactory_iface, riid, ppvObject);
 }
 static ULONG WINAPI dps_AddRef(void *This)
 {
@@ -764,10 +870,30 @@ static const struct {
     dps_RegisterAttached
 };
 
+#define impl_from_dp_fac_IRedhawk(ptr) ((struct dependency_property_factory_impl *)((char *)(ptr) - offsetof(struct dependency_property_factory_impl, IRedhawkInterop_iface)))
+
+static HRESULT WINAPI dp_fac_redhawk_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    struct dependency_property_factory_impl *impl = impl_from_dp_fac_IRedhawk(This);
+    return dp_fac_QueryInterface(&impl->IActivationFactory_iface, riid, ppvObject);
+}
+
+static ULONG WINAPI dp_fac_redhawk_AddRef(void *This)
+{
+    struct dependency_property_factory_impl *impl = impl_from_dp_fac_IRedhawk(This);
+    return dp_fac_AddRef(&impl->IActivationFactory_iface);
+}
+
+static ULONG WINAPI dp_fac_redhawk_Release(void *This)
+{
+    struct dependency_property_factory_impl *impl = impl_from_dp_fac_IRedhawk(This);
+    return dp_fac_Release(&impl->IActivationFactory_iface);
+}
+
 static const void *redhawk_dp_fac_vtbl[16] = {
-    dp_fac_QueryInterface, dp_fac_AddRef, dp_fac_Release,
+    dp_fac_redhawk_QueryInterface, dp_fac_redhawk_AddRef, dp_fac_redhawk_Release,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
-    dps_get_UnsetValue, dps_Register, dps_RegisterAttached,
+    redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub
@@ -784,6 +910,77 @@ IActivationFactory *dependency_property_factory = &default_dp_factory.IActivatio
 
 
 /* -------------------------------------------------------------------------
+ * Weak Reference Implementation
+ * ------------------------------------------------------------------------- */
+struct xaml_weakref
+{
+    struct { const void *lpVtbl; } IWeakReference_iface;
+    LONG ref;
+    void *target;
+};
+
+#define impl_from_IWeakRef(ptr) ((struct xaml_weakref *)((char *)(ptr) - offsetof(struct xaml_weakref, IWeakReference_iface)))
+
+static HRESULT WINAPI xaml_weakref_QI(void *This, REFIID riid, void **ppv)
+{
+    struct xaml_weakref *impl = impl_from_IWeakRef(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) || IsEqualGUID(riid, &IID_IWeakReference))
+    {
+        *ppv = &impl->IWeakReference_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI xaml_weakref_AddRef(void *This)
+{
+    struct xaml_weakref *impl = impl_from_IWeakRef(This);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI xaml_weakref_Release(void *This)
+{
+    struct xaml_weakref *impl = impl_from_IWeakRef(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI xaml_weakref_Resolve(void *This, REFIID riid, void **ppv)
+{
+    struct xaml_weakref *impl = impl_from_IWeakRef(This);
+    void **target_vtbl;
+    HRESULT (WINAPI *pQI)(void *, REFIID, void **);
+
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (!impl->target) return S_OK;
+
+    target_vtbl = *(void ***)impl->target;
+    if (!target_vtbl) return S_OK;
+    pQI = (void *)target_vtbl[0];
+    return pQI(impl->target, riid, ppv);
+}
+
+static const void *xaml_weakref_vtbl[4] = {
+    xaml_weakref_QI, xaml_weakref_AddRef, xaml_weakref_Release, xaml_weakref_Resolve
+};
+
+static HRESULT xaml_weakref_create(void *target, void **out)
+{
+    struct xaml_weakref *w = calloc(1, sizeof(*w));
+    if (!w) return E_OUTOFMEMORY;
+    w->IWeakReference_iface.lpVtbl = xaml_weakref_vtbl;
+    w->ref = 1;
+    w->target = target;
+    *out = &w->IWeakReference_iface;
+    return S_OK;
+}
+
+/* -------------------------------------------------------------------------
  * DependencyObject Instance
  * ------------------------------------------------------------------------- */
 struct dependency_object_impl
@@ -791,11 +988,42 @@ struct dependency_object_impl
     struct { const void *lpVtbl; } IDependencyObject_iface;
     struct { const void *lpVtbl; } IDependencyObject2_iface;
     struct { const void *lpVtbl; } IRedhawkInterop_iface;
+    struct { const void *lpVtbl; } IWeakReferenceSource_iface;
     LONG ref;
 };
 
 #define impl_from_IDependencyObject(ptr) ((struct dependency_object_impl *)((char *)(ptr) - offsetof(struct dependency_object_impl, IDependencyObject_iface)))
 #define impl_from_IDependencyObject2(ptr) ((struct dependency_object_impl *)((char *)(ptr) - offsetof(struct dependency_object_impl, IDependencyObject2_iface)))
+#define impl_from_do_IWRS(ptr) ((struct dependency_object_impl *)((char *)(ptr) - offsetof(struct dependency_object_impl, IWeakReferenceSource_iface)))
+
+static HRESULT WINAPI do_QueryInterface(void *This, REFIID riid, void **ppvObject);
+static ULONG WINAPI do_AddRef(void *This);
+static ULONG WINAPI do_Release(void *This);
+
+static HRESULT WINAPI do_wrs_QueryInterface(void *This, REFIID riid, void **ppv)
+{
+    struct dependency_object_impl *impl = impl_from_do_IWRS(This);
+    return do_QueryInterface(&impl->IDependencyObject_iface, riid, ppv);
+}
+static ULONG WINAPI do_wrs_AddRef(void *This)
+{
+    struct dependency_object_impl *impl = impl_from_do_IWRS(This);
+    return do_AddRef(&impl->IDependencyObject_iface);
+}
+static ULONG WINAPI do_wrs_Release(void *This)
+{
+    struct dependency_object_impl *impl = impl_from_do_IWRS(This);
+    return do_Release(&impl->IDependencyObject_iface);
+}
+static HRESULT WINAPI do_wrs_GetWeakReference(void *This, void **weakReference)
+{
+    struct dependency_object_impl *impl = impl_from_do_IWRS(This);
+    if (!weakReference) return E_POINTER;
+    return xaml_weakref_create(&impl->IDependencyObject_iface, weakReference);
+}
+static const void *do_wrs_vtbl[4] = {
+    do_wrs_QueryInterface, do_wrs_AddRef, do_wrs_Release, do_wrs_GetWeakReference
+};
 
 static HRESULT WINAPI do_QueryInterface(void *This, REFIID riid, void **ppvObject)
 {
@@ -817,6 +1045,13 @@ static HRESULT WINAPI do_QueryInterface(void *This, REFIID riid, void **ppvObjec
     if (IsEqualGUID(riid, &IID_IDependencyObject2))
     {
         *ppvObject = &impl->IDependencyObject2_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IWeakReferenceSource))
+    {
+        *ppvObject = &impl->IWeakReferenceSource_iface;
         InterlockedIncrement(&impl->ref);
         return S_OK;
     }
@@ -863,22 +1098,46 @@ static HRESULT WINAPI do_GetTrustLevel(void *This, TrustLevel *trust_level)
     return S_OK;
 }
 
-static HRESULT WINAPI do_GetValue(void *This, void *dp, IInspectable **result)
+HRESULT dependency_property_get_default_value(void *dp, IInspectable **result)
 {
     struct dependency_property_impl *prop = (struct dependency_property_impl *)dp;
-    TRACE("This %p, dp %p\n", This, dp);
     if (!result) return E_POINTER;
     *result = NULL;
-    if (prop && prop->metadata)
+    if (!dp) return S_OK;
+
+    if (prop->IDependencyProperty_iface.lpVtbl == &dependency_property_vtbl)
     {
-        struct property_metadata_impl *meta = (struct property_metadata_impl *)prop->metadata;
-        if (meta->default_value)
+        if (prop->metadata)
         {
-            *result = meta->default_value;
-            IInspectable_AddRef(*result);
+            struct property_metadata_impl *meta = (struct property_metadata_impl *)prop->metadata;
+            if (meta->IPropertyMetadata_iface.lpVtbl == &property_metadata_vtbl)
+            {
+                if (meta->default_value)
+                {
+                    *result = meta->default_value;
+                    IInspectable_AddRef(*result);
+                    TRACE("dp %p (%s) returning default value %p\n", dp, debugstr_hstring(prop->name), *result);
+                    return S_OK;
+                }
+            }
+            else
+            {
+                void **pm_vtbl = *(void ***)prop->metadata;
+                if (pm_vtbl && (ULONG_PTR)pm_vtbl[6] > 0x10000)
+                {
+                    HRESULT (WINAPI *pGetDef)(void *, IInspectable **) = (void *)pm_vtbl[6];
+                    return pGetDef(prop->metadata, result);
+                }
+            }
         }
     }
     return S_OK;
+}
+
+static HRESULT WINAPI do_GetValue(void *This, void *dp, IInspectable **result)
+{
+    TRACE("This %p, dp %p\n", This, dp);
+    return dependency_property_get_default_value(dp, result);
 }
 
 static HRESULT WINAPI do_SetValue(void *This, void *dp, IInspectable *value)
@@ -994,11 +1253,31 @@ static const struct {
     do2_UnregisterPropertyChangedCallback
 };
 
+#define impl_from_do_IRedhawk(ptr) ((struct dependency_object_impl *)((char *)(ptr) - offsetof(struct dependency_object_impl, IRedhawkInterop_iface)))
+
+static HRESULT WINAPI do_redhawk_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    struct dependency_object_impl *impl = impl_from_do_IRedhawk(This);
+    return do_QueryInterface(&impl->IDependencyObject_iface, riid, ppvObject);
+}
+
+static ULONG WINAPI do_redhawk_AddRef(void *This)
+{
+    struct dependency_object_impl *impl = impl_from_do_IRedhawk(This);
+    return do_AddRef(&impl->IDependencyObject_iface);
+}
+
+static ULONG WINAPI do_redhawk_Release(void *This)
+{
+    struct dependency_object_impl *impl = impl_from_do_IRedhawk(This);
+    return do_Release(&impl->IDependencyObject_iface);
+}
+
 static const void *redhawk_do_vtbl[16] = {
-    do_QueryInterface, do_AddRef, do_Release,
+    do_redhawk_QueryInterface, do_redhawk_AddRef, do_redhawk_Release,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
-    do_GetValue, do_SetValue, do_ClearValue,
-    do_ReadLocalValue, do_GetAnimationBaseValue, do_get_Dispatcher,
+    redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
+    redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub
 };
@@ -1010,6 +1289,7 @@ static struct dependency_object_impl *create_dependency_object(void)
     impl->IDependencyObject_iface.lpVtbl = &dependency_object_vtbl;
     impl->IDependencyObject2_iface.lpVtbl = &dependency_object2_vtbl;
     impl->IRedhawkInterop_iface.lpVtbl = redhawk_do_vtbl;
+    impl->IWeakReferenceSource_iface.lpVtbl = do_wrs_vtbl;
     impl->ref = 1;
     return impl;
 }
@@ -1116,7 +1396,20 @@ static const struct IActivationFactoryVtbl do_activation_factory_vtbl = {
 /* IDependencyObjectFactory */
 static HRESULT WINAPI do_f_QueryInterface(void *This, REFIID riid, void **ppvObject)
 {
-    return do_fac_QueryInterface((IActivationFactory *)impl_from_dofac_IFactory(This), riid, ppvObject);
+    struct dependency_object_factory_impl *impl = impl_from_dofac_IFactory(This);
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IDependencyObjectFactory))
+    {
+        *ppvObject = &impl->IDependencyObjectFactory_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return do_fac_QueryInterface(&impl->IActivationFactory_iface, riid, ppvObject);
 }
 static ULONG WINAPI do_f_AddRef(void *This)
 {
@@ -1169,10 +1462,30 @@ static const struct {
     do_f_CreateInstance
 };
 
+#define impl_from_dofac_IRedhawk(ptr) ((struct dependency_object_factory_impl *)((char *)(ptr) - offsetof(struct dependency_object_factory_impl, IRedhawkInterop_iface)))
+
+static HRESULT WINAPI do_fac_redhawk_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    struct dependency_object_factory_impl *impl = impl_from_dofac_IRedhawk(This);
+    return do_fac_QueryInterface(&impl->IActivationFactory_iface, riid, ppvObject);
+}
+
+static ULONG WINAPI do_fac_redhawk_AddRef(void *This)
+{
+    struct dependency_object_factory_impl *impl = impl_from_dofac_IRedhawk(This);
+    return do_fac_AddRef(&impl->IActivationFactory_iface);
+}
+
+static ULONG WINAPI do_fac_redhawk_Release(void *This)
+{
+    struct dependency_object_factory_impl *impl = impl_from_dofac_IRedhawk(This);
+    return do_fac_Release(&impl->IActivationFactory_iface);
+}
+
 static const void *redhawk_do_fac_vtbl[16] = {
-    do_fac_QueryInterface, do_fac_AddRef, do_fac_Release,
+    do_fac_redhawk_QueryInterface, do_fac_redhawk_AddRef, do_fac_redhawk_Release,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
-    do_f_CreateInstance, redhawk_safe_stub, redhawk_safe_stub,
+    (void *)do_f_CreateInstance, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub, redhawk_safe_stub, redhawk_safe_stub,
     redhawk_safe_stub

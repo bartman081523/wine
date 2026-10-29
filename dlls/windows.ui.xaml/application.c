@@ -106,7 +106,7 @@ static HRESULT WINAPI app_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0
 static HRESULT WINAPI app_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(RuntimeClass_Application, wcslen(RuntimeClass_Application), n); }
 static HRESULT WINAPI app_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
 
-static HRESULT create_resource_dictionary_instance(void **value);
+HRESULT create_resource_dictionary_instance(void **value);
 static HRESULT WINAPI app_get_Resources(void *This, void **value)
 {
     TRACE("(%p, %p)\n", This, value);
@@ -194,6 +194,54 @@ static const void *redhawk_app_vtbl[64] = {
     (void *)app_generic_stub, (void *)app_generic_stub
 };
 
+void *global_xaml_metadata_provider = NULL;
+
+HRESULT xaml_create_instance_by_name(const WCHAR *class_name, void **instance)
+{
+    HSTRING hstr = NULL;
+    void *xamlType = NULL;
+    void **prov_vtbl;
+    HRESULT (WINAPI *pGetXamlTypeByName)(void *, HSTRING, void **);
+    HRESULT hr;
+
+    if (!instance) return E_POINTER;
+    *instance = NULL;
+    if (!global_xaml_metadata_provider) return E_FAIL;
+
+    hr = WindowsCreateString(class_name, wcslen(class_name), &hstr);
+    if (FAILED(hr)) return hr;
+
+    prov_vtbl = *(void ***)global_xaml_metadata_provider;
+    if (!prov_vtbl || (ULONG_PTR)prov_vtbl[7] <= 0x10000)
+    {
+        WindowsDeleteString(hstr);
+        return E_FAIL;
+    }
+
+    pGetXamlTypeByName = (void *)prov_vtbl[7];
+    hr = pGetXamlTypeByName(global_xaml_metadata_provider, hstr, &xamlType);
+    WindowsDeleteString(hstr);
+
+    TRACE("GetXamlTypeByName(%s) returned hr=0x%08lx, xamlType=%p\n", debugstr_w(class_name), hr, xamlType);
+    if (SUCCEEDED(hr) && xamlType)
+    {
+        void **type_vtbl = *(void ***)xamlType;
+        if (type_vtbl && (ULONG_PTR)type_vtbl[18] > 0x10000)
+        {
+            HRESULT (WINAPI *pActivateInstance)(void *, void **) = (void *)type_vtbl[18];
+            hr = pActivateInstance(xamlType, instance);
+            TRACE("ActivateInstance for %s returned hr=0x%08lx, instance=%p\n", debugstr_w(class_name), hr, *instance);
+        }
+        else
+        {
+            hr = E_FAIL;
+        }
+        IUnknown_Release((IUnknown *)xamlType);
+        return hr;
+    }
+    return hr ? hr : E_FAIL;
+}
+
 static HRESULT create_application_instance(IInspectable *outer, IInspectable **inner, void **instance)
 {
     struct application_impl *impl = calloc(1, sizeof(*impl));
@@ -210,6 +258,18 @@ static HRESULT create_application_instance(IInspectable *outer, IInspectable **i
     *instance = &impl->IApplication_iface;
     current_application = &impl->IApplication_iface;
     TRACE("Created Application instance %p (outer %p, inner %p)\n", *instance, outer, inner ? *inner : NULL);
+
+    if (outer)
+    {
+        static const GUID IID_IXamlMetadataProvider_real = {0xb3765d69, 0x68a5, 0x4b32, {0x88, 0x61, 0xfd, 0xb9, 0x0c, 0x1f, 0x58, 0x36}};
+        void **outer_vtbl = *(void ***)outer;
+        if (outer_vtbl && (ULONG_PTR)outer_vtbl[0] > 0x10000)
+        {
+            HRESULT (WINAPI *pQI)(void *, REFIID, void **) = (void *)outer_vtbl[0];
+            HRESULT hr_prov = pQI(outer, &IID_IXamlMetadataProvider_real, &global_xaml_metadata_provider);
+            TRACE("pQI for IXamlMetadataProvider_real hr=0x%08lx, provider=%p\n", hr_prov, global_xaml_metadata_provider);
+        }
+    }
     return S_OK;
 }
 
@@ -675,6 +735,11 @@ static HRESULT WINAPI resdict_map_Lookup(void *This, void *key, void **value)
         if (temp_hstr) WindowsDeleteString(temp_hstr);
         return create_property_value_double(500.0, value);
     }
+    if (str && !wcscmp(str, L"DisplayContextMenu"))
+    {
+        if (temp_hstr) WindowsDeleteString(temp_hstr);
+        return create_menu_flyout_instance(value);
+    }
 
     if (temp_hstr) WindowsDeleteString(temp_hstr);
     return create_property_value_double(0.0, value);
@@ -695,7 +760,7 @@ static HRESULT WINAPI resdict_map_HasKey(void *This, void *key, BOOLEAN *value)
     if (!value) return E_POINTER;
 
     str = extract_key_string(key, &temp_hstr);
-    if (str && (!wcscmp(str, L"AppMinWindowWidth") || !wcscmp(str, L"AppMinWindowHeight")))
+    if (str && (!wcscmp(str, L"AppMinWindowWidth") || !wcscmp(str, L"AppMinWindowHeight") || !wcscmp(str, L"DisplayContextMenu")))
         *value = TRUE;
     else
         *value = FALSE;
@@ -819,7 +884,7 @@ static const void *redhawk_resdict_vtbl[16] = {
     (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3
 };
 
-static HRESULT create_resource_dictionary_instance(void **value)
+HRESULT create_resource_dictionary_instance(void **value)
 {
     struct resource_dictionary_impl *impl;
     if (!value) return E_POINTER;
@@ -1660,27 +1725,8 @@ static HRESULT WINAPI app_s_LoadComponent(void *This, void *component, void *loc
 }
 static HRESULT WINAPI app_s_LoadComponentWithResourceLocation(void *This, void *component, void *locator, int loc)
 {
-    static const GUID IID_IComponentConnector = {0x5632b1a1, 0x9035, 0x414c, {0xa7, 0x36, 0x64, 0xc8, 0x9f, 0xf8, 0xdc, 0x6a}};
-    static const GUID IID_IComponentConnector2 = {0xdc8f368b, 0xd12d, 0x4e32, {0xb4, 0x2f, 0x4a, 0xee, 0xa1, 0xa0, 0x4a, 0xec}};
-    void *connector = NULL;
-    HRESULT hr;
     TRACE("Application::LoadComponentWithResourceLocation component %p, locator %p, loc %d\n", component, locator, loc);
-    if (component && (ULONG_PTR)component > 0x10000)
-    {
-        void **vtbl = *(void ***)component;
-        if (vtbl && (ULONG_PTR)vtbl[0] > 0x10000)
-        {
-            HRESULT (WINAPI *pQI)(void *, REFIID, void **) = (void *)vtbl[0];
-            hr = pQI(component, &IID_IComponentConnector, &connector);
-            TRACE("QueryInterface for IComponentConnector returned hr=0x%08lx, connector=%p\n", hr, connector);
-            if (SUCCEEDED(hr) && connector)
-            {
-                void **conn_vtbl = *(void ***)connector;
-                TRACE("connector vtbl is %p, Connect is at %p\n", conn_vtbl, conn_vtbl ? conn_vtbl[6] : NULL);
-            }
-        }
-    }
-    return S_OK;
+    return xaml_load_component(component, locator);
 }
 
 static const void *application_statics_vtbl[] = {
@@ -2032,7 +2078,7 @@ static const void *redhawk_dispatcher_vtbl[16] = {
     (void *)disp_RunIdleAsync
 };
 
-static HRESULT get_global_dispatcher(void **value)
+HRESULT get_global_dispatcher(void **value)
 {
     struct dispatcher_impl *impl;
     if (!value) return E_POINTER;
@@ -2238,18 +2284,26 @@ static HRESULT get_global_core_window(void **value)
 /* -------------------------------------------------------------------------
  * Window Instance & Statics
  * ------------------------------------------------------------------------- */
+static const IID IID_IWindow2 = {0xd384759f, 0x34f6, 0x4482, {0x84,0x35,0xf5,0x52,0xf9,0xb2,0x4c,0xc8}};
+static const IID IID_IWindow3 = {0xb70bdc9d, 0x1c35, 0x462a, {0x9b,0x97,0x80,0x8d,0x5a,0xf9,0xf2,0x8e}};
+
 struct window_impl
 {
     struct { const void *lpVtbl; } IWindow_iface;
+    struct { const void *lpVtbl; } IWindow2_iface;
+    struct { const void *lpVtbl; } IWindow3_iface;
     struct { const void *lpVtbl; } IRedhawkInterop_iface;
     HWND hwnd;
     void *content;
+    void *titlebar_element;
     LONG ref;
 };
 
 static void *current_window = NULL;
 
 #define impl_from_IWindow(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow_iface)))
+#define impl_from_IWindow2(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow2_iface)))
+#define impl_from_IWindow3(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow3_iface)))
 #define impl_from_IRedhawk_win(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IRedhawkInterop_iface)))
 
 static HRESULT WINAPI win_QueryInterface(void *This, REFIID riid, void **ppvObject)
@@ -2266,6 +2320,20 @@ static HRESULT WINAPI win_QueryInterface(void *This, REFIID riid, void **ppvObje
         IsEqualGUID(riid, &IID_IWindow_3276167d))
     {
         *ppvObject = &impl->IWindow_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IWindow2))
+    {
+        *ppvObject = &impl->IWindow2_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IWindow3))
+    {
+        *ppvObject = &impl->IWindow3_iface;
         InterlockedIncrement(&impl->ref);
         return S_OK;
     }
@@ -2335,14 +2403,36 @@ static HRESULT WINAPI win_Activate(void *This)
     TRACE("Window::Activate called! hwnd=%p\n", impl->hwnd);
     if (!impl->hwnd)
     {
-        impl->hwnd = CreateWindowExW(0, L"STATIC", L"Calculator", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        WNDCLASSEXW wc = {0};
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = xaml_window_wndproc;
+        wc.hInstance = GetModuleHandleW(NULL);
+        wc.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wc.lpszClassName = L"Windows.UI.Xaml.Window";
+        RegisterClassExW(&wc);
+
+        impl->hwnd = CreateWindowExW(0, L"Windows.UI.Xaml.Window", L"Calculator", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                                      CW_USEDEFAULT, CW_USEDEFAULT, 400, 600, NULL, NULL, NULL, NULL);
         TRACE("CreateWindowExW created hwnd %p\n", impl->hwnd);
+        if (impl->hwnd) xaml_window_init(impl->hwnd);
     }
     if (impl->hwnd) ShowWindow(impl->hwnd, SW_SHOW);
+    xaml_fire_loaded_events();
     return S_OK;
 }
 static HRESULT WINAPI win_Close(void *This) { return S_OK; }
+static HRESULT WINAPI win_event_add(void *This, void *handler, EventRegistrationToken *token)
+{
+    TRACE("Window::event_add handler %p\n", handler);
+    if (token) token->value = 1;
+    return S_OK;
+}
+static HRESULT WINAPI win_event_remove(void *This, EventRegistrationToken token)
+{
+    TRACE("Window::event_remove token %lld\n", token.value);
+    return S_OK;
+}
 
 static const void *window_vtbl[32] = {
     (void *)win_QueryInterface,           /* 0 */
@@ -2357,19 +2447,20 @@ static const void *window_vtbl[32] = {
     (void *)win_put_Content,              /* 9 */
     (void *)win_get_CoreWindow,           /* 10 */
     (void *)win_get_Dispatcher,           /* 11 */
-    (void *)win_Activate,                 /* 12 */
-    (void *)win_Close,                    /* 13 */
-    (void *)win_generic_stub,             /* 14 */
-    (void *)win_generic_stub,             /* 15 */
-    (void *)win_generic_stub,             /* 16 */
-    (void *)win_generic_stub,             /* 17 */
-    (void *)win_generic_stub,             /* 18 */
-    (void *)win_generic_stub,             /* 19 */
-    (void *)win_Activate,                 /* 20 */
+    (void *)win_event_add,                /* 12: add_Activated */
+    (void *)win_event_remove,             /* 13: remove_Activated */
+    (void *)win_event_add,                /* 14: add_Closed */
+    (void *)win_event_remove,             /* 15: remove_Closed */
+    (void *)win_event_add,                /* 16: add_SizeChanged */
+    (void *)win_event_remove,             /* 17: remove_SizeChanged */
+    (void *)win_event_add,                /* 18: add_VisibilityChanged */
+    (void *)win_event_remove,             /* 19: remove_VisibilityChanged */
+    (void *)win_Activate,                 /* 20: Activate */
+    (void *)win_Close,                    /* 21: Close */
     (void *)win_generic_stub, (void *)win_generic_stub, (void *)win_generic_stub,
     (void *)win_generic_stub, (void *)win_generic_stub, (void *)win_generic_stub,
     (void *)win_generic_stub, (void *)win_generic_stub, (void *)win_generic_stub,
-    (void *)win_generic_stub, (void *)win_generic_stub
+    (void *)win_generic_stub
 };
 
 static HRESULT WINAPI redhawk_win_QI(void *This, REFIID riid, void **ppvObject)
@@ -2392,19 +2483,70 @@ static const void *redhawk_window_vtbl[32] = {
     (void *)win_put_Content,
     (void *)win_get_CoreWindow,
     (void *)win_get_Dispatcher,
-    (void *)win_Activate,
-    (void *)win_Close,
-    (void *)win_generic_stub,
-    (void *)win_generic_stub,
-    (void *)win_generic_stub,
-    (void *)win_generic_stub,
-    (void *)win_generic_stub,
-    (void *)win_generic_stub,
-    (void *)win_Activate,
+    (void *)win_event_add,                /* 12: add_Activated */
+    (void *)win_event_remove,             /* 13: remove_Activated */
+    (void *)win_event_add,                /* 14: add_Closed */
+    (void *)win_event_remove,             /* 15: remove_Closed */
+    (void *)win_event_add,                /* 16: add_SizeChanged */
+    (void *)win_event_remove,             /* 17: remove_SizeChanged */
+    (void *)win_event_add,                /* 18: add_VisibilityChanged */
+    (void *)win_event_remove,             /* 19: remove_VisibilityChanged */
+    (void *)win_Activate,                 /* 20: Activate */
+    (void *)win_Close,                    /* 21: Close */
     (void *)win_generic_stub, (void *)win_generic_stub, (void *)win_generic_stub,
     (void *)win_generic_stub, (void *)win_generic_stub, (void *)win_generic_stub,
     (void *)win_generic_stub, (void *)win_generic_stub, (void *)win_generic_stub,
-    (void *)win_generic_stub, (void *)win_generic_stub
+    (void *)win_generic_stub
+};
+
+static HRESULT WINAPI win2_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    return win_QueryInterface(&impl_from_IWindow2(This)->IWindow_iface, riid, ppvObject);
+}
+static ULONG WINAPI win2_AddRef(void *This) { return win_AddRef(&impl_from_IWindow2(This)->IWindow_iface); }
+static ULONG WINAPI win2_Release(void *This) { return win_Release(&impl_from_IWindow2(This)->IWindow_iface); }
+static HRESULT WINAPI win2_SetTitleBar(void *This, void *value)
+{
+    struct window_impl *impl = impl_from_IWindow2(This);
+    TRACE("Window2::SetTitleBar value=%p\n", value);
+    if (value) IUnknown_AddRef((IUnknown *)value);
+    if (impl->titlebar_element) IUnknown_Release((IUnknown *)impl->titlebar_element);
+    impl->titlebar_element = value;
+    return S_OK;
+}
+
+static const void *window2_vtbl[7] = {
+    (void *)win2_QueryInterface,
+    (void *)win2_AddRef,
+    (void *)win2_Release,
+    (void *)win_GetIids,
+    (void *)win_GetRuntimeClassName,
+    (void *)win_GetTrustLevel,
+    (void *)win2_SetTitleBar,
+};
+
+static HRESULT WINAPI win3_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    return win_QueryInterface(&impl_from_IWindow3(This)->IWindow_iface, riid, ppvObject);
+}
+static ULONG WINAPI win3_AddRef(void *This) { return win_AddRef(&impl_from_IWindow3(This)->IWindow_iface); }
+static ULONG WINAPI win3_Release(void *This) { return win_Release(&impl_from_IWindow3(This)->IWindow_iface); }
+static HRESULT WINAPI win3_get_Compositor(void *This, void **value)
+{
+    TRACE("Window3::get_Compositor\n");
+    if (!value) return E_POINTER;
+    *value = NULL;
+    return S_OK;
+}
+
+static const void *window3_vtbl[7] = {
+    (void *)win3_QueryInterface,
+    (void *)win3_AddRef,
+    (void *)win3_Release,
+    (void *)win_GetIids,
+    (void *)win_GetRuntimeClassName,
+    (void *)win_GetTrustLevel,
+    (void *)win3_get_Compositor,
 };
 
 static HRESULT create_window_instance(void **value)
@@ -2422,6 +2564,8 @@ static HRESULT create_window_instance(void **value)
     impl = calloc(1, sizeof(*impl));
     if (!impl) return E_OUTOFMEMORY;
     impl->IWindow_iface.lpVtbl = window_vtbl;
+    impl->IWindow2_iface.lpVtbl = window2_vtbl;
+    impl->IWindow3_iface.lpVtbl = window3_vtbl;
     impl->IRedhawkInterop_iface.lpVtbl = redhawk_window_vtbl;
     impl->ref = 10000;
     *value = &impl->IWindow_iface;
@@ -2918,12 +3062,6 @@ static const GUID IID_INavigate        = {0xbf5dbe99, 0xf53a, 0x4336, {0x97, 0x7
 
 #define RuntimeClass_Frame L"Windows.UI.Xaml.Controls.Frame"
 
-struct dp_entry
-{
-    void *dp;
-    IInspectable *value;
-};
-
 struct frame_impl
 {
     struct { const void *lpVtbl; } IFrame_iface;
@@ -3075,9 +3213,185 @@ static HRESULT WINAPI frame_add_NavigationFailed(void *This, void *handler, Even
 static HRESULT WINAPI frame_remove_NavigationFailed(void *This, EventRegistrationToken token) { return S_OK; }
 static HRESULT WINAPI frame_add_NavigationStopped(void *This, void *handler, EventRegistrationToken *token) { if (token) token->value = 1; return S_OK; }
 static HRESULT WINAPI frame_remove_NavigationStopped(void *This, EventRegistrationToken token) { return S_OK; }
+
+/* -------------------------------------------------------------------------
+ * NavigationEventArgs Implementation
+ * ------------------------------------------------------------------------- */
+static const GUID IID_IPageOverrides        = {0x230b9cb8, 0x3419, 0x4306, {0xaa, 0xbe, 0x4a, 0x8e, 0x68, 0x0d, 0x36, 0x27}};
+static const GUID IID_INavigationEventArgs  = {0xb6aa9834, 0x6691, 0x44d1, {0xbd, 0xf7, 0x58, 0x82, 0x0c, 0x27, 0xb0, 0xd0}};
+static const GUID IID_INavigationEventArgs2 = {0xdbff71d9, 0x979a, 0x4b2e, {0xa4, 0x9b, 0x3b, 0xb1, 0x7f, 0xde, 0xf5, 0x74}};
+
+struct nav_args_impl
+{
+    struct { const void *lpVtbl; } INavigationEventArgs_iface;
+    struct { const void *lpVtbl; } INavigationEventArgs2_iface;
+    struct { const void *lpVtbl; } IRedhawkInterop_iface;
+    LONG ref;
+    void *content;
+    void *parameter;
+};
+
+#define impl_from_INavigationEventArgs(ptr)  ((struct nav_args_impl *)((char *)(ptr) - offsetof(struct nav_args_impl, INavigationEventArgs_iface)))
+#define impl_from_INavigationEventArgs2(ptr) ((struct nav_args_impl *)((char *)(ptr) - offsetof(struct nav_args_impl, INavigationEventArgs2_iface)))
+#define impl_from_IRedhawk_nav_args(ptr)     ((struct nav_args_impl *)((char *)(ptr) - offsetof(struct nav_args_impl, IRedhawkInterop_iface)))
+
+static HRESULT nav_args_QI_internal(struct nav_args_impl *impl, REFIID riid, void **ppv)
+{
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_INavigationEventArgs))
+    {
+        *ppv = &impl->INavigationEventArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_INavigationEventArgs2))
+    {
+        *ppv = &impl->INavigationEventArgs2_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_ComWrappers_internal))
+    {
+        *ppv = &impl->IRedhawkInterop_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    TRACE("nav_args %p: unhandled QI %s\n", impl, debugstr_guid(riid));
+    return E_NOINTERFACE;
+}
+
+static HRESULT WINAPI nav_args_QueryInterface(void *This, REFIID riid, void **ppv) { return nav_args_QI_internal(impl_from_INavigationEventArgs(This), riid, ppv); }
+static ULONG WINAPI nav_args_AddRef(void *This) { return InterlockedIncrement(&impl_from_INavigationEventArgs(This)->ref); }
+static ULONG WINAPI nav_args_Release(void *This)
+{
+    struct nav_args_impl *impl = impl_from_INavigationEventArgs(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->content) IUnknown_Release((IUnknown *)impl->content);
+        if (impl->parameter) IUnknown_Release((IUnknown *)impl->parameter);
+        free(impl);
+    }
+    return ref;
+}
+static HRESULT WINAPI nav_args_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI nav_args_GetRuntimeClassName(void *This, HSTRING *n)
+{
+    static const WCHAR name[] = L"Windows.UI.Xaml.Navigation.NavigationEventArgs";
+    return WindowsCreateString(name, wcslen(name), n);
+}
+static HRESULT WINAPI nav_args_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI nav_args_get_Content(void *This, void **value)
+{
+    struct nav_args_impl *impl = impl_from_INavigationEventArgs(This);
+    if (!value) return E_POINTER;
+    *value = impl->content;
+    if (*value) IUnknown_AddRef((IUnknown *)*value);
+    return S_OK;
+}
+static HRESULT WINAPI nav_args_get_Parameter(void *This, void **value)
+{
+    struct nav_args_impl *impl = impl_from_INavigationEventArgs(This);
+    if (!value) return E_POINTER;
+    *value = impl->parameter;
+    if (*value) IUnknown_AddRef((IUnknown *)*value);
+    return S_OK;
+}
+static HRESULT WINAPI nav_args_get_SourcePageType(void *This, void *value) { return S_OK; }
+static HRESULT WINAPI nav_args_get_NavigationMode(void *This, int *value)
+{
+    if (!value) return E_POINTER;
+    *value = 0; /* NavigationMode_New */
+    return S_OK;
+}
+static HRESULT WINAPI nav_args_get_Uri(void *This, void **value)
+{
+    if (!value) return E_POINTER;
+    *value = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI nav_args_put_Uri(void *This, void *value) { return S_OK; }
+
+static const void *nav_args_vtbl[] = {
+    (void *)nav_args_QueryInterface,
+    (void *)nav_args_AddRef,
+    (void *)nav_args_Release,
+    (void *)nav_args_GetIids,
+    (void *)nav_args_GetRuntimeClassName,
+    (void *)nav_args_GetTrustLevel,
+    (void *)nav_args_get_Content,
+    (void *)nav_args_get_Parameter,
+    (void *)nav_args_get_SourcePageType,
+    (void *)nav_args_get_NavigationMode,
+    (void *)nav_args_get_Uri,
+    (void *)nav_args_put_Uri
+};
+
+static HRESULT WINAPI nav_args2_QueryInterface(void *This, REFIID riid, void **ppv) { return nav_args_QI_internal(impl_from_INavigationEventArgs2(This), riid, ppv); }
+static ULONG WINAPI nav_args2_AddRef(void *This) { return nav_args_AddRef(impl_from_INavigationEventArgs2(This)); }
+static ULONG WINAPI nav_args2_Release(void *This) { return nav_args_Release(impl_from_INavigationEventArgs2(This)); }
+static HRESULT WINAPI nav_args2_get_NavigationTransitionInfo(void *This, void **value)
+{
+    if (!value) return E_POINTER;
+    *value = NULL;
+    return S_OK;
+}
+
+static const void *nav_args2_vtbl[] = {
+    (void *)nav_args2_QueryInterface,
+    (void *)nav_args2_AddRef,
+    (void *)nav_args2_Release,
+    (void *)nav_args_GetIids,
+    (void *)nav_args_GetRuntimeClassName,
+    (void *)nav_args_GetTrustLevel,
+    (void *)nav_args2_get_NavigationTransitionInfo
+};
+
+static HRESULT WINAPI redhawk_nav_args_QI(void *This, REFIID riid, void **ppv) { return nav_args_QI_internal(impl_from_IRedhawk_nav_args(This), riid, ppv); }
+static ULONG WINAPI redhawk_nav_args_AddRef(void *This) { return nav_args_AddRef(impl_from_IRedhawk_nav_args(This)); }
+static ULONG WINAPI redhawk_nav_args_Release(void *This) { return nav_args_Release(impl_from_IRedhawk_nav_args(This)); }
+
+static const void *redhawk_nav_args_vtbl[32] = {
+    (void *)redhawk_nav_args_QI,
+    (void *)redhawk_nav_args_AddRef,
+    (void *)redhawk_nav_args_Release,
+    (void *)redhawk_interop_m3,
+    (void *)nav_args_GetRuntimeClassName,
+    (void *)nav_args_GetTrustLevel,
+    (void *)nav_args_get_Content,
+    (void *)redhawk_interop_m3, /* slot 7 safe hook */
+    (void *)nav_args_get_Parameter,
+    (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3,
+    (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3, (void *)redhawk_interop_m3
+};
+
+static HRESULT create_navigation_event_args(void *content, void *parameter, void **out)
+{
+    struct nav_args_impl *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->INavigationEventArgs_iface.lpVtbl = nav_args_vtbl;
+    impl->INavigationEventArgs2_iface.lpVtbl = nav_args2_vtbl;
+    impl->IRedhawkInterop_iface.lpVtbl = redhawk_nav_args_vtbl;
+    impl->ref = 1;
+    impl->content = content;
+    impl->parameter = parameter;
+    if (content) IUnknown_AddRef((IUnknown *)content);
+    if (parameter) IUnknown_AddRef((IUnknown *)parameter);
+    *out = &impl->INavigationEventArgs_iface;
+    return S_OK;
+}
+
 static HRESULT WINAPI frame_Navigate(void *This, void *sourcePageType, void *parameter, boolean *result)
 {
-    static const GUID IID_IXamlMetadataProvider = {0xb3b64209, 0x68a5, 0x4b32, {0x88, 0x61, 0xfb, 0xb9, 0x0c, 0x1f, 0x58, 0x36}};
     TRACE("Frame::Navigate called! This %p, type %p, param %p, result %p\n", This, sourcePageType, parameter, result);
     if (sourcePageType && (uintptr_t)sourcePageType > 0x10000)
     {
@@ -3094,21 +3408,23 @@ static HRESULT WINAPI frame_Navigate(void *This, void *sourcePageType, void *par
             void **outer_vtbl = *(void ***)outer;
             if (outer_vtbl && (ULONG_PTR)outer_vtbl[0] > 0x10000)
             {
+                static const GUID IID_IXamlMetadataProvider_real = {0xb3765d69, 0x68a5, 0x4b32, {0x88, 0x61, 0xfd, 0xb9, 0x0c, 0x1f, 0x58, 0x36}};
                 HRESULT (WINAPI *pQI)(void *, REFIID, void **) = (void *)outer_vtbl[0];
                 HRESULT (WINAPI *pGetIids)(void *, ULONG *, GUID **) = (void *)outer_vtbl[3];
                 ULONG count = 0;
                 GUID *iids = NULL;
+                void *provider = NULL;
+                HRESULT hr;
                 HRESULT hr_iids = pGetIids(outer, &count, &iids);
                 TRACE("outer GetIids returned hr=0x%08lx, count=%lu\n", hr_iids, count);
                 if (SUCCEEDED(hr_iids) && iids)
                 {
-                    for (ULONG i = 0; i < count; i++)
+                    ULONG i;
+                    for (i = 0; i < count; i++)
                         TRACE("  outer IID[%lu]: %s\n", i, debugstr_guid(&iids[i]));
                 }
 
-                static const GUID IID_IXamlMetadataProvider_real = {0xb3765d69, 0x68a5, 0x4b32, {0x88, 0x61, 0xfd, 0xb9, 0x0c, 0x1f, 0x58, 0x36}};
-                void *provider = NULL;
-                HRESULT hr = pQI(outer, &IID_IXamlMetadataProvider_real, &provider);
+                hr = pQI(outer, &IID_IXamlMetadataProvider_real, &provider);
                 TRACE("pQI for IXamlMetadataProvider_real hr=0x%08lx, provider=%p\n", hr, provider);
                 if (SUCCEEDED(hr) && provider)
                 {
@@ -3134,11 +3450,13 @@ static HRESULT WINAPI frame_Navigate(void *This, void *sourcePageType, void *par
                             void *page = NULL;
                             HRESULT (WINAPI *pRunInit)(void *) = (void *)type_vtbl[23];
                             HRESULT (WINAPI *pActivateInstance)(void *, void **) = (void *)type_vtbl[18];
+                            HRESULT hr_init;
+                            HRESULT hr_act;
 
-                            HRESULT hr_init = pRunInit(xamlType);
+                            hr_init = pRunInit(xamlType);
                             TRACE("RunInitializer(slot 23) returned hr=0x%08lx\n", hr_init);
 
-                            HRESULT hr_act = pActivateInstance(xamlType, &page);
+                            hr_act = pActivateInstance(xamlType, &page);
                             TRACE("ActivateInstance(slot 18) returned hr=0x%08lx, page=%p\n", hr_act, page);
 
                             if (SUCCEEDED(hr_act) && page)
@@ -3146,6 +3464,28 @@ static HRESULT WINAPI frame_Navigate(void *This, void *sourcePageType, void *par
                                 struct frame_impl *f_impl = impl_from_IFrame(This);
                                 f_impl->content = page;
                                 TRACE("Frame::Navigate successfully instantiated MainPage and set Frame.Content=%p!\n", page);
+
+                                /* Fire IPageOverrides::OnNavigatedTo */
+                                {
+                                    void *page_overrides = NULL;
+                                    HRESULT hr_po = IUnknown_QueryInterface((IUnknown *)page, &IID_IPageOverrides, &page_overrides);
+                                    TRACE("QI IPageOverrides on page %p returned hr=0x%08lx, page_overrides=%p\n", page, hr_po, page_overrides);
+                                    if (SUCCEEDED(hr_po) && page_overrides)
+                                    {
+                                        void *nav_args = NULL;
+                                        void **po_vtbl = *(void ***)page_overrides;
+                                        HRESULT (WINAPI *pOnNavigatedTo)(void *, void *) = (void *)po_vtbl[7];
+                                        create_navigation_event_args(page, parameter, &nav_args);
+                                        TRACE("Invoking IPageOverrides::OnNavigatedTo(slot 7 = %p) with nav_args=%p\n", pOnNavigatedTo, nav_args);
+                                        if (pOnNavigatedTo)
+                                        {
+                                            HRESULT hr_nav = pOnNavigatedTo(page_overrides, nav_args);
+                                            TRACE("IPageOverrides::OnNavigatedTo returned hr=0x%08lx\n", hr_nav);
+                                        }
+                                        if (nav_args) IUnknown_Release((IUnknown *)nav_args);
+                                        IUnknown_Release((IUnknown *)page_overrides);
+                                    }
+                                }
                             }
                         }
                     }
@@ -3373,7 +3713,7 @@ static HRESULT WINAPI frame_do_GetValue(void *This, void *dp, IInspectable **res
             return S_OK;
         }
     }
-    return S_OK;
+    return dependency_property_get_default_value(dp, result);
 }
 static HRESULT WINAPI frame_do_SetValue(void *This, void *dp, IInspectable *value)
 {
@@ -3650,6 +3990,9 @@ struct page_impl
 
 static HRESULT page_QI_internal(struct page_impl *impl, REFIID riid, void **ppvObject)
 {
+    static const GUID IID_IComponentConnector_local  = {0xf6790987, 0xe6e5, 0x47f2, {0x92, 0xc6, 0xec, 0xcc, 0xe4, 0xba, 0x15, 0x9a}};
+    static const GUID IID_IComponentConnector2_local = {0xdc8f368b, 0xeccc, 0x498e, {0xb1, 0x39, 0x91, 0x14, 0x22, 0x54, 0xd7, 0xae}};
+
     if (!ppvObject) return E_POINTER;
     *ppvObject = NULL;
 
@@ -3726,8 +4069,6 @@ static HRESULT page_QI_internal(struct page_impl *impl, REFIID riid, void **ppvO
         return E_NOINTERFACE;
     }
 
-    static const GUID IID_IComponentConnector_local  = {0x5632b1a1, 0x9035, 0x414c, {0xa7, 0x36, 0x64, 0xc8, 0x9f, 0xf8, 0xdc, 0x6a}};
-    static const GUID IID_IComponentConnector2_local = {0xdc8f368b, 0xd12d, 0x4e32, {0xb4, 0x2f, 0x4a, 0xee, 0xa1, 0xa0, 0x4a, 0xec}};
     if (IsEqualGUID(riid, &IID_IComponentConnector_local) ||
         IsEqualGUID(riid, &IID_IComponentConnector2_local))
     {
@@ -3936,7 +4277,7 @@ static HRESULT WINAPI page_do_GetValue(void *This, void *dp, IInspectable **resu
             return S_OK;
         }
     }
-    return S_OK;
+    return dependency_property_get_default_value(dp, result);
 }
 static HRESULT WINAPI page_do_SetValue(void *This, void *dp, IInspectable *value)
 {
