@@ -1109,6 +1109,8 @@ static HRESULT WINAPI sock_action_GetTrustLevel(void *This, TrustLevel *t) { if 
 static HRESULT WINAPI sock_action_put_Completed(void *This, void *handler)
 {
     struct socket_async_action *impl = impl_from_socket_action(This);
+    MESSAGE("windows.networking: sock_action_put_Completed impl %p, handler %p, status %d, error_code 0x%08lx\n",
+            impl, handler, impl->status, impl->error_code);
     if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
     impl->completed_handler = (IUnknown *)handler;
     if (impl->completed_handler)
@@ -1133,6 +1135,7 @@ static HRESULT WINAPI sock_action_get_Completed(void *This, void **handler)
 static HRESULT WINAPI sock_action_GetResults(void *This)
 {
     struct socket_async_action *impl = impl_from_socket_action(This);
+    MESSAGE("windows.networking: sock_action_GetResults impl %p, error_code 0x%08lx\n", impl, impl->error_code);
     return impl->error_code;
 }
 
@@ -1480,29 +1483,31 @@ static HRESULT WINAPI stream_sock_get_OutputStream(void *This, void **value)
 
 static HRESULT WINAPI stream_sock_ConnectWithEndpointPairAsync(void *This, void *endpoint_pair, void **operation)
 {
-    TRACE("ConnectWithEndpointPairAsync %p\n", endpoint_pair);
-    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+    MESSAGE("windows.networking: ConnectWithEndpointPairAsync this %p, ep %p\n", This, endpoint_pair);
+    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
 }
 
 static HRESULT WINAPI stream_sock_ConnectAsync(void *This, void *remote_host, HSTRING remote_service, void **operation)
 {
-    TRACE("ConnectAsync remote_host %p, service %s\n", remote_host, debugstr_hstring(remote_service));
-    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+    MESSAGE("windows.networking: ConnectAsync this %p, host %p, service %s\n", This, remote_host, debugstr_hstring(remote_service));
+    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
 }
 
 static HRESULT WINAPI stream_sock_ConnectWithEndpointPairAndProtectionLevelAsync(void *This, void *endpoint_pair, int level, void **operation)
 {
-    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+    MESSAGE("windows.networking: ConnectWithEndpointPairAndProtectionLevelAsync this %p, ep %p, level %d\n", This, endpoint_pair, level);
+    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
 }
 
 static HRESULT WINAPI stream_sock_ConnectWithProtectionLevelAsync(void *This, void *remote_host, HSTRING remote_service, int level, void **operation)
 {
-    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+    MESSAGE("windows.networking: ConnectWithProtectionLevelAsync this %p, host %p, service %s, level %d\n", This, remote_host, debugstr_hstring(remote_service), level);
+    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
 }
 
 static HRESULT WINAPI stream_sock_UpgradeToSslAsync(void *This, int level, void *host, void **operation)
 {
-    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
 }
 
 static const void *stream_socket_vtbl[] = {

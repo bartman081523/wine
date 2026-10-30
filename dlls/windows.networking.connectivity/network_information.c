@@ -880,11 +880,21 @@ static HRESULT WINAPI connection_profile_GetNetworkConnectivityLevel( IConnectio
     struct connection_profile *impl = impl_from_IConnectionProfile( iface );
     NetworkConnectivityLevel network_connectivity_level;
     NLM_CONNECTIVITY connectivity = 0xdeadbeef;
+    const char *offline_env;
     HRESULT hr;
 
     TRACE( "iface %p, value %p\n", iface, value );
 
     if (!value) return E_POINTER;
+
+    offline_env = getenv( "WINE_UWP_OFFLINE" );
+    if (offline_env && *offline_env && strcmp( offline_env, "0" ) != 0)
+    {
+        TRACE( "WINE_UWP_OFFLINE is set, returning NetworkConnectivityLevel_None\n" );
+        *value = NetworkConnectivityLevel_None;
+        return S_OK;
+    }
+
     if (FAILED(hr = INetworkListManager_GetConnectivity( impl->network_list_manager, &connectivity ))) return hr;
 
     if (connectivity == NLM_CONNECTIVITY_DISCONNECTED)
