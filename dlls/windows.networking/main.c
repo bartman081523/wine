@@ -1039,6 +1039,359 @@ static struct endpoint_pair_factory_impl endpoint_pair_factory = {
     { endpoint_pair_custom_factory_vtbl }
 };
 
+/* -------------------------------------------------------------------------
+ * Windows.Networking.Sockets.StreamSocket Implementation
+ * ------------------------------------------------------------------------- */
+static const GUID IID_IStreamSocket = {0x80a9babb, 0xc714, 0x4ed6, {0x82, 0xe3, 0x6e, 0x07, 0x45, 0x41, 0x50, 0x38}};
+static const GUID IID_IStreamSocketControl = {0xfe25ada8, 0x920f, 0x43ac, {0x89, 0x70, 0x95, 0x80, 0x3d, 0x60, 0x15, 0xda}};
+static const GUID IID_IStreamSocketInformation = {0x3b1e8c7c, 0x6161, 0x4bbb, {0xb0, 0x9e, 0xdc, 0x31, 0x86, 0x1f, 0x77, 0x3e}};
+static const GUID IID_IAsyncAction = {0x5a648006, 0x843a, 0x4da9, {0x86, 0x5b, 0x9d, 0x26, 0xe5, 0xdf, 0xad, 0x7b}};
+static const GUID IID_IClosable = {0x30d5a829, 0x7fa4, 0x4026, {0x83, 0xbb, 0xd7, 0x5b, 0xae, 0x4e, 0xa9, 0x9e}};
+
+struct socket_async_action
+{
+    struct { const void *lpVtbl; } IAsyncAction_iface;
+    struct { const void *lpVtbl; } IAsyncInfo_iface;
+    LONG ref;
+    AsyncStatus status;
+    HRESULT error_code;
+    IUnknown *completed_handler;
+};
+
+#define impl_from_socket_action(ptr) ((struct socket_async_action *)((char *)(ptr) - offsetof(struct socket_async_action, IAsyncAction_iface)))
+#define impl_from_socket_action_info(ptr) ((struct socket_async_action *)((char *)(ptr) - offsetof(struct socket_async_action, IAsyncInfo_iface)))
+
+static HRESULT WINAPI sock_action_QI(void *This, REFIID riid, void **ppv)
+{
+    struct socket_async_action *impl = impl_from_socket_action(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IAsyncAction))
+    {
+        *ppv = &impl->IAsyncAction_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IAsyncInfo))
+    {
+        *ppv = &impl->IAsyncInfo_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI sock_action_AddRef(void *This)
+{
+    struct socket_async_action *impl = impl_from_socket_action(This);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI sock_action_Release(void *This)
+{
+    struct socket_async_action *impl = impl_from_socket_action(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
+        free(impl);
+    }
+    return ref;
+}
+
+static HRESULT WINAPI sock_action_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI sock_action_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Foundation.IAsyncAction", 31, n); }
+static HRESULT WINAPI sock_action_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI sock_action_put_Completed(void *This, void *handler)
+{
+    struct socket_async_action *impl = impl_from_socket_action(This);
+    if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
+    impl->completed_handler = (IUnknown *)handler;
+    if (impl->completed_handler)
+    {
+        void **vtbl = *(void ***)handler;
+        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+        IUnknown_AddRef(impl->completed_handler);
+        invoke_fn(handler, &impl->IAsyncAction_iface, impl->status);
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI sock_action_get_Completed(void *This, void **handler)
+{
+    struct socket_async_action *impl = impl_from_socket_action(This);
+    if (!handler) return E_POINTER;
+    *handler = impl->completed_handler;
+    if (impl->completed_handler) IUnknown_AddRef(impl->completed_handler);
+    return S_OK;
+}
+
+static HRESULT WINAPI sock_action_GetResults(void *This)
+{
+    struct socket_async_action *impl = impl_from_socket_action(This);
+    return impl->error_code;
+}
+
+static const void *sock_action_vtbl[] = {
+    (void *)sock_action_QI,
+    (void *)sock_action_AddRef,
+    (void *)sock_action_Release,
+    (void *)sock_action_GetIids,
+    (void *)sock_action_GetRuntimeClassName,
+    (void *)sock_action_GetTrustLevel,
+    (void *)sock_action_put_Completed,
+    (void *)sock_action_get_Completed,
+    (void *)sock_action_GetResults
+};
+
+static HRESULT WINAPI sock_info_QI(void *This, REFIID riid, void **ppv)
+{
+    struct socket_async_action *impl = impl_from_socket_action_info(This);
+    return sock_action_QI(&impl->IAsyncAction_iface, riid, ppv);
+}
+static ULONG WINAPI sock_info_AddRef(void *This)
+{
+    struct socket_async_action *impl = impl_from_socket_action_info(This);
+    return sock_action_AddRef(&impl->IAsyncAction_iface);
+}
+static ULONG WINAPI sock_info_Release(void *This)
+{
+    struct socket_async_action *impl = impl_from_socket_action_info(This);
+    return sock_action_Release(&impl->IAsyncAction_iface);
+}
+static HRESULT WINAPI sock_info_get_Id(void *This, UINT32 *id) { if (id) *id = 1; return S_OK; }
+static HRESULT WINAPI sock_info_get_Status(void *This, AsyncStatus *status)
+{
+    struct socket_async_action *impl = impl_from_socket_action_info(This);
+    if (!status) return E_POINTER;
+    *status = impl->status;
+    return S_OK;
+}
+static HRESULT WINAPI sock_info_get_ErrorCode(void *This, HRESULT *ec)
+{
+    struct socket_async_action *impl = impl_from_socket_action_info(This);
+    if (!ec) return E_POINTER;
+    *ec = impl->error_code;
+    return S_OK;
+}
+static HRESULT WINAPI sock_info_Cancel(void *This) { return S_OK; }
+static HRESULT WINAPI sock_info_Close(void *This) { return S_OK; }
+
+static const void *sock_info_vtbl[] = {
+    (void *)sock_info_QI,
+    (void *)sock_info_AddRef,
+    (void *)sock_info_Release,
+    (void *)sock_action_GetIids,
+    (void *)sock_action_GetRuntimeClassName,
+    (void *)sock_action_GetTrustLevel,
+    (void *)sock_info_get_Id,
+    (void *)sock_info_get_Status,
+    (void *)sock_info_get_ErrorCode,
+    (void *)sock_info_Cancel,
+    (void *)sock_info_Close
+};
+
+static HRESULT create_socket_async_action(HRESULT error_code, void **out)
+{
+    struct socket_async_action *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IAsyncAction_iface.lpVtbl = sock_action_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = sock_info_vtbl;
+    impl->ref = 1;
+    impl->status = FAILED(error_code) ? Error : Completed;
+    impl->error_code = error_code;
+    *out = &impl->IAsyncAction_iface;
+    return S_OK;
+}
+
+struct stream_socket_impl
+{
+    struct { const void *lpVtbl; } IStreamSocket_iface;
+    struct { const void *lpVtbl; } IClosable_iface;
+    LONG ref;
+};
+
+#define impl_from_stream_socket(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, IStreamSocket_iface)))
+#define impl_from_stream_socket_closable(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, IClosable_iface)))
+
+static HRESULT WINAPI stream_sock_QI(void *This, REFIID riid, void **ppv)
+{
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IStreamSocket) ||
+        IsEqualGUID(riid, &IID_IStreamSocketControl) ||
+        IsEqualGUID(riid, &IID_IStreamSocketInformation))
+    {
+        *ppv = &impl->IStreamSocket_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IClosable))
+    {
+        *ppv = &impl->IClosable_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI stream_sock_AddRef(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI stream_sock_Release(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI stream_sock_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI stream_sock_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.Sockets.StreamSocket", 39, n); }
+static HRESULT WINAPI stream_sock_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI stream_sock_get_Control(void *This, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI stream_sock_get_Information(void *This, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI stream_sock_get_InputStream(void *This, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI stream_sock_get_OutputStream(void *This, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI stream_sock_ConnectWithEndpointPairAsync(void *This, void *endpoint_pair, void **operation)
+{
+    TRACE("ConnectWithEndpointPairAsync %p\n", endpoint_pair);
+    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+}
+
+static HRESULT WINAPI stream_sock_ConnectAsync(void *This, void *remote_host, HSTRING remote_service, void **operation)
+{
+    TRACE("ConnectAsync remote_host %p, service %s\n", remote_host, debugstr_hstring(remote_service));
+    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+}
+
+static HRESULT WINAPI stream_sock_ConnectWithEndpointPairAndProtectionLevelAsync(void *This, void *endpoint_pair, int level, void **operation)
+{
+    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+}
+
+static HRESULT WINAPI stream_sock_ConnectWithProtectionLevelAsync(void *This, void *remote_host, HSTRING remote_service, int level, void **operation)
+{
+    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+}
+
+static HRESULT WINAPI stream_sock_UpgradeToSslAsync(void *This, int level, void *host, void **operation)
+{
+    return create_socket_async_action(0x8007274c /* WSAETIMEDOUT */, operation);
+}
+
+static const void *stream_socket_vtbl[] = {
+    (void *)stream_sock_QI,
+    (void *)stream_sock_AddRef,
+    (void *)stream_sock_Release,
+    (void *)stream_sock_GetIids,
+    (void *)stream_sock_GetRuntimeClassName,
+    (void *)stream_sock_GetTrustLevel,
+    (void *)stream_sock_get_Control,
+    (void *)stream_sock_get_Information,
+    (void *)stream_sock_get_InputStream,
+    (void *)stream_sock_get_OutputStream,
+    (void *)stream_sock_ConnectWithEndpointPairAsync,
+    (void *)stream_sock_ConnectAsync,
+    (void *)stream_sock_ConnectWithEndpointPairAndProtectionLevelAsync,
+    (void *)stream_sock_ConnectWithProtectionLevelAsync,
+    (void *)stream_sock_UpgradeToSslAsync
+};
+
+static HRESULT WINAPI stream_sock_Close(void *This)
+{
+    TRACE("StreamSocket::Close\n");
+    return S_OK;
+}
+
+static const void *stream_socket_closable_vtbl[] = {
+    (void *)stream_sock_QI,
+    (void *)stream_sock_AddRef,
+    (void *)stream_sock_Release,
+    (void *)stream_sock_GetIids,
+    (void *)stream_sock_GetRuntimeClassName,
+    (void *)stream_sock_GetTrustLevel,
+    (void *)stream_sock_Close
+};
+
+static HRESULT create_stream_socket(void **out)
+{
+    struct stream_socket_impl *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IStreamSocket_iface.lpVtbl = stream_socket_vtbl;
+    impl->IClosable_iface.lpVtbl = stream_socket_closable_vtbl;
+    impl->ref = 1;
+    *out = &impl->IStreamSocket_iface;
+    return S_OK;
+}
+
+static HRESULT WINAPI stream_sock_fac_QI(void *This, REFIID riid, void **ppv)
+{
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppv = This;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI stream_sock_fac_AddRef(void *This) { return 2; }
+static ULONG WINAPI stream_sock_fac_Release(void *This) { return 1; }
+static HRESULT WINAPI stream_sock_fac_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI stream_sock_fac_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.Sockets.StreamSocket", 39, n); }
+static HRESULT WINAPI stream_sock_fac_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI stream_sock_fac_ActivateInstance(void *This, IInspectable **instance)
+{
+    if (!instance) return E_POINTER;
+    return create_stream_socket((void **)instance);
+}
+
+static const void *stream_socket_factory_vtbl[] = {
+    (void *)stream_sock_fac_QI,
+    (void *)stream_sock_fac_AddRef,
+    (void *)stream_sock_fac_Release,
+    (void *)stream_sock_fac_GetIids,
+    (void *)stream_sock_fac_GetRuntimeClassName,
+    (void *)stream_sock_fac_GetTrustLevel,
+    (void *)stream_sock_fac_ActivateInstance
+};
+
+static struct { const void *lpVtbl; } stream_socket_factory = { stream_socket_factory_vtbl };
+
 HRESULT WINAPI SetSocketMediaStreamingMode(BOOL value)
 {
     FIXME("value %d stub!\n", value);
@@ -1063,6 +1416,11 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, void **factory)
     if (!wcscmp(name, L"Windows.Networking.EndpointPair"))
     {
         *factory = &endpoint_pair_factory.IActivationFactory_iface;
+        return S_OK;
+    }
+    if (!wcscmp(name, L"Windows.Networking.Sockets.StreamSocket"))
+    {
+        *factory = &stream_socket_factory;
         return S_OK;
     }
 
