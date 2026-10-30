@@ -27,6 +27,9 @@ static const GUID IID_IIterable                     = {0xfaa585ea,0x6214,0x4217,
 static const GUID IID_IIterable_StorePackageUpdate   = {0xcb5cc29e,0x4475,0x5e19,{0xba,0xc4,0x46,0x04,0x9b,0x50,0xc6,0xb1}};
 static const GUID IID_IIterator                     = {0x6a1d6c07,0x076d,0x49f2,{0x83,0x14,0xf5,0x2c,0x9c,0x9a,0x83,0x31}};
 static const GUID IID_IIterator_StorePackageUpdate   = {0x3acd0e4e,0x5133,0x54df,{0x8b,0xfd,0x11,0x02,0x2d,0xcd,0x5f,0xf0}};
+static const GUID IID_IMapView_StoreProductMap       = {0xdbaac6e5,0x61a4,0x5c88,{0xb5,0xd8,0x3a,0x3e,0x16,0x1c,0x3e,0x4a}};
+static const GUID IID_IIterable_StoreProductMap      = {0x78a33722,0xabfb,0x57c0,{0x85,0x3f,0x56,0x16,0xa3,0xab,0x8d,0x57}};
+static const GUID IID_IIterator_StoreProductMap      = {0x0edb142c,0x9d04,0x532b,{0x81,0xe9,0x4c,0x84,0xab,0x09,0xb3,0x4b}};
 
 /* CLR / WinRT interop probe GUIDs that must be rejected with E_NOINTERFACE */
 static const GUID IID_IWeakReferenceSource_CsWinRT = {0x11d3b13a,0x180e,0x4789,{0xa8,0xbe,0x77,0x12,0x88,0x28,0x93,0xe6}};
@@ -42,6 +45,19 @@ static inline void set_out_ptr(void *p, void *val)
         *(void **)p = val;
 }
 
+enum store_async_type
+{
+    STORE_ASYNC_DEFAULT,
+    STORE_ASYNC_APP_LICENSE,
+    STORE_ASYNC_QUERY_RESULT,
+    STORE_ASYNC_PAGED_QUERY_RESULT,
+    STORE_ASYNC_PRODUCT_RESULT,
+    STORE_ASYNC_RATE_RESULT,
+    STORE_ASYNC_VECTOR_VIEW,
+};
+
+static HRESULT store_async_op_create(enum store_async_type type, void **out);
+
 /* ========================================================================= */
 /* Unified Store result stub                                                 */
 /* ========================================================================= */
@@ -52,8 +68,10 @@ struct store_result
     IInspectable IStoreRateAndReviewResult_iface;
     IInspectable IStoreAppLicense_iface;
     IInspectable IVectorView_iface;
+    IInspectable IMapView_iface;
     IInspectable IIterable_iface;
     IInspectable IStoreQueryResult_iface;
+    IInspectable IStoreProductPagedQueryResult_iface;
     LONG ref;
 };
 
@@ -82,6 +100,11 @@ static inline struct store_result *impl_from_store_result_vector(void *iface)
     return CONTAINING_RECORD(iface, struct store_result, IVectorView_iface);
 }
 
+static inline struct store_result *impl_from_store_result_map(void *iface)
+{
+    return CONTAINING_RECORD(iface, struct store_result, IMapView_iface);
+}
+
 static inline struct store_result *impl_from_store_result_iterable(void *iface)
 {
     return CONTAINING_RECORD(iface, struct store_result, IIterable_iface);
@@ -90,6 +113,11 @@ static inline struct store_result *impl_from_store_result_iterable(void *iface)
 static inline struct store_result *impl_from_store_result_query(void *iface)
 {
     return CONTAINING_RECORD(iface, struct store_result, IStoreQueryResult_iface);
+}
+
+static inline struct store_result *impl_from_store_result_paged_query(void *iface)
+{
+    return CONTAINING_RECORD(iface, struct store_result, IStoreProductPagedQueryResult_iface);
 }
 
 static HRESULT store_result_query_interface_internal(struct store_result *impl, REFIID iid, void **out)
@@ -127,8 +155,11 @@ static HRESULT store_result_query_interface_internal(struct store_result *impl, 
     {
         *out = &impl->IStoreAppLicense_iface;
     }
-    else if (IsEqualIID(iid, &IID_IStoreProductPagedQueryResult) ||
-             IsEqualIID(iid, &IID_IStoreProductQueryResult))
+    else if (IsEqualIID(iid, &IID_IStoreProductPagedQueryResult))
+    {
+        *out = &impl->IStoreProductPagedQueryResult_iface;
+    }
+    else if (IsEqualIID(iid, &IID_IStoreProductQueryResult))
     {
         *out = &impl->IStoreQueryResult_iface;
     }
@@ -137,8 +168,13 @@ static HRESULT store_result_query_interface_internal(struct store_result *impl, 
     {
         *out = &impl->IVectorView_iface;
     }
+    else if (IsEqualIID(iid, &IID_IMapView_StoreProductMap))
+    {
+        *out = &impl->IMapView_iface;
+    }
     else if (IsEqualIID(iid, &IID_IIterable) ||
-             IsEqualIID(iid, &IID_IIterable_StorePackageUpdate))
+             IsEqualIID(iid, &IID_IIterable_StorePackageUpdate) ||
+             IsEqualIID(iid, &IID_IIterable_StoreProductMap))
     {
         *out = &impl->IIterable_iface;
     }
@@ -284,19 +320,28 @@ static HRESULT WINAPI store_result_product_get_HasDigitalDownload(void *iface, b
 
 static HRESULT WINAPI store_result_product_get_Keywords(void *iface, void **value)
 {
-    if (value) *value = NULL;
+    struct store_result *impl = impl_from_store_result_product(iface);
+    if (!value) return E_INVALIDARG;
+    *value = &impl->IVectorView_iface;
+    InterlockedIncrement(&impl->ref);
     return S_OK;
 }
 
 static HRESULT WINAPI store_result_product_get_Images(void *iface, void **value)
 {
-    if (value) *value = NULL;
+    struct store_result *impl = impl_from_store_result_product(iface);
+    if (!value) return E_INVALIDARG;
+    *value = &impl->IVectorView_iface;
+    InterlockedIncrement(&impl->ref);
     return S_OK;
 }
 
 static HRESULT WINAPI store_result_product_get_Videos(void *iface, void **value)
 {
-    if (value) *value = NULL;
+    struct store_result *impl = impl_from_store_result_product(iface);
+    if (!value) return E_INVALIDARG;
+    *value = &impl->IVectorView_iface;
+    InterlockedIncrement(&impl->ref);
     return S_OK;
 }
 
@@ -314,7 +359,10 @@ static HRESULT WINAPI store_result_product_get_LinkUri(void *iface, void **value
 
 static HRESULT WINAPI store_result_product_get_Skus(void *iface, void **value)
 {
-    if (value) *value = NULL;
+    struct store_result *impl = impl_from_store_result_product(iface);
+    if (!value) return E_INVALIDARG;
+    *value = &impl->IVectorView_iface;
+    InterlockedIncrement(&impl->ref);
     return S_OK;
 }
 
@@ -470,9 +518,18 @@ static HRESULT WINAPI store_result_license_get_ExtendedJsonData(void *iface, HST
     return WindowsCreateString(L"{}", 2, value);
 }
 
+static HRESULT WINAPI store_result_license_GetRuntimeClassName(void *iface, HSTRING *class_name)
+{
+    static const WCHAR name[] = L"Windows.Services.Store.StoreAppLicense";
+    return WindowsCreateString(name, ARRAY_SIZE(name) - 1, class_name);
+}
+
 static HRESULT WINAPI store_result_license_get_AddOnLicenses(void *iface, void **value)
 {
-    if (value) *value = NULL;
+    struct store_result *impl = impl_from_store_result_license(iface);
+    if (!value) return E_INVALIDARG;
+    *value = &impl->IMapView_iface;
+    InterlockedIncrement(&impl->ref);
     return S_OK;
 }
 
@@ -501,7 +558,7 @@ static const void *store_result_license_vtbl[] =
     store_result_license_AddRef,
     store_result_license_Release,
     store_result_GetIids,
-    store_result_GetRuntimeClassName,
+    store_result_license_GetRuntimeClassName,
     store_result_GetTrustLevel,
     /* IStoreAppLicense methods (slots 6..14) */
     store_result_license_get_SkuStoreId,
@@ -518,7 +575,32 @@ static const void *store_result_license_vtbl[] =
 /* 5. IVectorView vtbl methods */
 static HRESULT WINAPI store_result_vector_QueryInterface(void *iface, REFIID iid, void **out)
 {
-    return store_result_query_interface_internal(impl_from_store_result_vector(iface), iid, out);
+    struct store_result *impl = impl_from_store_result_vector(iface);
+    if (!out) return E_INVALIDARG;
+
+    if (IsEqualIID(iid, &IID_IWeakReferenceSource_CsWinRT) ||
+        IsEqualIID(iid, &IID_ILanguageExceptionErrorInfo) ||
+        IsEqualIID(iid, &IID_IWeakReferenceSource) ||
+        IsEqualIID(iid, &IID_IWeakReference) ||
+        IsEqualIID(iid, &IID_IMarshal) ||
+        IsEqualIID(iid, &IID_ICustomQueryInterface))
+    {
+        *out = NULL;
+        return E_NOINTERFACE;
+    }
+
+    if (IsEqualIID(iid, &IID_IIterable) ||
+        IsEqualIID(iid, &IID_IIterable_StorePackageUpdate) ||
+        IsEqualIID(iid, &IID_IIterable_StoreProductMap))
+    {
+        *out = &impl->IIterable_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    *out = &impl->IVectorView_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
 }
 
 static ULONG WINAPI store_result_vector_AddRef(void *iface)
@@ -533,6 +615,12 @@ static ULONG WINAPI store_result_vector_Release(void *iface)
     ULONG ref = InterlockedDecrement(&impl->ref);
     if (!ref) free(impl);
     return ref;
+}
+
+static HRESULT WINAPI store_result_vector_GetRuntimeClassName(void *iface, HSTRING *class_name)
+{
+    static const WCHAR name[] = L"Windows.Foundation.Collections.IVectorView`1<IInspectable>";
+    return WindowsCreateString(name, ARRAY_SIZE(name) - 1, class_name);
 }
 
 static HRESULT WINAPI store_result_vector_GetAt(void *iface, UINT32 index, void **item)
@@ -567,13 +655,106 @@ static const void *store_result_vector_vtbl[] =
     store_result_vector_AddRef,
     store_result_vector_Release,
     store_result_GetIids,
-    store_result_GetRuntimeClassName,
+    store_result_vector_GetRuntimeClassName,
     store_result_GetTrustLevel,
     /* IVectorView methods (slots 6..9) */
     store_result_vector_GetAt,
     store_result_vector_get_Size,
     store_result_vector_IndexOf,
     store_result_vector_GetMany,
+};
+
+/* 5b. IMapView vtbl methods */
+static HRESULT WINAPI store_result_map_QueryInterface(void *iface, REFIID iid, void **out)
+{
+    struct store_result *impl = impl_from_store_result_map(iface);
+    if (!out) return E_INVALIDARG;
+
+    if (IsEqualIID(iid, &IID_IWeakReferenceSource_CsWinRT) ||
+        IsEqualIID(iid, &IID_ILanguageExceptionErrorInfo) ||
+        IsEqualIID(iid, &IID_IWeakReferenceSource) ||
+        IsEqualIID(iid, &IID_IWeakReference) ||
+        IsEqualIID(iid, &IID_IMarshal) ||
+        IsEqualIID(iid, &IID_ICustomQueryInterface))
+    {
+        *out = NULL;
+        return E_NOINTERFACE;
+    }
+
+    if (IsEqualIID(iid, &IID_IIterable) ||
+        IsEqualIID(iid, &IID_IIterable_StorePackageUpdate) ||
+        IsEqualIID(iid, &IID_IIterable_StoreProductMap))
+    {
+        *out = &impl->IIterable_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    *out = &impl->IMapView_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
+}
+
+static ULONG WINAPI store_result_map_AddRef(void *iface)
+{
+    struct store_result *impl = impl_from_store_result_map(iface);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI store_result_map_Release(void *iface)
+{
+    struct store_result *impl = impl_from_store_result_map(iface);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI store_result_map_GetRuntimeClassName(void *iface, HSTRING *class_name)
+{
+    static const WCHAR name[] = L"Windows.Foundation.Collections.IMapView`2<HSTRING, IInspectable>";
+    return WindowsCreateString(name, ARRAY_SIZE(name) - 1, class_name);
+}
+
+static HRESULT WINAPI store_result_map_Lookup(void *iface, HSTRING key, void **value)
+{
+    if (value) *value = NULL;
+    return 0x8000000B; /* E_BOUNDS */
+}
+
+static HRESULT WINAPI store_result_map_get_Size(void *iface, UINT32 *size)
+{
+    if (!size) return E_INVALIDARG;
+    *size = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI store_result_map_HasKey(void *iface, HSTRING key, boolean *found)
+{
+    if (!found) return E_INVALIDARG;
+    *found = FALSE;
+    return S_OK;
+}
+
+static HRESULT WINAPI store_result_map_Split(void *iface, void **first, void **second)
+{
+    if (first) *first = NULL;
+    if (second) *second = NULL;
+    return S_OK;
+}
+
+static const void *store_result_map_vtbl[] =
+{
+    store_result_map_QueryInterface,
+    store_result_map_AddRef,
+    store_result_map_Release,
+    store_result_GetIids,
+    store_result_map_GetRuntimeClassName,
+    store_result_GetTrustLevel,
+    /* IMapView methods (slots 6..9) */
+    store_result_map_Lookup,
+    store_result_map_get_Size,
+    store_result_map_HasKey,
+    store_result_map_Split,
 };
 
 /* IIterator implementation for Store empty collections */
@@ -608,14 +789,18 @@ static HRESULT WINAPI store_iterator_QueryInterface(void *iface, REFIID iid, voi
         IsEqualIID(iid, &IID_IInspectable) ||
         IsEqualIID(iid, &IID_IAgileObject) ||
         IsEqualIID(iid, &IID_IIterator) ||
-        IsEqualIID(iid, &IID_IIterator_StorePackageUpdate))
+        IsEqualIID(iid, &IID_IIterator_StorePackageUpdate) ||
+        IsEqualIID(iid, &IID_IIterator_StoreProductMap))
     {
         *out = &impl->IIterator_iface;
         InterlockedIncrement(&impl->ref);
         return S_OK;
     }
-    *out = NULL;
-    return E_NOINTERFACE;
+
+    /* Fallback: any other IIterator<T> generic query on empty iterator yields the same interface */
+    *out = &impl->IIterator_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
 }
 
 static ULONG WINAPI store_iterator_AddRef(void *iface)
@@ -722,7 +907,7 @@ static const void *store_result_iterable_vtbl[] =
     store_result_iterable_First,
 };
 
-/* 7. IStoreQueryResult vtbl methods */
+/* 7a. IStoreProductQueryResult vtbl methods (slots 6..7) */
 static HRESULT WINAPI store_result_query_QueryInterface(void *iface, REFIID iid, void **out)
 {
     return store_result_query_interface_internal(impl_from_store_result_query(iface), iid, out);
@@ -742,19 +927,18 @@ static ULONG WINAPI store_result_query_Release(void *iface)
     return ref;
 }
 
+static HRESULT WINAPI store_result_query_GetRuntimeClassName(void *iface, HSTRING *class_name)
+{
+    static const WCHAR name[] = L"Windows.Services.Store.StoreProductQueryResult";
+    return WindowsCreateString(name, ARRAY_SIZE(name) - 1, class_name);
+}
+
 static HRESULT WINAPI store_result_query_get_Products(void *iface, void **value)
 {
     struct store_result *impl = impl_from_store_result_query(iface);
     if (!value) return E_INVALIDARG;
-    *value = &impl->IVectorView_iface;
+    *value = &impl->IMapView_iface;
     InterlockedIncrement(&impl->ref);
-    return S_OK;
-}
-
-static HRESULT WINAPI store_result_query_get_HasMoreResults(void *iface, boolean *value)
-{
-    if (!value) return E_INVALIDARG;
-    *value = 0;
     return S_OK;
 }
 
@@ -771,15 +955,68 @@ static const void *store_result_query_vtbl[] =
     store_result_query_AddRef,
     store_result_query_Release,
     store_result_GetIids,
-    store_result_GetRuntimeClassName,
+    store_result_query_GetRuntimeClassName,
     store_result_GetTrustLevel,
-    /* IStoreQueryResult methods (slots 6..8) */
+    /* IStoreProductQueryResult methods (slots 6..7) */
     store_result_query_get_Products,
-    store_result_query_get_HasMoreResults,
     store_result_query_get_ExtendedError,
 };
 
-static HRESULT store_result_create(void **out)
+/* 7b. IStoreProductPagedQueryResult vtbl methods (slots 6..9) */
+static HRESULT WINAPI store_result_paged_query_QueryInterface(void *iface, REFIID iid, void **out)
+{
+    return store_result_query_interface_internal(impl_from_store_result_paged_query(iface), iid, out);
+}
+
+static ULONG WINAPI store_result_paged_query_AddRef(void *iface)
+{
+    struct store_result *impl = impl_from_store_result_paged_query(iface);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI store_result_paged_query_Release(void *iface)
+{
+    struct store_result *impl = impl_from_store_result_paged_query(iface);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI store_result_paged_query_GetRuntimeClassName(void *iface, HSTRING *class_name)
+{
+    static const WCHAR name[] = L"Windows.Services.Store.StoreProductPagedQueryResult";
+    return WindowsCreateString(name, ARRAY_SIZE(name) - 1, class_name);
+}
+
+static HRESULT WINAPI store_result_query_get_HasMoreResults(void *iface, boolean *value)
+{
+    if (!value) return E_INVALIDARG;
+    *value = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI store_result_paged_query_GetNextAsync(void *iface, void **operation)
+{
+    TRACE("iface %p, operation %p.\n", iface, operation);
+    return store_async_op_create(STORE_ASYNC_PAGED_QUERY_RESULT, operation);
+}
+
+static const void *store_result_paged_query_vtbl[] =
+{
+    store_result_paged_query_QueryInterface,
+    store_result_paged_query_AddRef,
+    store_result_paged_query_Release,
+    store_result_GetIids,
+    store_result_paged_query_GetRuntimeClassName,
+    store_result_GetTrustLevel,
+    /* IStoreProductPagedQueryResult methods (slots 6..9) */
+    store_result_query_get_Products,
+    store_result_query_get_HasMoreResults,
+    store_result_query_get_ExtendedError,
+    store_result_paged_query_GetNextAsync,
+};
+
+static HRESULT store_result_create(enum store_async_type type, void **out)
 {
     struct store_result *impl;
     if (!out) return E_INVALIDARG;
@@ -789,10 +1026,34 @@ static HRESULT store_result_create(void **out)
     impl->IStoreRateAndReviewResult_iface.lpVtbl = (void *)store_result_rate_vtbl;
     impl->IStoreAppLicense_iface.lpVtbl = (void *)store_result_license_vtbl;
     impl->IVectorView_iface.lpVtbl = (void *)store_result_vector_vtbl;
+    impl->IMapView_iface.lpVtbl = (void *)store_result_map_vtbl;
     impl->IIterable_iface.lpVtbl = (void *)store_result_iterable_vtbl;
     impl->IStoreQueryResult_iface.lpVtbl = (void *)store_result_query_vtbl;
+    impl->IStoreProductPagedQueryResult_iface.lpVtbl = (void *)store_result_paged_query_vtbl;
     impl->ref = 1;
-    *out = &impl->IStoreProductResult_iface;
+
+    switch (type)
+    {
+    case STORE_ASYNC_APP_LICENSE:
+        *out = &impl->IStoreAppLicense_iface;
+        break;
+    case STORE_ASYNC_QUERY_RESULT:
+        *out = &impl->IStoreQueryResult_iface;
+        break;
+    case STORE_ASYNC_PAGED_QUERY_RESULT:
+        *out = &impl->IStoreProductPagedQueryResult_iface;
+        break;
+    case STORE_ASYNC_RATE_RESULT:
+        *out = &impl->IStoreRateAndReviewResult_iface;
+        break;
+    case STORE_ASYNC_VECTOR_VIEW:
+        *out = &impl->IVectorView_iface;
+        break;
+    case STORE_ASYNC_PRODUCT_RESULT:
+    default:
+        *out = &impl->IStoreProductResult_iface;
+        break;
+    }
     return S_OK;
 }
 
@@ -803,6 +1064,7 @@ struct store_async_op
 {
     IInspectable IAsyncOperation_iface;
     IAsyncInfo IAsyncInfo_iface;
+    enum store_async_type type;
     LONG ref;
 };
 
@@ -877,8 +1139,32 @@ static HRESULT WINAPI store_async_GetIids(IInspectable *iface, ULONG *iid_count,
 
 static HRESULT WINAPI store_async_GetRuntimeClassName(IInspectable *iface, HSTRING *class_name)
 {
-    static const WCHAR name[] = L"Windows.Foundation.IAsyncOperation`1<Windows.Services.Store.StoreProductResult>";
-    return WindowsCreateString(name, ARRAY_SIZE(name) - 1, class_name);
+    struct store_async_op *impl = impl_from_store_IAsyncOperation(iface);
+    const WCHAR *name;
+
+    switch (impl->type)
+    {
+    case STORE_ASYNC_APP_LICENSE:
+        name = L"Windows.Foundation.IAsyncOperation`1<Windows.Services.Store.StoreAppLicense>";
+        break;
+    case STORE_ASYNC_QUERY_RESULT:
+        name = L"Windows.Foundation.IAsyncOperation`1<Windows.Services.Store.StoreProductQueryResult>";
+        break;
+    case STORE_ASYNC_PAGED_QUERY_RESULT:
+        name = L"Windows.Foundation.IAsyncOperation`1<Windows.Services.Store.StoreProductPagedQueryResult>";
+        break;
+    case STORE_ASYNC_RATE_RESULT:
+        name = L"Windows.Foundation.IAsyncOperation`1<Windows.Services.Store.StoreRateAndReviewResult>";
+        break;
+    case STORE_ASYNC_VECTOR_VIEW:
+        name = L"Windows.Foundation.IAsyncOperation`1<Windows.Foundation.Collections.IVectorView`1<Windows.Services.Store.StorePackageUpdate>>";
+        break;
+    case STORE_ASYNC_PRODUCT_RESULT:
+    default:
+        name = L"Windows.Foundation.IAsyncOperation`1<Windows.Services.Store.StoreProductResult>";
+        break;
+    }
+    return WindowsCreateString(name, wcslen(name), class_name);
 }
 
 static HRESULT WINAPI store_async_GetTrustLevel(IInspectable *iface, TrustLevel *trust_level)
@@ -917,9 +1203,10 @@ static HRESULT WINAPI store_async_get_Completed(IInspectable *iface, IUnknown **
 
 static HRESULT WINAPI store_async_GetResults(IInspectable *iface, void *results)
 {
-    TRACE("iface %p, results %p.\n", iface, results);
+    struct store_async_op *impl = impl_from_store_IAsyncOperation(iface);
+    TRACE("iface %p, results %p, type %d.\n", iface, results, impl->type);
     if (!results) return E_INVALIDARG;
-    return store_result_create((void **)results);
+    return store_result_create(impl->type, (void **)results);
 }
 
 static const struct
@@ -1028,13 +1315,14 @@ static const struct IAsyncInfoVtbl store_async_info_vtbl =
     store_async_info_Close,
 };
 
-static HRESULT store_async_op_create(void **out)
+static HRESULT store_async_op_create(enum store_async_type type, void **out)
 {
     struct store_async_op *impl;
     if (!out) return E_INVALIDARG;
     if (!(impl = calloc(1, sizeof(*impl)))) return E_OUTOFMEMORY;
     impl->IAsyncOperation_iface.lpVtbl = (void *)&store_async_op_vtbl;
     impl->IAsyncInfo_iface.lpVtbl = &store_async_info_vtbl;
+    impl->type = type;
     impl->ref = 1;
     *out = &impl->IAsyncOperation_iface;
     return S_OK;
@@ -1190,109 +1478,109 @@ static HRESULT WINAPI store_context_remove_OfflineLicensesChanged(void *iface, E
 static HRESULT WINAPI store_context_GetCustomerPurchaseIdAsync(void *iface, HSTRING ticket, HSTRING user_id, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context_GetCustomerCollectionsIdAsync(void *iface, HSTRING ticket, HSTRING user_id, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context_GetAppLicenseAsync(void *iface, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_APP_LICENSE, out);
 }
 
 static HRESULT WINAPI store_context_GetStoreProductForCurrentAppAsync(void *iface, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_PRODUCT_RESULT, out);
 }
 
 static HRESULT WINAPI store_context_GetStoreProductsAsync(void *iface, void *kinds, void *ids, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_QUERY_RESULT, out);
 }
 
 static HRESULT WINAPI store_context_GetAssociatedStoreProductsAsync(void *iface, void *kinds, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_QUERY_RESULT, out);
 }
 
 static HRESULT WINAPI store_context_GetAssociatedStoreProductsWithPagingAsync(void *iface, void *kinds, UINT32 max_items, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_PAGED_QUERY_RESULT, out);
 }
 
 static HRESULT WINAPI store_context_GetUserCollectionAsync(void *iface, void *kinds, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_QUERY_RESULT, out);
 }
 
 static HRESULT WINAPI store_context_GetUserCollectionWithPagingAsync(void *iface, void *kinds, UINT32 max_items, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_PAGED_QUERY_RESULT, out);
 }
 
 static HRESULT WINAPI store_context_ReportConsumableFulfillmentAsync(void *iface, HSTRING store_id, UINT32 qty, GUID tracking_id, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context_GetConsumableBalanceRemainingAsync(void *iface, HSTRING store_id, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context_AcquireStoreLicenseForOptionalPackageAsync(void *iface, void *pkg, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context_RequestPurchaseAsync(void *iface, HSTRING store_id, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_PRODUCT_RESULT, out);
 }
 
 static HRESULT WINAPI store_context_RequestPurchaseWithPropertiesAsync(void *iface, HSTRING store_id, void *props, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_PRODUCT_RESULT, out);
 }
 
 static HRESULT WINAPI store_context_GetAppAndOptionalStorePackageUpdatesAsync(void *iface, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_VECTOR_VIEW, out);
 }
 
 static HRESULT WINAPI store_context_RequestDownloadStorePackageUpdatesAsync(void *iface, void *updates, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context_RequestDownloadAndInstallStorePackageUpdatesAsync(void *iface, void *updates, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context_RequestDownloadAndInstallStorePackagesAsync(void *iface, void *ids, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static const void *store_context_vtbl[] =
@@ -1352,7 +1640,7 @@ static ULONG WINAPI store_context2_Release(void *iface)
 static HRESULT WINAPI store_context2_FindStoreProductForPackageAsync(void *iface, void *kinds, void *pkg, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_PRODUCT_RESULT, out);
 }
 
 static const void *store_context2_vtbl[] =
@@ -1397,67 +1685,67 @@ static HRESULT WINAPI store_context3_get_CanSilentlyDownloadStorePackageUpdates(
 
 static HRESULT WINAPI store_context3_TrySilentDownloadStorePackageUpdatesAsync(void *iface, void *updates, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_TrySilentDownloadAndInstallStorePackageUpdatesAsync(void *iface, void *updates, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_CanAcquireStoreLicenseForOptionalPackageAsync(void *iface, void *pkg, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_CanAcquireStoreLicenseAsync(void *iface, HSTRING id, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_GetStoreProductsWithOptionsAsync(void *iface, void *kinds, void *ids, void *opts, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_QUERY_RESULT, out);
 }
 
 static HRESULT WINAPI store_context3_GetAssociatedStoreQueueItemsAsync(void *iface, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_GetStoreQueueItemsAsync(void *iface, void *ids, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_RequestDownloadAndInstallStorePackagesWithOptionsAsync(void *iface, void *ids, void *opts, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_DownloadAndInstallStorePackagesAsync(void *iface, void *ids, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_RequestUninstallStorePackageAsync(void *iface, void *pkg, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_RequestUninstallStorePackageByStoreIdAsync(void *iface, HSTRING id, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_UninstallStorePackageAsync(void *iface, void *pkg, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static HRESULT WINAPI store_context3_UninstallStorePackageByStoreIdAsync(void *iface, HSTRING id, void **out)
 {
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static const void *store_context3_vtbl[] =
@@ -1510,13 +1798,13 @@ static ULONG WINAPI store_context4_Release(void *iface)
 static HRESULT WINAPI store_context4_RequestRateAndReviewAppAsync(void *iface, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_RATE_RESULT, out);
 }
 
 static HRESULT WINAPI store_context4_SetInstallOrderForAssociatedStoreQueueItemsAsync(void *iface, void *items, void **out)
 {
     TRACE("iface %p, out %p.\n", iface, out);
-    return store_async_op_create(out);
+    return store_async_op_create(STORE_ASYNC_DEFAULT, out);
 }
 
 static const void *store_context4_vtbl[] =

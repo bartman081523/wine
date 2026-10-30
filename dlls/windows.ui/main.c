@@ -24,6 +24,11 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(ui);
 
+#include "systemnavigationmanager.c"
+#include "displayinformation.c"
+#include "inputcapabilities.c"
+#include "taskbarmanager.c"
+
 HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID riid, void **out )
 {
     FIXME( "clsid %s, riid %s, out %p stub!\n", debugstr_guid(clsid), debugstr_guid(riid), out );
@@ -53,6 +58,24 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
     if (!wcscmp( buffer, RuntimeClass_Windows_UI_Core_CoreWindow ))
         IActivationFactory_QueryInterface( corewindow_factory, &IID_IActivationFactory, (void **)factory );
 
+    if (!wcscmp( buffer, L"Windows.UI.Core.SystemNavigationManager" ))
+        IActivationFactory_QueryInterface( system_navigation_manager_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.UI.Core.Preview.SystemNavigationManagerPreview" ))
+        IActivationFactory_QueryInterface( system_navigation_manager_preview_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.Graphics.Display.DisplayInformation" ))
+        IActivationFactory_QueryInterface( display_information_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.Devices.Input.KeyboardCapabilities" ))
+        IActivationFactory_QueryInterface( keyboard_capabilities_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.Devices.Input.MouseCapabilities" ))
+        IActivationFactory_QueryInterface( mouse_capabilities_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.Devices.Input.TouchCapabilities" ))
+        IActivationFactory_QueryInterface( touch_capabilities_factory, &IID_IActivationFactory, (void **)factory );
+
     if (!wcscmp( buffer, L"Windows.UI.Notifications.BadgeUpdateManager" ))
         IActivationFactory_QueryInterface( badgeupdatemanager_factory, &IID_IActivationFactory, (void **)factory );
 
@@ -61,6 +84,9 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     if (!wcscmp( buffer, L"Windows.UI.Notifications.TileUpdateManager" ))
         IActivationFactory_QueryInterface( tileupdatemanager_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.UI.Shell.TaskbarManager" ))
+        IActivationFactory_QueryInterface( taskbar_manager_factory, &IID_IActivationFactory, (void **)factory );
 
     if (!wcsncmp( buffer, L"Windows.UI.Composition.", 23 ))
     {

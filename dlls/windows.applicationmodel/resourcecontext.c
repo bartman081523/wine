@@ -17,9 +17,12 @@ static const GUID IID_IResourceContext_real    = {0x2fa22f4b, 0x707e, 0x4b27, {0
 static const GUID IID_IObservableMap_redhawk   = {0x1e036276, 0x2f60, 0x55f6, {0xb7, 0xf3, 0xf8, 0x60, 0x79, 0xe6, 0x90, 0x0b}};
 
 static const GUID IID_IResourceManagerStatics  = {0x11e405d4, 0x0c93, 0x4708, {0xab, 0x7c, 0xf6, 0x72, 0x05, 0x98, 0x2b, 0x90}};
+static const GUID IID_IResourceManagerStatics_Win10 = {0x1cc0fdfc, 0x69ee, 0x4e43, {0x99, 0x01, 0x47, 0xf1, 0x26, 0x87, 0xba, 0xf7}};
 static const GUID IID_IResourceManager         = {0xdb254dc5, 0x5a18, 0x48df, {0x8a, 0x3d, 0x36, 0x0f, 0xc6, 0x73, 0xc1, 0x7c}};
 static const GUID IID_IResourceMap             = {0x72284824, 0xdb8c, 0x42f8, {0xb0, 0x8c, 0x53, 0xff, 0x35, 0x7d, 0xad, 0x82}};
 static const GUID IID_IResourceCandidate       = {0xaf843f42, 0xde00, 0x416f, {0x90, 0x33, 0x3c, 0x5f, 0x41, 0x23, 0x6e, 0x79}};
+static const GUID IID_IResourceCandidate_SDK   = {0xaf5207d9, 0xc433, 0x4764, {0xb3, 0xfd, 0x8f, 0xa6, 0xbf, 0xbc, 0xba, 0xdc}};
+static const GUID IID_IResourceCandidate2       = {0x69e5b535, 0x5ca3, 0x4c1b, {0xbe, 0xca, 0x75, 0xc6, 0x62, 0x52, 0x0c, 0x3c}};
 
 static const GUID IID_ComWrappers_internal     = {0x11d3b13a, 0x180e, 0x4789, {0xa8, 0xbe, 0x77, 0x12, 0x88, 0x28, 0x93, 0xe6}};
 static const GUID IID_ComWrappers_internal2    = {0x5c13e51c, 0x241d, 0x4859, {0x80, 0x05, 0x8a, 0x8d, 0x8d, 0x98, 0x15, 0xbf}};
@@ -1160,9 +1163,178 @@ static const void *redhawk_rmap_vtbl[] = {
     (void *)redhawk_interop_m15
 };
 
+/* -------------------------------------------------------------------------
+ * ResourceCandidate: Implements IResourceCandidate
+ * ------------------------------------------------------------------------- */
+struct resource_candidate_impl
+{
+    struct { const void *lpVtbl; } IResourceCandidate_iface;
+    struct { const void *lpVtbl; } IRedhawkInterop_iface;
+    LONG ref;
+    WCHAR value_str[MAX_PATH];
+};
+
+#define impl_from_IResourceCandidate(ptr) ((struct resource_candidate_impl *)((char *)(ptr) - offsetof(struct resource_candidate_impl, IResourceCandidate_iface)))
+#define impl_from_IRedhawk_rcand(ptr)     ((struct resource_candidate_impl *)((char *)(ptr) - offsetof(struct resource_candidate_impl, IRedhawkInterop_iface)))
+
+static HRESULT candidate_QI_internal(struct resource_candidate_impl *impl, REFIID riid, void **ppvObject)
+{
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    TRACE("candidate %p: QI %s\n", impl, debugstr_guid(riid));
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IResourceCandidate) ||
+        IsEqualGUID(riid, &IID_IResourceCandidate_SDK) ||
+        IsEqualGUID(riid, &IID_IResourceCandidate2))
+    {
+        *ppvObject = &impl->IResourceCandidate_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ComWrappers_internal))
+    {
+        *ppvObject = &impl->IRedhawkInterop_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_IWeakReferenceSource))
+    {
+        return E_NOINTERFACE;
+    }
+
+    TRACE("candidate %p: unhandled QI %s\n", impl, debugstr_guid(riid));
+    return E_NOINTERFACE;
+}
+
+static HRESULT WINAPI rcand_QueryInterface(void *This, REFIID riid, void **ppvObject) { return candidate_QI_internal(impl_from_IResourceCandidate(This), riid, ppvObject); }
+static ULONG WINAPI rcand_AddRef(void *This) { return InterlockedIncrement(&impl_from_IResourceCandidate(This)->ref); }
+static ULONG WINAPI rcand_Release(void *This)
+{
+    struct resource_candidate_impl *impl = impl_from_IResourceCandidate(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+static HRESULT WINAPI rcand_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI rcand_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.ApplicationModel.Resources.Core.ResourceCandidate", 58, n); }
+static HRESULT WINAPI rcand_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI rcand_get_Qualifiers(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI rcand_get_IsMatch(void *This, boolean *value) { if (value) *value = TRUE; return S_OK; }
+static HRESULT WINAPI rcand_get_IsMatchAsDefault(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI rcand_get_IsDefault(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI rcand_get_ValueAsString(void *This, HSTRING *value)
+{
+    struct resource_candidate_impl *impl = impl_from_IResourceCandidate(This);
+    if (!value) return E_POINTER;
+    TRACE("candidate %p returning string %s\n", impl, debugstr_w(impl->value_str));
+    return WindowsCreateString(impl->value_str, wcslen(impl->value_str), value);
+}
+static HRESULT WINAPI rcand_GetValueAsFileAsync(void *This, void **operation)
+{
+    FIXME("candidate %p: GetValueAsFileAsync stub\n", This);
+    if (operation) *operation = NULL;
+    return E_NOTIMPL;
+}
+
+static const void *resource_candidate_vtbl[] = {
+    (void *)rcand_QueryInterface,
+    (void *)rcand_AddRef,
+    (void *)rcand_Release,
+    (void *)rcand_GetIids,
+    (void *)rcand_GetRuntimeClassName,
+    (void *)rcand_GetTrustLevel,
+    (void *)rcand_get_Qualifiers,
+    (void *)rcand_get_IsMatch,
+    (void *)rcand_get_IsMatchAsDefault,
+    (void *)rcand_get_IsDefault,
+    (void *)rcand_get_ValueAsString,
+    (void *)rcand_GetValueAsFileAsync
+};
+
+static HRESULT WINAPI redhawk_rcand_QI(void *This, REFIID riid, void **ppvObject)
+{
+    return candidate_QI_internal(impl_from_IRedhawk_rcand(This), riid, ppvObject);
+}
+static ULONG WINAPI redhawk_rcand_AddRef(void *This)
+{
+    return rcand_AddRef(&impl_from_IRedhawk_rcand(This)->IResourceCandidate_iface);
+}
+static ULONG WINAPI redhawk_rcand_Release(void *This)
+{
+    return rcand_Release(&impl_from_IRedhawk_rcand(This)->IResourceCandidate_iface);
+}
+
+static const void *redhawk_rcand_vtbl[] = {
+    (void *)redhawk_rcand_QI,
+    (void *)redhawk_rcand_AddRef,
+    (void *)redhawk_rcand_Release,
+    (void *)redhawk_interop_m3,
+    (void *)redhawk_interop_m4,
+    (void *)redhawk_interop_m5,
+    (void *)redhawk_interop_m6,
+    (void *)redhawk_interop_m7,
+    (void *)redhawk_interop_m8,
+    (void *)redhawk_interop_m9,
+    (void *)redhawk_interop_m10,
+    (void *)redhawk_interop_m11,
+    (void *)redhawk_interop_m12,
+    (void *)redhawk_interop_m13,
+    (void *)redhawk_interop_m14,
+    (void *)redhawk_interop_m15
+};
+
+static HRESULT create_resource_candidate_instance(const WCHAR *str, void **value)
+{
+    struct resource_candidate_impl *impl;
+    if (!value) return E_POINTER;
+    impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IResourceCandidate_iface.lpVtbl = resource_candidate_vtbl;
+    impl->IRedhawkInterop_iface.lpVtbl = redhawk_rcand_vtbl;
+    impl->ref = 1;
+    if (str) lstrcpynW(impl->value_str, str, ARRAY_SIZE(impl->value_str));
+    *value = &impl->IResourceCandidate_iface;
+    return S_OK;
+}
+
 static HRESULT WINAPI rmap_get_Uri(void *This, void **value) { if (value) *value = NULL; return S_OK; }
-static HRESULT WINAPI rmap_GetValue(void *This, HSTRING resourceKey, void **value) { if (value) *value = NULL; return S_OK; }
-static HRESULT WINAPI rmap_GetValueForContext(void *This, HSTRING resourceKey, void *context, void **value) { if (value) *value = NULL; return S_OK; }
+
+static HRESULT WINAPI rmap_GetValueForContext(void *This, HSTRING resourceKey, void *context, void **value)
+{
+    UINT32 len = 0;
+    const WCHAR *raw = WindowsGetStringRawBuffer(resourceKey, &len);
+    WCHAR candidate_path[MAX_PATH];
+
+    if (!value) return E_POINTER;
+    *value = NULL;
+
+    if (!raw || !len) return E_INVALIDARG;
+
+    TRACE("rmap %p: GetValueForContext key=%s context=%p value=%p\n",
+          This, debugstr_w(raw), context, value);
+
+    if (wcsstr(raw, L"loc.archive") || wcsstr(raw, L"loc_archives"))
+    {
+        /* Determine language qualifier, default to "de" */
+        const WCHAR *lang = L"de";
+        swprintf(candidate_path, ARRAY_SIZE(candidate_path), L"loc_archives\\%s\\loc.archive", lang);
+        TRACE("rmap: resolving %s to candidate %s\n", debugstr_w(raw), debugstr_w(candidate_path));
+        return create_resource_candidate_instance(candidate_path, value);
+    }
+
+    lstrcpynW(candidate_path, raw, ARRAY_SIZE(candidate_path));
+    return create_resource_candidate_instance(candidate_path, value);
+}
+
+static HRESULT WINAPI rmap_GetValue(void *This, HSTRING resourceKey, void **value)
+{
+    return rmap_GetValueForContext(This, resourceKey, NULL, value);
+}
+
 static HRESULT WINAPI rmap_GetSubtree(void *This, HSTRING reference, void **value)
 {
     if (!value) return E_POINTER;
@@ -1354,7 +1526,8 @@ static HRESULT rman_fac_QI_internal(struct resource_manager_factory_impl *impl, 
         *ppvObject = &impl->IActivationFactory_iface;
         return S_OK;
     }
-    if (IsEqualGUID(riid, &IID_IResourceManagerStatics))
+    if (IsEqualGUID(riid, &IID_IResourceManagerStatics) ||
+        IsEqualGUID(riid, &IID_IResourceManagerStatics_Win10))
     {
         *ppvObject = &impl->IResourceManagerStatics_iface;
         return S_OK;

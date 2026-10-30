@@ -118,6 +118,8 @@ struct device_watcher
     struct weak_reference_source weak_reference_source;
 
     struct list added_handlers;
+    struct list updated_handlers;
+    struct list removed_handlers;
     struct list enumerated_handlers;
     struct list stopped_handlers;
     IUnknown *query_params;
@@ -177,6 +179,8 @@ static ULONG WINAPI device_watcher_Release( IDeviceWatcher *iface )
     if (!ref)
     {
         typed_event_handlers_clear( &impl->added_handlers );
+        typed_event_handlers_clear( &impl->updated_handlers );
+        typed_event_handlers_clear( &impl->removed_handlers );
         typed_event_handlers_clear( &impl->enumerated_handlers );
         typed_event_handlers_clear( &impl->stopped_handlers );
         IUnknown_Release( impl->query_params );
@@ -225,27 +229,31 @@ static HRESULT WINAPI device_watcher_remove_Added( IDeviceWatcher *iface, EventR
 static HRESULT WINAPI device_watcher_add_Updated( IDeviceWatcher *iface, ITypedEventHandler_DeviceWatcher_DeviceInformationUpdate *handler,
                                                   EventRegistrationToken *token )
 {
-    FIXME( "iface %p, handler %p, token %p stub!\n", iface, handler, token );
-    return S_OK;
+    struct device_watcher *impl = impl_from_IDeviceWatcher( iface );
+    TRACE( "iface %p, handler %p, token %p\n", iface, handler, token );
+    return typed_event_handlers_append( &impl->updated_handlers, (ITypedEventHandler_IInspectable_IInspectable *)handler, token );
 }
 
 static HRESULT WINAPI device_watcher_remove_Updated( IDeviceWatcher *iface, EventRegistrationToken token )
 {
-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
-    return E_NOTIMPL;
+    struct device_watcher *impl = impl_from_IDeviceWatcher( iface );
+    TRACE( "iface %p, token %#I64x.\n", iface, token.value );
+    return typed_event_handlers_remove( &impl->updated_handlers, &token );
 }
 
 static HRESULT WINAPI device_watcher_add_Removed( IDeviceWatcher *iface, ITypedEventHandler_DeviceWatcher_DeviceInformationUpdate *handler,
                                                   EventRegistrationToken *token )
 {
-    FIXME( "iface %p, handler %p, token %p stub!\n", iface, handler, token );
-    return E_NOTIMPL;
+    struct device_watcher *impl = impl_from_IDeviceWatcher( iface );
+    TRACE( "iface %p, handler %p, token %p\n", iface, handler, token );
+    return typed_event_handlers_append( &impl->removed_handlers, (ITypedEventHandler_IInspectable_IInspectable *)handler, token );
 }
 
 static HRESULT WINAPI device_watcher_remove_Removed( IDeviceWatcher *iface, EventRegistrationToken token )
 {
-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
-    return E_NOTIMPL;
+    struct device_watcher *impl = impl_from_IDeviceWatcher( iface );
+    TRACE( "iface %p, token %#I64x.\n", iface, token.value );
+    return typed_event_handlers_remove( &impl->removed_handlers, &token );
 }
 
 static HRESULT WINAPI device_watcher_add_EnumerationCompleted( IDeviceWatcher *iface, ITypedEventHandler_DeviceWatcher_IInspectable *handler,
@@ -592,6 +600,8 @@ static HRESULT device_watcher_create( HSTRING filter, IIterable_HSTRING *additio
     if (FAILED(hr = devquery_params_create( type, expr, prop_keys, prop_keys_len, &impl->query_params ))) goto failed;
 
     list_init( &impl->added_handlers );
+    list_init( &impl->updated_handlers );
+    list_init( &impl->removed_handlers );
     list_init( &impl->enumerated_handlers );
     list_init( &impl->stopped_handlers );
 
@@ -994,6 +1004,173 @@ static struct device_information_statics device_information_statics =
     1
 };
 
+/* Windows.Devices.Lights.LampArray support */
+static const GUID IID_ILampArrayStatics = {0x7bb8c98d, 0x5fc1, 0x452d, {0xbb, 0x1f, 0x4a, 0xd4, 0x10, 0xd3, 0x98, 0xff}};
+
+struct lamparray_statics
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } ILampArrayStatics_iface;
+    LONG ref;
+};
+
+static inline struct lamparray_statics *impl_from_lamparray_IActivationFactory( IActivationFactory *iface )
+{
+    return CONTAINING_RECORD( iface, struct lamparray_statics, IActivationFactory_iface );
+}
+
+static inline struct lamparray_statics *impl_from_ILampArrayStatics( void *iface )
+{
+    return CONTAINING_RECORD( iface, struct lamparray_statics, ILampArrayStatics_iface );
+}
+
+static HRESULT WINAPI lamparray_factory_QueryInterface( IActivationFactory *iface, REFIID riid, void **out )
+{
+    struct lamparray_statics *impl = impl_from_lamparray_IActivationFactory( iface );
+
+    TRACE( "iface %p, riid %s, out %p.\n", iface, debugstr_guid( riid ), out );
+
+    if (!out) return E_POINTER;
+    *out = NULL;
+
+    if (IsEqualGUID( riid, &IID_IUnknown ) ||
+        IsEqualGUID( riid, &IID_IInspectable ) ||
+        IsEqualGUID( riid, &IID_IAgileObject ) ||
+        IsEqualGUID( riid, &IID_IActivationFactory ))
+    {
+        *out = &impl->IActivationFactory_iface;
+        IActivationFactory_AddRef( iface );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( riid, &IID_ILampArrayStatics ))
+    {
+        *out = &impl->ILampArrayStatics_iface;
+        IActivationFactory_AddRef( iface );
+        return S_OK;
+    }
+
+    FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( riid ) );
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI lamparray_factory_AddRef( IActivationFactory *iface )
+{
+    struct lamparray_statics *impl = impl_from_lamparray_IActivationFactory( iface );
+    return InterlockedIncrement( &impl->ref );
+}
+
+static ULONG WINAPI lamparray_factory_Release( IActivationFactory *iface )
+{
+    struct lamparray_statics *impl = impl_from_lamparray_IActivationFactory( iface );
+    return InterlockedDecrement( &impl->ref );
+}
+
+static HRESULT WINAPI lamparray_factory_GetIids( IActivationFactory *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI lamparray_factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.Devices.Lights.LampArray", 31, class_name );
+}
+
+static HRESULT WINAPI lamparray_factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *trust_level )
+{
+    if (!trust_level) return E_INVALIDARG;
+    *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI lamparray_factory_ActivateInstance( IActivationFactory *iface, IInspectable **instance )
+{
+    FIXME( "iface %p, instance %p stub!\n", iface, instance );
+    return E_NOTIMPL;
+}
+
+static const struct IActivationFactoryVtbl lamparray_activation_factory_vtbl =
+{
+    lamparray_factory_QueryInterface,
+    lamparray_factory_AddRef,
+    lamparray_factory_Release,
+    lamparray_factory_GetIids,
+    lamparray_factory_GetRuntimeClassName,
+    lamparray_factory_GetTrustLevel,
+    lamparray_factory_ActivateInstance
+};
+
+static HRESULT WINAPI lamparray_statics_QueryInterface( void *iface, REFIID riid, void **out )
+{
+    struct lamparray_statics *impl = impl_from_ILampArrayStatics( iface );
+    return lamparray_factory_QueryInterface( &impl->IActivationFactory_iface, riid, out );
+}
+
+static ULONG WINAPI lamparray_statics_AddRef( void *iface )
+{
+    struct lamparray_statics *impl = impl_from_ILampArrayStatics( iface );
+    return lamparray_factory_AddRef( &impl->IActivationFactory_iface );
+}
+
+static ULONG WINAPI lamparray_statics_Release( void *iface )
+{
+    struct lamparray_statics *impl = impl_from_ILampArrayStatics( iface );
+    return lamparray_factory_Release( &impl->IActivationFactory_iface );
+}
+
+static HRESULT WINAPI lamparray_statics_GetIids( void *iface, ULONG *iid_count, IID **iids )
+{
+    if (iid_count) *iid_count = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI lamparray_statics_GetRuntimeClassName( void *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.Devices.Lights.LampArray", 31, class_name );
+}
+
+static HRESULT WINAPI lamparray_statics_GetTrustLevel( void *iface, TrustLevel *trust_level )
+{
+    if (!trust_level) return E_INVALIDARG;
+    *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI lamparray_statics_GetDeviceSelector( void *iface, HSTRING *result )
+{
+    static const WCHAR selector[] = L"System.Devices.InterfaceClassGuid:=\"{7BB8C98D-5FC1-452D-BB1F-4AD410D398FF}\"";
+    TRACE( "iface %p, result %p\n", iface, result );
+    if (!result) return E_POINTER;
+    return WindowsCreateString( selector, ARRAY_SIZE(selector) - 1, result );
+}
+
+static HRESULT WINAPI lamparray_statics_FromIdAsync( void *iface, HSTRING deviceId, void **operation )
+{
+    FIXME( "iface %p, deviceId %s, operation %p stub!\n", iface, debugstr_hstring(deviceId), operation );
+    if (operation) *operation = NULL;
+    return E_NOTIMPL;
+}
+
+static const void *lamparray_statics_vtbl[] =
+{
+    (void *)lamparray_statics_QueryInterface,
+    (void *)lamparray_statics_AddRef,
+    (void *)lamparray_statics_Release,
+    (void *)lamparray_statics_GetIids,
+    (void *)lamparray_statics_GetRuntimeClassName,
+    (void *)lamparray_statics_GetTrustLevel,
+    (void *)lamparray_statics_GetDeviceSelector,
+    (void *)lamparray_statics_FromIdAsync
+};
+
+static struct lamparray_statics lamparray_statics_instance =
+{
+    {&lamparray_activation_factory_vtbl},
+    {lamparray_statics_vtbl},
+    1
+};
+
 HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID riid, void **out )
 {
     FIXME( "clsid %s, riid %s, out %p stub!\n", debugstr_guid( clsid ), debugstr_guid( riid ), out );
@@ -1013,6 +1190,9 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
                 &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, RuntimeClass_Windows_Devices_Enumeration_DeviceAccessInformation ))
         IActivationFactory_QueryInterface( device_access_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Devices.Lights.LampArray" ))
+        IActivationFactory_QueryInterface( &lamparray_statics_instance.IActivationFactory_iface,
+                &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

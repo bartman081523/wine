@@ -52,6 +52,12 @@ extern IActivationFactory *corewindow_factory;
 extern IActivationFactory *badgeupdatemanager_factory;
 extern IActivationFactory *toastnotificationmanager_factory;
 extern IActivationFactory *tileupdatemanager_factory;
+extern IActivationFactory *system_navigation_manager_factory;
+extern IActivationFactory *system_navigation_manager_preview_factory;
+extern IActivationFactory *display_information_factory;
+extern IActivationFactory *keyboard_capabilities_factory;
+extern IActivationFactory *mouse_capabilities_factory;
+extern IActivationFactory *touch_capabilities_factory;
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

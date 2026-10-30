@@ -65,6 +65,90 @@ static inline struct windows_media_devices *impl_from_IMediaDeviceStatics(IMedia
     return CONTAINING_RECORD(iface, struct windows_media_devices, IMediaDeviceStatics_iface);
 }
 
+/* Dummy SpatialAudioDeviceConfiguration implementation */
+static HRESULT WINAPI spatial_config_QI(void *This, REFIID riid, void **ppv)
+{
+    if (!ppv) return E_POINTER;
+    *ppv = This;
+    return S_OK;
+}
+static ULONG WINAPI spatial_config_AddRef(void *This) { return 2; }
+static ULONG WINAPI spatial_config_Release(void *This) { return 1; }
+static HRESULT WINAPI spatial_config_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI spatial_config_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Media.Audio.SpatialAudioDeviceConfiguration", 51, n); }
+static HRESULT WINAPI spatial_config_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI spatial_config_get_IsSpatialAudioSupported(void *This, boolean *value)
+{
+    TRACE("get_IsSpatialAudioSupported -> FALSE\n");
+    if (value) *value = FALSE;
+    return S_OK;
+}
+static HRESULT WINAPI spatial_config_get_IsActive(void *This, boolean *value)
+{
+    TRACE("get_IsActive -> FALSE\n");
+    if (value) *value = FALSE;
+    return S_OK;
+}
+static HRESULT WINAPI spatial_config_get_ActiveSpatialAudioFormat(void *This, HSTRING *value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI spatial_config_get_DefaultSpatialAudioFormat(void *This, HSTRING *value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI spatial_config_generic_stub(void *This) { return S_OK; }
+
+static const void *spatial_config_vtbl[] = {
+    (void *)spatial_config_QI,
+    (void *)spatial_config_AddRef,
+    (void *)spatial_config_Release,
+    (void *)spatial_config_GetIids,
+    (void *)spatial_config_GetRuntimeClassName,
+    (void *)spatial_config_GetTrustLevel,
+    (void *)spatial_config_get_IsSpatialAudioSupported, /* 6 */
+    (void *)spatial_config_get_IsActive,                /* 7 */
+    (void *)spatial_config_get_ActiveSpatialAudioFormat,/* 8 */
+    (void *)spatial_config_get_DefaultSpatialAudioFormat,/* 9 */
+    (void *)spatial_config_generic_stub,                /* 10 */
+    (void *)spatial_config_generic_stub,                /* 11 */
+    (void *)spatial_config_generic_stub,                /* 12 */
+    (void *)spatial_config_generic_stub,                /* 13 */
+    (void *)spatial_config_generic_stub,                /* 14 */
+    (void *)spatial_config_generic_stub                 /* 15 */
+};
+
+static struct { const void *lpVtbl; } spatial_audio_config_dummy = { spatial_config_vtbl };
+
+/* Statics vtable: GetForDeviceId is at slot 6 */
+static HRESULT WINAPI spatial_statics_GetForDeviceId(void *This, HSTRING deviceId, void **value)
+{
+    TRACE("SpatialAudioDeviceConfiguration::GetForDeviceId(%s)\n", debugstr_hstring(deviceId));
+    if (!value) return E_POINTER;
+    *value = (void *)&spatial_audio_config_dummy;
+    return S_OK;
+}
+
+static const void *spatial_statics_vtbl[] = {
+    (void *)spatial_config_QI,
+    (void *)spatial_config_AddRef,
+    (void *)spatial_config_Release,
+    (void *)spatial_config_GetIids,
+    (void *)spatial_config_GetRuntimeClassName,
+    (void *)spatial_config_GetTrustLevel,
+    (void *)spatial_statics_GetForDeviceId,             /* 6: GetForDeviceId */
+    (void *)spatial_config_generic_stub,                /* 7 */
+    (void *)spatial_config_generic_stub,                /* 8 */
+    (void *)spatial_config_generic_stub,                /* 9 */
+    (void *)spatial_config_generic_stub,                /* 10 */
+    (void *)spatial_config_generic_stub                 /* 11 */
+};
+
+static struct { const void *lpVtbl; } spatial_audio_statics_obj = { spatial_statics_vtbl };
+
 static HRESULT STDMETHODCALLTYPE windows_media_devices_QueryInterface(
         IActivationFactory *iface, REFIID iid, void **out)
 {
@@ -89,9 +173,10 @@ static HRESULT STDMETHODCALLTYPE windows_media_devices_QueryInterface(
         return S_OK;
     }
 
-    FIXME("%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid(iid));
-    *out = NULL;
-    return E_NOINTERFACE;
+    TRACE("Returning spatial_audio_statics_obj for iid %s\n", debugstr_guid(iid));
+    IUnknown_AddRef(iface);
+    *out = &spatial_audio_statics_obj;
+    return S_OK;
 }
 
 static ULONG STDMETHODCALLTYPE windows_media_devices_AddRef(

@@ -24,6 +24,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(web);
 
+#include "http_filter.c"
+
 HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID riid, void **out )
 {
     FIXME( "clsid %s, riid %s, out %p stub!\n", debugstr_guid( clsid ), debugstr_guid( riid ), out );
@@ -40,8 +42,10 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     if (!wcscmp( buffer, RuntimeClass_Windows_Data_Json_JsonObject ))
         IActivationFactory_QueryInterface( json_object_factory, &IID_IActivationFactory, (void **)factory );
-    if (!wcscmp( buffer, RuntimeClass_Windows_Data_Json_JsonValue ))
+    else if (!wcscmp( buffer, RuntimeClass_Windows_Data_Json_JsonValue ))
         IActivationFactory_QueryInterface( json_value_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Web.Http.Filters.HttpBaseProtocolFilter" ))
+        IActivationFactory_QueryInterface( http_filter_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

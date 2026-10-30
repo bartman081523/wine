@@ -21,6 +21,9 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(twinapi);
 
+#include "platform_diagnostics.c"
+#include "web_auth.c"
+
 /***********************************************************************
  *           RegisterAppConstrainedChangeNotification (twinapi.appcore.@)
  */
@@ -79,6 +82,10 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( application_view_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.ApplicationModel.Core.CoreApplication" ))
         IActivationFactory_QueryInterface( core_application_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.System.Profile.PlatformDiagnosticsAndUsageDataSettings" ))
+        IActivationFactory_QueryInterface( platform_diagnostics_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Security.Authentication.Web.Core.WebAuthenticationCoreManager" ))
+        IActivationFactory_QueryInterface( web_auth_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

@@ -5,6 +5,7 @@ SOURCES = \
 	application.c \
 	classes.idl \
 	color_helper.c \
+	composition_target.c \
 	controls.c \
 	main.c \
 	property_metadata.c

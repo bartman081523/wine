@@ -1799,6 +1799,7 @@ static int get_geo_info( const struct geo_id *geo, enum SYSGEOTYPE type,
         swprintf( tmp, ARRAY_SIZE(tmp), L"%u", geo->dialcode );
         break;
     case GEO_ISO2:
+    case GEO_NAME:
         str = geo->iso2;
         break;
     case GEO_ISO3:
@@ -1822,7 +1823,6 @@ static int get_geo_info( const struct geo_id *geo, enum SYSGEOTYPE type,
     case GEO_OFFICIALNAME:
     case GEO_TIMEZONES:
     case GEO_OFFICIALLANGUAGES:
-    case GEO_NAME:
         FIXME( "type %u is not supported\n", type );
         SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
         return 0;

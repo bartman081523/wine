@@ -2101,20 +2101,307 @@ HRESULT get_global_dispatcher(void **value)
 }
 
 /* -------------------------------------------------------------------------
+ * Window Instance & Statics Declarations
+ * ------------------------------------------------------------------------- */
+static const IID IID_IWindow2 = {0xd384759f, 0x34f6, 0x4482, {0x84,0x35,0xf5,0x52,0xf9,0xb2,0x4c,0xc8}};
+static const IID IID_IWindow3 = {0xb70bdc9d, 0x1c35, 0x462a, {0x9b,0x97,0x80,0x8d,0x5a,0xf9,0xf2,0x8e}};
+
+struct window_impl
+{
+    struct { const void *lpVtbl; } IWindow_iface;
+    struct { const void *lpVtbl; } IWindow2_iface;
+    struct { const void *lpVtbl; } IWindow3_iface;
+    struct { const void *lpVtbl; } IRedhawkInterop_iface;
+    HWND hwnd;
+    void *content;
+    void *titlebar_element;
+    LONG ref;
+};
+
+static void *current_window = NULL;
+
+#define impl_from_IWindow(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow_iface)))
+#define impl_from_IWindow2(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow2_iface)))
+#define impl_from_IWindow3(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow3_iface)))
+#define impl_from_IRedhawk_win(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IRedhawkInterop_iface)))
+
+/* -------------------------------------------------------------------------
  * CoreWindow Implementation
  * ------------------------------------------------------------------------- */
 static const GUID IID_ICoreWindow = {0x79b9d5f2, 0x879e, 0x4b89, {0xb7, 0x98, 0x79, 0xe4, 0x75, 0x98, 0x03, 0x0c}};
+static const GUID IID_ICoreWindowEventArgs = {0x272b1ef3, 0xc633, 0x4da5, {0xa2, 0x6c, 0xc6, 0xd0, 0xf5, 0x6b, 0x29, 0xda}};
+static const GUID IID_IWindowActivatedEventArgs = {0x179d65e7, 0x4658, 0x4cb6, {0xaa, 0x13, 0x41, 0xd0, 0x94, 0xea, 0x25, 0x5e}};
+static const GUID IID_IVisibilityChangedEventArgs = {0xbf9918ea, 0xd801, 0x4564, {0xa4, 0x95, 0xb1, 0xe8, 0x4f, 0x8a, 0xd0, 0x85}};
+static const GUID IID_IWindowSizeChangedEventArgs = {0x5a200ec7, 0x0426, 0x47dc, {0xb8, 0x6c, 0x6f, 0x47, 0x59, 0x15, 0xe4, 0x51}};
+
+struct core_window_handler
+{
+    INT64 token;
+    IUnknown *handler;
+};
+
+#define MAX_CW_HANDLERS 16
 
 struct core_window_impl
 {
     struct { const void *lpVtbl; } ICoreWindow_iface;
     struct { const void *lpVtbl; } IRedhawkInterop_iface;
     LONG ref;
+    struct core_window_handler activated_handlers[MAX_CW_HANDLERS];
+    int activated_count;
+    struct core_window_handler size_changed_handlers[MAX_CW_HANDLERS];
+    int size_changed_count;
+    struct core_window_handler visibility_changed_handlers[MAX_CW_HANDLERS];
+    int visibility_changed_count;
+    INT64 next_token;
 };
 
 static void *global_core_window = NULL;
 
 #define impl_from_ICoreWindow(ptr) ((struct core_window_impl *)((char *)(ptr) - offsetof(struct core_window_impl, ICoreWindow_iface)))
+
+/* Event args implementations */
+struct window_size_args
+{
+    struct { const void *lpVtbl; } iface;
+    LONG ref;
+    FLOAT width;
+    FLOAT height;
+    boolean handled;
+};
+
+static HRESULT WINAPI size_args_QI(void *This, REFIID riid, void **ppv)
+{
+    struct window_size_args *impl = (struct window_size_args *)This;
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_ICoreWindowEventArgs) ||
+        IsEqualGUID(riid, &IID_IWindowSizeChangedEventArgs))
+    {
+        *ppv = &impl->iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI size_args_AddRef(void *This) { return InterlockedIncrement(&((struct window_size_args *)This)->ref); }
+static ULONG WINAPI size_args_Release(void *This)
+{
+    ULONG ref = InterlockedDecrement(&((struct window_size_args *)This)->ref);
+    if (!ref) free(This);
+    return ref;
+}
+static HRESULT WINAPI size_args_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI size_args_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.WindowSizeChangedEventArgs", 41, n); }
+static HRESULT WINAPI size_args_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI size_args_get_Handled(void *This, boolean *value) { if (value) *value = ((struct window_size_args *)This)->handled; return S_OK; }
+static HRESULT WINAPI size_args_put_Handled(void *This, boolean value) { ((struct window_size_args *)This)->handled = value; return S_OK; }
+static HRESULT WINAPI size_args_get_Size(void *This, void *value)
+{
+    struct { FLOAT Width; FLOAT Height; } *sz = value;
+    if (sz) { sz->Width = ((struct window_size_args *)This)->width; sz->Height = ((struct window_size_args *)This)->height; }
+    return S_OK;
+}
+
+static const void *size_args_vtbl[9] = {
+    (void *)size_args_QI, (void *)size_args_AddRef, (void *)size_args_Release,
+    (void *)size_args_GetIids, (void *)size_args_GetRuntimeClassName, (void *)size_args_GetTrustLevel,
+    (void *)size_args_get_Handled, (void *)size_args_put_Handled, (void *)size_args_get_Size
+};
+
+struct window_activated_args
+{
+    struct { const void *lpVtbl; } iface;
+    LONG ref;
+    int state;
+    boolean handled;
+};
+
+static HRESULT WINAPI act_args_QI(void *This, REFIID riid, void **ppv)
+{
+    struct window_activated_args *impl = (struct window_activated_args *)This;
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_ICoreWindowEventArgs) ||
+        IsEqualGUID(riid, &IID_IWindowActivatedEventArgs))
+    {
+        *ppv = &impl->iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI act_args_AddRef(void *This) { return InterlockedIncrement(&((struct window_activated_args *)This)->ref); }
+static ULONG WINAPI act_args_Release(void *This)
+{
+    ULONG ref = InterlockedDecrement(&((struct window_activated_args *)This)->ref);
+    if (!ref) free(This);
+    return ref;
+}
+static HRESULT WINAPI act_args_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI act_args_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.WindowActivatedEventArgs", 39, n); }
+static HRESULT WINAPI act_args_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI act_args_get_Handled(void *This, boolean *value) { if (value) *value = ((struct window_activated_args *)This)->handled; return S_OK; }
+static HRESULT WINAPI act_args_put_Handled(void *This, boolean value) { ((struct window_activated_args *)This)->handled = value; return S_OK; }
+static HRESULT WINAPI act_args_get_WindowActivationState(void *This, int *value) { if (value) *value = ((struct window_activated_args *)This)->state; return S_OK; }
+
+static const void *act_args_vtbl[9] = {
+    (void *)act_args_QI, (void *)act_args_AddRef, (void *)act_args_Release,
+    (void *)act_args_GetIids, (void *)act_args_GetRuntimeClassName, (void *)act_args_GetTrustLevel,
+    (void *)act_args_get_Handled, (void *)act_args_put_Handled, (void *)act_args_get_WindowActivationState
+};
+
+struct window_visibility_args
+{
+    struct { const void *lpVtbl; } iface;
+    LONG ref;
+    boolean visible;
+    boolean handled;
+};
+
+static HRESULT WINAPI vis_args_QI(void *This, REFIID riid, void **ppv)
+{
+    struct window_visibility_args *impl = (struct window_visibility_args *)This;
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_ICoreWindowEventArgs) ||
+        IsEqualGUID(riid, &IID_IVisibilityChangedEventArgs))
+    {
+        *ppv = &impl->iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI vis_args_AddRef(void *This) { return InterlockedIncrement(&((struct window_visibility_args *)This)->ref); }
+static ULONG WINAPI vis_args_Release(void *This)
+{
+    ULONG ref = InterlockedDecrement(&((struct window_visibility_args *)This)->ref);
+    if (!ref) free(This);
+    return ref;
+}
+static HRESULT WINAPI vis_args_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI vis_args_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.VisibilityChangedEventArgs", 41, n); }
+static HRESULT WINAPI vis_args_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI vis_args_get_Handled(void *This, boolean *value) { if (value) *value = ((struct window_visibility_args *)This)->handled; return S_OK; }
+static HRESULT WINAPI vis_args_put_Handled(void *This, boolean value) { ((struct window_visibility_args *)This)->handled = value; return S_OK; }
+static HRESULT WINAPI vis_args_get_Visible(void *This, boolean *value) { if (value) *value = ((struct window_visibility_args *)This)->visible; return S_OK; }
+
+static const void *vis_args_vtbl[9] = {
+    (void *)vis_args_QI, (void *)vis_args_AddRef, (void *)vis_args_Release,
+    (void *)vis_args_GetIids, (void *)vis_args_GetRuntimeClassName, (void *)vis_args_GetTrustLevel,
+    (void *)vis_args_get_Handled, (void *)vis_args_put_Handled, (void *)vis_args_get_Visible
+};
+
+struct typed_event_handler_vtbl
+{
+    HRESULT (WINAPI *QueryInterface)(void *This, REFIID riid, void **ppv);
+    ULONG (WINAPI *AddRef)(void *This);
+    ULONG (WINAPI *Release)(void *This);
+    HRESULT (WINAPI *Invoke)(void *This, void *sender, void *args);
+};
+
+struct typed_event_handler
+{
+    const struct typed_event_handler_vtbl *lpVtbl;
+};
+
+void core_window_fire_size_changed(FLOAT width, FLOAT height)
+{
+    struct core_window_impl *impl;
+    struct window_size_args *args;
+    int i;
+
+    if (!global_core_window) return;
+    impl = impl_from_ICoreWindow(global_core_window);
+    TRACE("core_window_fire_size_changed: count=%d, width=%.1f, height=%.1f\n", impl->size_changed_count, width, height);
+    if (impl->size_changed_count <= 0) return;
+
+    args = calloc(1, sizeof(*args));
+    if (!args) return;
+    args->iface.lpVtbl = size_args_vtbl;
+    args->ref = 1;
+    args->width = width;
+    args->height = height;
+
+    for (i = 0; i < impl->size_changed_count; i++)
+    {
+        struct typed_event_handler *handler = (struct typed_event_handler *)impl->size_changed_handlers[i].handler;
+        if (handler && handler->lpVtbl && handler->lpVtbl->Invoke)
+        {
+            TRACE("Invoking size_changed_handler[%d] %p (invoke=%p)\n", i, handler, handler->lpVtbl->Invoke);
+            handler->lpVtbl->Invoke(handler, global_core_window, &args->iface);
+        }
+    }
+    IUnknown_Release((IUnknown *)&args->iface);
+}
+
+void core_window_fire_activated(int state)
+{
+    struct core_window_impl *impl;
+    struct window_activated_args *args;
+    int i;
+
+    if (!global_core_window) return;
+    impl = impl_from_ICoreWindow(global_core_window);
+    TRACE("core_window_fire_activated: count=%d, state=%d\n", impl->activated_count, state);
+    if (impl->activated_count <= 0) return;
+
+    args = calloc(1, sizeof(*args));
+    if (!args) return;
+    args->iface.lpVtbl = act_args_vtbl;
+    args->ref = 1;
+    args->state = state;
+
+    for (i = 0; i < impl->activated_count; i++)
+    {
+        struct typed_event_handler *handler = (struct typed_event_handler *)impl->activated_handlers[i].handler;
+        if (handler && handler->lpVtbl && handler->lpVtbl->Invoke)
+        {
+            TRACE("Invoking activated_handler[%d] %p (invoke=%p)\n", i, handler, handler->lpVtbl->Invoke);
+            handler->lpVtbl->Invoke(handler, global_core_window, &args->iface);
+        }
+    }
+    IUnknown_Release((IUnknown *)&args->iface);
+}
+
+void core_window_fire_visibility(boolean visible)
+{
+    struct core_window_impl *impl;
+    struct window_visibility_args *args;
+    int i;
+
+    if (!global_core_window) return;
+    impl = impl_from_ICoreWindow(global_core_window);
+    TRACE("core_window_fire_visibility: count=%d, visible=%d\n", impl->visibility_changed_count, visible);
+    if (impl->visibility_changed_count <= 0) return;
+
+    args = calloc(1, sizeof(*args));
+    if (!args) return;
+    args->iface.lpVtbl = vis_args_vtbl;
+    args->ref = 1;
+    args->visible = visible;
+
+    for (i = 0; i < impl->visibility_changed_count; i++)
+    {
+        struct typed_event_handler *handler = (struct typed_event_handler *)impl->visibility_changed_handlers[i].handler;
+        if (handler && handler->lpVtbl && handler->lpVtbl->Invoke)
+        {
+            TRACE("Invoking visibility_changed_handler[%d] %p\n", i, handler);
+            handler->lpVtbl->Invoke(handler, global_core_window, &args->iface);
+        }
+    }
+    IUnknown_Release((IUnknown *)&args->iface);
+}
 
 static HRESULT core_win_QI_internal(struct core_window_impl *impl, REFIID riid, void **ppvObject)
 {
@@ -2150,7 +2437,26 @@ static HRESULT WINAPI cw_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = 
 static HRESULT WINAPI cw_get_AutomationHostProvider(void *This, void **value) { if (value) *value = NULL; return S_OK; }
 static HRESULT WINAPI cw_get_Bounds(void *This, void *value)
 {
-    if (value) { float *f = (float *)value; f[0]=0; f[1]=0; f[2]=400; f[3]=600; }
+    float *f = (float *)value;
+    if (!f) return E_POINTER;
+    f[0] = 0.0f;
+    f[1] = 0.0f;
+    f[2] = 1016.0f;
+    f[3] = 734.0f;
+    if (current_window)
+    {
+        struct window_impl *win = impl_from_IWindow(current_window);
+        if (win->hwnd)
+        {
+            RECT r;
+            if (GetClientRect(win->hwnd, &r) && (r.right - r.left > 0))
+            {
+                f[2] = (float)(r.right - r.left);
+                f[3] = (float)(r.bottom - r.top);
+            }
+        }
+    }
+    TRACE("CoreWindow::get_Bounds returning (%.1f, %.1f, %.1f, %.1f)\n", f[0], f[1], f[2], f[3]);
     return S_OK;
 }
 static HRESULT WINAPI cw_get_CustomProperties(void *This, void **value) { if (value) *value = NULL; return S_OK; }
@@ -2167,13 +2473,161 @@ static HRESULT WINAPI cw_get_PointerPosition(void *This, void *value)
     return S_OK;
 }
 static HRESULT WINAPI cw_get_Visible(void *This, boolean *value) { if (value) *value = TRUE; return S_OK; }
-static HRESULT WINAPI cw_Activate(void *This) { return S_OK; }
+static HRESULT WINAPI cw_Activate(void *This)
+{
+    FLOAT w = 1016.0f, h = 734.0f;
+    TRACE("CoreWindow::Activate called!\n");
+    if (current_window)
+    {
+        struct window_impl *win = impl_from_IWindow(current_window);
+        if (win->hwnd)
+        {
+            RECT r;
+            ShowWindow(win->hwnd, SW_SHOW);
+            SetForegroundWindow(win->hwnd);
+            if (GetClientRect(win->hwnd, &r) && (r.right - r.left > 0))
+            {
+                w = (FLOAT)(r.right - r.left);
+                h = (FLOAT)(r.bottom - r.top);
+            }
+        }
+    }
+    core_window_fire_visibility(TRUE);
+    core_window_fire_size_changed(w, h);
+    core_window_fire_activated(0 /* CodeActivated */);
+    return S_OK;
+}
 static HRESULT WINAPI cw_Close(void *This) { return S_OK; }
 static HRESULT WINAPI cw_GetAsyncKeyState(void *This, int key, int *state) { if (state) *state = 0; return S_OK; }
 static HRESULT WINAPI cw_GetKeyState(void *This, int key, int *state) { if (state) *state = 0; return S_OK; }
 static HRESULT WINAPI cw_ReleasePointerCapture(void *This) { return S_OK; }
 static HRESULT WINAPI cw_SetPointerCapture(void *This) { return S_OK; }
-static HRESULT WINAPI cw_event_add(void *This, void *handler, INT64 *cookie) { if (cookie) *cookie = 1; return S_OK; }
+
+static HRESULT WINAPI cw_add_Activated(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    TRACE("CoreWindow::add_Activated handler %p\n", handler);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->activated_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->activated_handlers[impl->activated_count].token = *cookie;
+        impl->activated_handlers[impl->activated_count].handler = (IUnknown *)handler;
+        impl->activated_count++;
+
+        core_window_fire_activated(0 /* CodeActivated */);
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_remove_Activated(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->activated_count; i++)
+    {
+        if (impl->activated_handlers[i].token == cookie)
+        {
+            if (impl->activated_handlers[i].handler)
+                IUnknown_Release(impl->activated_handlers[i].handler);
+            impl->activated_handlers[i] = impl->activated_handlers[--impl->activated_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_SizeChanged(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    FLOAT w = 1016.0f, h = 734.0f;
+    TRACE("CoreWindow::add_SizeChanged handler %p\n", handler);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->size_changed_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->size_changed_handlers[impl->size_changed_count].token = *cookie;
+        impl->size_changed_handlers[impl->size_changed_count].handler = (IUnknown *)handler;
+        impl->size_changed_count++;
+
+        if (current_window)
+        {
+            struct window_impl *win = impl_from_IWindow(current_window);
+            if (win->hwnd)
+            {
+                RECT r;
+                if (GetClientRect(win->hwnd, &r) && (r.right - r.left > 0))
+                {
+                    w = (FLOAT)(r.right - r.left);
+                    h = (FLOAT)(r.bottom - r.top);
+                }
+            }
+        }
+        core_window_fire_size_changed(w, h);
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_remove_SizeChanged(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->size_changed_count; i++)
+    {
+        if (impl->size_changed_handlers[i].token == cookie)
+        {
+            if (impl->size_changed_handlers[i].handler)
+                IUnknown_Release(impl->size_changed_handlers[i].handler);
+            impl->size_changed_handlers[i] = impl->size_changed_handlers[--impl->size_changed_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_VisibilityChanged(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    TRACE("CoreWindow::add_VisibilityChanged handler %p\n", handler);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->visibility_changed_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->visibility_changed_handlers[impl->visibility_changed_count].token = *cookie;
+        impl->visibility_changed_handlers[impl->visibility_changed_count].handler = (IUnknown *)handler;
+        impl->visibility_changed_count++;
+
+        core_window_fire_visibility(TRUE);
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_remove_VisibilityChanged(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->visibility_changed_count; i++)
+    {
+        if (impl->visibility_changed_handlers[i].token == cookie)
+        {
+            if (impl->visibility_changed_handlers[i].handler)
+                IUnknown_Release(impl->visibility_changed_handlers[i].handler);
+            impl->visibility_changed_handlers[i] = impl->visibility_changed_handlers[--impl->visibility_changed_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_event_add(void *This, void *handler, INT64 *cookie)
+{
+    TRACE("cw_event_add generic stub %p, handler %p\n", This, handler);
+    if (cookie) *cookie = 1;
+    return S_OK;
+}
 static HRESULT WINAPI cw_event_remove(void *This, INT64 cookie) { return S_OK; }
 
 static const void *core_window_vtbl[64] = {
@@ -2197,8 +2651,8 @@ static const void *core_window_vtbl[64] = {
     (void *)cw_GetKeyState,                 /* 21 */
     (void *)cw_ReleasePointerCapture,       /* 22 */
     (void *)cw_SetPointerCapture,           /* 23 */
-    (void *)cw_event_add,                   /* 24: Activated */
-    (void *)cw_event_remove,                /* 25 */
+    (void *)cw_add_Activated,               /* 24: Activated */
+    (void *)cw_remove_Activated,            /* 25 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 26, 27 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 28, 29 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 30, 31 */
@@ -2213,8 +2667,10 @@ static const void *core_window_vtbl[64] = {
     (void *)cw_event_add, (void *)cw_event_remove, /* 48, 49 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 50, 51 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 52, 53 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 54, 55 */
-    (void *)cw_event_add, (void *)cw_event_remove  /* 56, 57 */
+    (void *)cw_add_SizeChanged,             /* 54: SizeChanged */
+    (void *)cw_remove_SizeChanged,          /* 55 */
+    (void *)cw_add_VisibilityChanged,       /* 56: VisibilityChanged */
+    (void *)cw_remove_VisibilityChanged     /* 57 */
 };
 
 static const void *redhawk_core_window_vtbl[64] = {
@@ -2238,8 +2694,8 @@ static const void *redhawk_core_window_vtbl[64] = {
     (void *)cw_GetKeyState,                 /* 21 */
     (void *)cw_ReleasePointerCapture,       /* 22 */
     (void *)cw_SetPointerCapture,           /* 23 */
-    (void *)cw_event_add,                   /* 24: Activated */
-    (void *)cw_event_remove,                /* 25 */
+    (void *)cw_add_Activated,               /* 24: Activated */
+    (void *)cw_remove_Activated,            /* 25 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 26, 27 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 28, 29 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 30, 31 */
@@ -2254,8 +2710,10 @@ static const void *redhawk_core_window_vtbl[64] = {
     (void *)cw_event_add, (void *)cw_event_remove, /* 48, 49 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 50, 51 */
     (void *)cw_event_add, (void *)cw_event_remove, /* 52, 53 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 54, 55 */
-    (void *)cw_event_add, (void *)cw_event_remove  /* 56, 57 */
+    (void *)cw_add_SizeChanged,             /* 54: SizeChanged */
+    (void *)cw_remove_SizeChanged,          /* 55 */
+    (void *)cw_add_VisibilityChanged,       /* 56: VisibilityChanged */
+    (void *)cw_remove_VisibilityChanged     /* 57 */
 };
 
 static HRESULT get_global_core_window(void **value)
@@ -2284,27 +2742,6 @@ static HRESULT get_global_core_window(void **value)
 /* -------------------------------------------------------------------------
  * Window Instance & Statics
  * ------------------------------------------------------------------------- */
-static const IID IID_IWindow2 = {0xd384759f, 0x34f6, 0x4482, {0x84,0x35,0xf5,0x52,0xf9,0xb2,0x4c,0xc8}};
-static const IID IID_IWindow3 = {0xb70bdc9d, 0x1c35, 0x462a, {0x9b,0x97,0x80,0x8d,0x5a,0xf9,0xf2,0x8e}};
-
-struct window_impl
-{
-    struct { const void *lpVtbl; } IWindow_iface;
-    struct { const void *lpVtbl; } IWindow2_iface;
-    struct { const void *lpVtbl; } IWindow3_iface;
-    struct { const void *lpVtbl; } IRedhawkInterop_iface;
-    HWND hwnd;
-    void *content;
-    void *titlebar_element;
-    LONG ref;
-};
-
-static void *current_window = NULL;
-
-#define impl_from_IWindow(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow_iface)))
-#define impl_from_IWindow2(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow2_iface)))
-#define impl_from_IWindow3(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IWindow3_iface)))
-#define impl_from_IRedhawk_win(ptr) ((struct window_impl *)((char *)(ptr) - offsetof(struct window_impl, IRedhawkInterop_iface)))
 
 static HRESULT WINAPI win_QueryInterface(void *This, REFIID riid, void **ppvObject)
 {
@@ -2367,7 +2804,80 @@ static HRESULT WINAPI win_GetRuntimeClassName(void *This, HSTRING *n) { return W
 static HRESULT WINAPI win_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
 
 static HRESULT WINAPI win_generic_stub(void *This) { return S_OK; }
-static HRESULT WINAPI win_get_Bounds(void *This, void *bounds) { return S_OK; }
+static void ensure_window_hwnd(struct window_impl *impl)
+{
+    WNDCLASSEXW wc = {0};
+    WCHAR title[128] = L"UWP Application";
+    WCHAR modpath[MAX_PATH];
+    int width = 1024, height = 768;
+
+    if (impl->hwnd) return;
+
+    if (GetModuleFileNameW(NULL, modpath, MAX_PATH))
+    {
+        WCHAR *p = wcsrchr(modpath, L'\\');
+        if (p)
+        {
+            p++;
+            if (wcsicmp(p, L"CalculatorApp.exe") == 0 || wcsicmp(p, L"Calculator.exe") == 0)
+            {
+                wcscpy(title, L"Calculator");
+                width = 400;
+                height = 600;
+            }
+            else if (wcsicmp(p, L"Solitaire.exe") == 0)
+            {
+                wcscpy(title, L"Microsoft Solitaire Collection");
+                width = 1024;
+                height = 768;
+            }
+            else
+            {
+                lstrcpynW(title, p, ARRAY_SIZE(title));
+            }
+        }
+    }
+
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = xaml_window_wndproc;
+    wc.hInstance = GetModuleHandleW(NULL);
+    wc.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
+    wc.hbrBackground = NULL;
+    wc.lpszClassName = L"Windows.UI.Xaml.Window";
+    RegisterClassExW(&wc);
+
+    impl->hwnd = CreateWindowExW(0, L"Windows.UI.Xaml.Window", title, WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                 CW_USEDEFAULT, CW_USEDEFAULT, width, height, NULL, NULL, NULL, NULL);
+    TRACE("CreateWindowExW created hwnd %p\n", impl->hwnd);
+    if (impl->hwnd)
+    {
+        SetPropW(GetDesktopWindow(), L"__WineDCompTarget", impl->hwnd);
+        xaml_window_init(impl->hwnd);
+    }
+}
+
+static HRESULT WINAPI win_get_Bounds(void *This, void *bounds)
+{
+    struct window_impl *impl = impl_from_IWindow(This);
+    struct { FLOAT X; FLOAT Y; FLOAT Width; FLOAT Height; } *rect = bounds;
+    TRACE("Window::get_Bounds %p\n", bounds);
+    if (!rect) return E_POINTER;
+    rect->X = 0.0f;
+    rect->Y = 0.0f;
+    rect->Width = 1024.0f;
+    rect->Height = 768.0f;
+    if (impl->hwnd)
+    {
+        RECT r;
+        if (GetClientRect(impl->hwnd, &r) && (r.right - r.left > 0))
+        {
+            rect->Width = (FLOAT)(r.right - r.left);
+            rect->Height = (FLOAT)(r.bottom - r.top);
+        }
+    }
+    return S_OK;
+}
 static HRESULT WINAPI win_get_Visible(void *This, boolean *value) { if (value) *value = TRUE; return S_OK; }
 static HRESULT WINAPI win_get_Content(void *This, void **value)
 {
@@ -2400,25 +2910,26 @@ static HRESULT WINAPI win_get_Dispatcher(void *This, void **value)
 static HRESULT WINAPI win_Activate(void *This)
 {
     struct window_impl *impl = impl_from_IWindow(This);
+    FLOAT w = 1016.0f, h = 734.0f;
     TRACE("Window::Activate called! hwnd=%p\n", impl->hwnd);
-    if (!impl->hwnd)
-    {
-        WNDCLASSEXW wc = {0};
-        wc.cbSize = sizeof(wc);
-        wc.lpfnWndProc = xaml_window_wndproc;
-        wc.hInstance = GetModuleHandleW(NULL);
-        wc.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-        wc.lpszClassName = L"Windows.UI.Xaml.Window";
-        RegisterClassExW(&wc);
+    ensure_window_hwnd(impl);
 
-        impl->hwnd = CreateWindowExW(0, L"Windows.UI.Xaml.Window", L"Calculator", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                                     CW_USEDEFAULT, CW_USEDEFAULT, 400, 600, NULL, NULL, NULL, NULL);
-        TRACE("CreateWindowExW created hwnd %p\n", impl->hwnd);
-        if (impl->hwnd) xaml_window_init(impl->hwnd);
+    if (impl->hwnd)
+    {
+        RECT r;
+        ShowWindow(impl->hwnd, SW_SHOW);
+        SetForegroundWindow(impl->hwnd);
+        if (GetClientRect(impl->hwnd, &r) && (r.right - r.left > 0))
+        {
+            w = (FLOAT)(r.right - r.left);
+            h = (FLOAT)(r.bottom - r.top);
+        }
     }
-    if (impl->hwnd) ShowWindow(impl->hwnd, SW_SHOW);
     xaml_fire_loaded_events();
+    core_window_fire_visibility(TRUE);
+    core_window_fire_size_changed(w, h);
+    xaml_fire_swapchain_size_changed(w, h);
+    core_window_fire_activated(0 /* CodeActivated */);
     return S_OK;
 }
 static HRESULT WINAPI win_Close(void *This) { return S_OK; }
@@ -2570,7 +3081,8 @@ static HRESULT create_window_instance(void **value)
     impl->ref = 10000;
     *value = &impl->IWindow_iface;
     current_window = *value;
-    TRACE("Created Window instance %p\n", *value);
+    ensure_window_hwnd(impl);
+    TRACE("Created Window instance %p (hwnd %p)\n", *value, impl->hwnd);
     return S_OK;
 }
 
@@ -3059,6 +3571,9 @@ static const GUID IID_IContentControl_a26dd1dc = {0xa26dd1dc, 0xcd44, 0x435c, {0
 static const GUID IID_IFrameworkElement = {0xa391d09b, 0x4a99, 0x4b7c, {0x9d, 0x8d, 0x6f, 0xa5, 0xd0, 0x1f, 0x6f, 0xbf}};
 static const GUID IID_IUIElement        = {0x676d0be9, 0xb65c, 0x41c6, {0xba, 0x40, 0x58, 0xcf, 0x87, 0xf2, 0x01, 0xc1}};
 static const GUID IID_INavigate        = {0xbf5dbe99, 0xf53a, 0x4336, {0x97, 0x7c, 0xf8, 0xfc, 0xf7, 0x8b, 0x0d, 0x9e}};
+static const GUID IID_IControl     = {0xa8912263, 0x2951, 0x4f58, {0xa9, 0xc5, 0x5a, 0x13, 0x4e, 0xaa, 0x7f, 0x07}};
+static const GUID IID_IControl_b4a04776 = {0xb4a04776, 0x4e88, 0x50ca, {0x8f, 0x2b, 0x08, 0x94, 0x0d, 0x6c, 0x5f, 0x94}};
+static const GUID IID_IControl_legacy = {0xe5f7dfa7, 0xb1a1, 0x432d, {0x94, 0x77, 0xd7, 0x79, 0x0b, 0x16, 0x86, 0x7d}};
 
 #define RuntimeClass_Frame L"Windows.UI.Xaml.Controls.Frame"
 
@@ -3107,6 +3622,15 @@ static HRESULT frame_QI_internal(struct frame_impl *impl, REFIID riid, void **pp
 
     if (IsEqualGUID(riid, &IID_IContentControl) ||
         IsEqualGUID(riid, &IID_IContentControl_a26dd1dc))
+    {
+        *ppvObject = &impl->IContentControl_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IControl) ||
+        IsEqualGUID(riid, &IID_IControl_b4a04776) ||
+        IsEqualGUID(riid, &IID_IControl_legacy))
     {
         *ppvObject = &impl->IContentControl_iface;
         InterlockedIncrement(&impl->ref);
@@ -3958,11 +4482,12 @@ IActivationFactory *frame_factory = &default_frame_factory.IActivationFactory_if
 
 static const GUID IID_IPageFactory = {0xdfa149ac, 0x1849, 0x445e, {0x93, 0x7c, 0x40, 0xa9, 0x59, 0x0c, 0xc0, 0x76}};
 static const GUID IID_IPage        = {0xc4b27075, 0xe641, 0x453e, {0x82, 0x4d, 0x01, 0x2f, 0xc7, 0xcf, 0x95, 0xcf}};
-static const GUID IID_IUserControl = {0x22880753, 0x3889, 0x4d6d, {0x88, 0x57, 0xe6, 0xfa, 0xe8, 0xdf, 0x31, 0x1d}};
-static const GUID IID_IControl     = {0xe5f7dfa7, 0xb1a1, 0x432d, {0x94, 0x77, 0xd7, 0x79, 0x0b, 0x16, 0x86, 0x7d}};
+static const GUID IID_IUserControl = {0xa7a69ec9, 0xea35, 0x4679, {0xbf, 0x29, 0xf4, 0xf0, 0x92, 0x86, 0xd3, 0x14}};
+static const GUID IID_IUserControl_legacy = {0x22880753, 0x3889, 0x4d6d, {0x88, 0x57, 0xe6, 0xfa, 0xe8, 0xdf, 0x31, 0x1d}};
 
 struct page_impl
 {
+    IInspectable INonDelegatingInspectable_iface;
     struct { const void *lpVtbl; } IPage_iface;
     struct { const void *lpVtbl; } IUserControl_iface;
     struct { const void *lpVtbl; } IControl_iface;
@@ -3979,6 +4504,7 @@ struct page_impl
     LONG ref;
 };
 
+#define impl_from_INonDelegatingInspectable(ptr) ((struct page_impl *)((char *)(ptr) - offsetof(struct page_impl, INonDelegatingInspectable_iface)))
 #define impl_from_IPage(ptr) ((struct page_impl *)((char *)(ptr) - offsetof(struct page_impl, IPage_iface)))
 #define impl_from_IUserControl(ptr) ((struct page_impl *)((char *)(ptr) - offsetof(struct page_impl, IUserControl_iface)))
 #define impl_from_IControl(ptr) ((struct page_impl *)((char *)(ptr) - offsetof(struct page_impl, IControl_iface)))
@@ -3988,7 +4514,40 @@ struct page_impl
 #define impl_from_IPage_do2(ptr) ((struct page_impl *)((char *)(ptr) - offsetof(struct page_impl, IDependencyObject2_iface)))
 #define impl_from_IRedhawk_page(ptr) ((struct page_impl *)((char *)(ptr) - offsetof(struct page_impl, IRedhawkInterop_iface)))
 
-static HRESULT page_QI_internal(struct page_impl *impl, REFIID riid, void **ppvObject)
+static HRESULT page_nondelegating_QI_internal(struct page_impl *impl, REFIID riid, void **ppvObject);
+static ULONG page_nondelegating_Release(struct page_impl *impl);
+
+static inline ULONG page_delegating_AddRef(struct page_impl *impl)
+{
+    if (impl->outer)
+    {
+        TRACE("page %p delegating AddRef to outer %p\n", impl, impl->outer);
+        return IUnknown_AddRef((IUnknown *)impl->outer);
+    }
+    return InterlockedIncrement(&impl->ref);
+}
+
+static inline ULONG page_delegating_Release(struct page_impl *impl)
+{
+    if (impl->outer)
+    {
+        TRACE("page %p delegating Release to outer %p\n", impl, impl->outer);
+        return IUnknown_Release((IUnknown *)impl->outer);
+    }
+    return page_nondelegating_Release(impl);
+}
+
+static inline HRESULT page_delegating_QI(struct page_impl *impl, REFIID riid, void **ppvObject)
+{
+    if (impl->outer)
+    {
+        TRACE("page %p delegating QI %s to outer %p\n", impl, debugstr_guid(riid), impl->outer);
+        return IUnknown_QueryInterface((IUnknown *)impl->outer, riid, ppvObject);
+    }
+    return page_nondelegating_QI_internal(impl, riid, ppvObject);
+}
+
+static HRESULT page_nondelegating_QI_internal(struct page_impl *impl, REFIID riid, void **ppvObject)
 {
     static const GUID IID_IComponentConnector_local  = {0xf6790987, 0xe6e5, 0x47f2, {0x92, 0xc6, 0xec, 0xcc, 0xe4, 0xba, 0x15, 0x9a}};
     static const GUID IID_IComponentConnector2_local = {0xdc8f368b, 0xeccc, 0x498e, {0xb1, 0x39, 0x91, 0x14, 0x22, 0x54, 0xd7, 0xae}};
@@ -3996,70 +4555,58 @@ static HRESULT page_QI_internal(struct page_impl *impl, REFIID riid, void **ppvO
     if (!ppvObject) return E_POINTER;
     *ppvObject = NULL;
 
-    TRACE("page %p, riid %s\n", impl, debugstr_guid(riid));
+    TRACE("page %p nondelegating QI, riid %s\n", impl, debugstr_guid(riid));
     if (IsEqualGUID(riid, &IID_IUnknown) ||
-        IsEqualGUID(riid, &IID_IInspectable) ||
-        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IInspectable))
+    {
+        *ppvObject = &impl->INonDelegatingInspectable_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IAgileObject) ||
         IsEqualGUID(riid, &IID_IPage))
     {
         *ppvObject = &impl->IPage_iface;
-        InterlockedIncrement(&impl->ref);
-        return S_OK;
     }
-
-    if (IsEqualGUID(riid, &IID_IUserControl))
+    else if (IsEqualGUID(riid, &IID_IUserControl) ||
+             IsEqualGUID(riid, &IID_IUserControl_legacy) ||
+             IsEqualGUID(riid, &IID_IContentControl) ||
+             IsEqualGUID(riid, &IID_IContentControl_a26dd1dc))
     {
         *ppvObject = &impl->IUserControl_iface;
-        InterlockedIncrement(&impl->ref);
-        return S_OK;
     }
-
-    if (IsEqualGUID(riid, &IID_IControl))
+    else if (IsEqualGUID(riid, &IID_IControl) ||
+             IsEqualGUID(riid, &IID_IControl_b4a04776) ||
+             IsEqualGUID(riid, &IID_IControl_legacy))
     {
         *ppvObject = &impl->IControl_iface;
-        InterlockedIncrement(&impl->ref);
-        return S_OK;
     }
-
-    if (IsEqualGUID(riid, &IID_IFrameworkElement))
+    else if (IsEqualGUID(riid, &IID_IFrameworkElement) ||
+             IsEqualGUID(riid, &IID_IFrameworkElement2))
     {
         *ppvObject = &impl->IFrameworkElement_iface;
-        InterlockedIncrement(&impl->ref);
-        return S_OK;
     }
-
-    if (IsEqualGUID(riid, &IID_IUIElement))
+    else if (IsEqualGUID(riid, &IID_IUIElement))
     {
         *ppvObject = &impl->IUIElement_iface;
-        InterlockedIncrement(&impl->ref);
-        return S_OK;
     }
-
-    if (IsEqualGUID(riid, &IID_IDependencyObject))
+    else if (IsEqualGUID(riid, &IID_IDependencyObject))
     {
         *ppvObject = &impl->IDependencyObject_iface;
-        InterlockedIncrement(&impl->ref);
-        return S_OK;
     }
-
-    if (IsEqualGUID(riid, &IID_IDependencyObject2))
+    else if (IsEqualGUID(riid, &IID_IDependencyObject2))
     {
         *ppvObject = &impl->IDependencyObject2_iface;
-        InterlockedIncrement(&impl->ref);
-        return S_OK;
     }
-
-    if (IsEqualGUID(riid, &IID_IFrameworkElement2))
-    {
-        *ppvObject = &impl->IFrameworkElement_iface;
-        InterlockedIncrement(&impl->ref);
-        return S_OK;
-    }
-
-    if (IsEqualGUID(riid, &IID_ComWrappers_internal))
+    else if (IsEqualGUID(riid, &IID_ComWrappers_internal))
     {
         *ppvObject = &impl->IRedhawkInterop_iface;
-        InterlockedIncrement(&impl->ref);
+    }
+
+    if (*ppvObject)
+    {
+        IUnknown_AddRef((IUnknown *)*ppvObject);
         return S_OK;
     }
 
@@ -4080,17 +4627,14 @@ static HRESULT page_QI_internal(struct page_impl *impl, REFIID riid, void **ppvO
     return E_NOINTERFACE;
 }
 
-static HRESULT WINAPI page_QueryInterface(void *This, REFIID riid, void **ppvObject) { return page_QI_internal(impl_from_IPage(This), riid, ppvObject); }
-static ULONG WINAPI page_AddRef(void *This) { return InterlockedIncrement(&impl_from_IPage(This)->ref); }
-static ULONG WINAPI page_Release(void *This)
+static ULONG page_nondelegating_Release(struct page_impl *impl)
 {
-    struct page_impl *impl = impl_from_IPage(This);
     ULONG ref = InterlockedDecrement(&impl->ref);
-    TRACE("page %p, ref %ld\n", impl, ref);
+    TRACE("page %p, nondelegating ref %ld\n", impl, ref);
     if (!ref)
     {
         UINT32 i;
-        if (impl->content) IInspectable_Release(impl->content);
+        if (impl->content) IInspectable_Release((IInspectable *)impl->content);
         for (i = 0; i < impl->dp_count; i++)
         {
             if (impl->dp_entries[i].value) IInspectable_Release(impl->dp_entries[i].value);
@@ -4099,6 +4643,52 @@ static ULONG WINAPI page_Release(void *This)
     }
     return ref;
 }
+
+static HRESULT WINAPI page_nondelegating_QueryInterface(IInspectable *iface, REFIID riid, void **ppvObject)
+{
+    struct page_impl *impl = impl_from_INonDelegatingInspectable(iface);
+    return page_nondelegating_QI_internal(impl, riid, ppvObject);
+}
+static ULONG WINAPI page_nondelegating_AddRef_method(IInspectable *iface)
+{
+    struct page_impl *impl = impl_from_INonDelegatingInspectable(iface);
+    ULONG ref = InterlockedIncrement(&impl->ref);
+    TRACE("page %p nondelegating addref -> %ld\n", impl, ref);
+    return ref;
+}
+static ULONG WINAPI page_nondelegating_Release_method(IInspectable *iface)
+{
+    struct page_impl *impl = impl_from_INonDelegatingInspectable(iface);
+    return page_nondelegating_Release(impl);
+}
+static HRESULT WINAPI page_nondelegating_GetIids(IInspectable *iface, ULONG *c, IID **i)
+{
+    if (c) *c = 0;
+    if (i) *i = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI page_nondelegating_GetRuntimeClassName(IInspectable *iface, HSTRING *n)
+{
+    return WindowsCreateString(RuntimeClass_Page, wcslen(RuntimeClass_Page), n);
+}
+static HRESULT WINAPI page_nondelegating_GetTrustLevel(IInspectable *iface, TrustLevel *t)
+{
+    if (t) *t = BaseTrust;
+    return S_OK;
+}
+
+static const struct IInspectableVtbl page_nondelegating_vtbl = {
+    page_nondelegating_QueryInterface,
+    page_nondelegating_AddRef_method,
+    page_nondelegating_Release_method,
+    page_nondelegating_GetIids,
+    page_nondelegating_GetRuntimeClassName,
+    page_nondelegating_GetTrustLevel
+};
+
+static HRESULT WINAPI page_QueryInterface(void *This, REFIID riid, void **ppvObject) { return page_delegating_QI(impl_from_IPage(This), riid, ppvObject); }
+static ULONG WINAPI page_AddRef(void *This) { return page_delegating_AddRef(impl_from_IPage(This)); }
+static ULONG WINAPI page_Release(void *This) { return page_delegating_Release(impl_from_IPage(This)); }
 static HRESULT WINAPI page_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
 static HRESULT WINAPI page_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(RuntimeClass_Page, wcslen(RuntimeClass_Page), n); }
 static HRESULT WINAPI page_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
@@ -4136,7 +4726,7 @@ static const void *page_vtbl[] = {
 };
 
 /* IUserControl */
-static HRESULT WINAPI page_uc_QI(void *This, REFIID riid, void **ppvObject) { return page_QI_internal(impl_from_IUserControl(This), riid, ppvObject); }
+static HRESULT WINAPI page_uc_QI(void *This, REFIID riid, void **ppvObject) { return page_delegating_QI(impl_from_IUserControl(This), riid, ppvObject); }
 static ULONG WINAPI page_uc_AddRef(void *This) { return page_AddRef(&impl_from_IUserControl(This)->IPage_iface); }
 static ULONG WINAPI page_uc_Release(void *This) { return page_Release(&impl_from_IUserControl(This)->IPage_iface); }
 static HRESULT WINAPI page_uc_get_Content(void *This, void **value)
@@ -4172,7 +4762,7 @@ static const void *page_user_control_vtbl[16] = {
 };
 
 /* IControl */
-static HRESULT WINAPI page_ctrl_QI(void *This, REFIID riid, void **ppvObject) { return page_QI_internal(impl_from_IControl(This), riid, ppvObject); }
+static HRESULT WINAPI page_ctrl_QI(void *This, REFIID riid, void **ppvObject) { return page_delegating_QI(impl_from_IControl(This), riid, ppvObject); }
 static ULONG WINAPI page_ctrl_AddRef(void *This) { return page_AddRef(&impl_from_IControl(This)->IPage_iface); }
 static ULONG WINAPI page_ctrl_Release(void *This) { return page_Release(&impl_from_IControl(This)->IPage_iface); }
 
@@ -4193,7 +4783,7 @@ static const void *page_control_vtbl[32] = {
 };
 
 /* IFrameworkElement */
-static HRESULT WINAPI page_fe_QI(void *This, REFIID riid, void **ppvObject) { return page_QI_internal(impl_from_IPage_fe(This), riid, ppvObject); }
+static HRESULT WINAPI page_fe_QI(void *This, REFIID riid, void **ppvObject) { return page_delegating_QI(impl_from_IPage_fe(This), riid, ppvObject); }
 static ULONG WINAPI page_fe_AddRef(void *This) { return page_AddRef(&impl_from_IPage_fe(This)->IPage_iface); }
 static ULONG WINAPI page_fe_Release(void *This) { return page_Release(&impl_from_IPage_fe(This)->IPage_iface); }
 
@@ -4214,7 +4804,7 @@ static const void *page_fe_vtbl[32] = {
 };
 
 /* IUIElement */
-static HRESULT WINAPI page_ui_QI(void *This, REFIID riid, void **ppvObject) { return page_QI_internal(impl_from_IPage_ui(This), riid, ppvObject); }
+static HRESULT WINAPI page_ui_QI(void *This, REFIID riid, void **ppvObject) { return page_delegating_QI(impl_from_IPage_ui(This), riid, ppvObject); }
 static ULONG WINAPI page_ui_AddRef(void *This) { return page_AddRef(&impl_from_IPage_ui(This)->IPage_iface); }
 static ULONG WINAPI page_ui_Release(void *This) { return page_Release(&impl_from_IPage_ui(This)->IPage_iface); }
 
@@ -4235,14 +4825,14 @@ static const void *page_ui_element_vtbl[32] = {
 };
 
 /* Redhawk Page wrapper */
-static HRESULT WINAPI redhawk_page_QI(void *This, REFIID riid, void **ppvObject) { return page_QI_internal(impl_from_IRedhawk_page(This), riid, ppvObject); }
+static HRESULT WINAPI redhawk_page_QI(void *This, REFIID riid, void **ppvObject) { return page_delegating_QI(impl_from_IRedhawk_page(This), riid, ppvObject); }
 static ULONG WINAPI redhawk_page_AddRef(void *This) { return page_AddRef(&impl_from_IRedhawk_page(This)->IPage_iface); }
-static ULONG WINAPI redhawk_page_Release(void *This) { return page_Release(&impl_from_IRedhawk_page(This)->IPage_iface); }
+static ULONG WINAPI page_Release_redhawk(void *This) { return page_Release(&impl_from_IRedhawk_page(This)->IPage_iface); }
 
 static const void *redhawk_page_vtbl[32] = {
     (void *)redhawk_page_QI,
     (void *)redhawk_page_AddRef,
-    (void *)redhawk_page_Release,
+    (void *)page_Release_redhawk,
     (void *)redhawk_interop_m3,
     (void *)page_GetRuntimeClassName,
     (void *)page_GetTrustLevel,
@@ -4257,7 +4847,7 @@ static const void *redhawk_page_vtbl[32] = {
 };
 
 /* DependencyObject methods for Page */
-static HRESULT WINAPI page_do_QI(void *This, REFIID riid, void **ppvObject) { return page_QI_internal(impl_from_IPage_do(This), riid, ppvObject); }
+static HRESULT WINAPI page_do_QI(void *This, REFIID riid, void **ppvObject) { return page_delegating_QI(impl_from_IPage_do(This), riid, ppvObject); }
 static ULONG WINAPI page_do_AddRef(void *This) { return page_AddRef(&impl_from_IPage_do(This)->IPage_iface); }
 static ULONG WINAPI page_do_Release(void *This) { return page_Release(&impl_from_IPage_do(This)->IPage_iface); }
 static HRESULT WINAPI page_do_GetValue(void *This, void *dp, IInspectable **result)
@@ -4342,7 +4932,7 @@ static const void *page_dependency_object_vtbl[16] = {
 };
 
 /* IDependencyObject2 for Page */
-static HRESULT WINAPI page_do2_QI(void *This, REFIID riid, void **ppvObject) { return page_QI_internal(impl_from_IPage_do2(This), riid, ppvObject); }
+static HRESULT WINAPI page_do2_QI(void *This, REFIID riid, void **ppvObject) { return page_delegating_QI(impl_from_IPage_do2(This), riid, ppvObject); }
 static ULONG WINAPI page_do2_AddRef(void *This) { return page_AddRef(&impl_from_IPage_do2(This)->IPage_iface); }
 static ULONG WINAPI page_do2_Release(void *This) { return page_Release(&impl_from_IPage_do2(This)->IPage_iface); }
 static HRESULT WINAPI page_do2_RegisterPropertyChangedCallback(void *This, void *dp, void *callback, INT64 *result)
@@ -4375,6 +4965,7 @@ static HRESULT create_page_instance(void *outer, void **inner, void **instance)
     if (!instance) return E_POINTER;
     impl = calloc(1, sizeof(*impl));
     if (!impl) return E_OUTOFMEMORY;
+    impl->INonDelegatingInspectable_iface.lpVtbl = &page_nondelegating_vtbl;
     impl->IPage_iface.lpVtbl = page_vtbl;
     impl->IUserControl_iface.lpVtbl = page_user_control_vtbl;
     impl->IControl_iface.lpVtbl = page_control_vtbl;
@@ -4385,13 +4976,24 @@ static HRESULT create_page_instance(void *outer, void **inner, void **instance)
     impl->IRedhawkInterop_iface.lpVtbl = redhawk_page_vtbl;
     impl->outer = outer;
     impl->ref = 1;
-    if (inner)
+
+    if (outer)
     {
-        *inner = &impl->IPage_iface;
-        InterlockedIncrement(&impl->ref);
+        if (inner)
+            *inner = &impl->INonDelegatingInspectable_iface;
+        *instance = &impl->IPage_iface;
+        IUnknown_AddRef((IUnknown *)*instance);
     }
-    *instance = &impl->IPage_iface;
-    TRACE("Created Page instance %p, inner %p, ref %ld\n", *instance, inner ? *inner : NULL, impl->ref);
+    else
+    {
+        if (inner)
+        {
+            *inner = &impl->INonDelegatingInspectable_iface;
+            InterlockedIncrement(&impl->ref);
+        }
+        *instance = &impl->IPage_iface;
+    }
+    TRACE("Created Page instance %p, outer %p, inner %p, ref %ld\n", *instance, outer, inner ? *inner : NULL, impl->ref);
     return S_OK;
 }
 
@@ -4514,3 +5116,190 @@ static struct page_factory_impl default_page_factory = {
 };
 
 IActivationFactory *page_factory = &default_page_factory.IActivationFactory_iface;
+
+/* -------------------------------------------------------------------------
+ * CoreTextServicesManager Implementation
+ * ------------------------------------------------------------------------- */
+static const GUID IID_ICoreTextServicesManager = {0xc2507d83, 0x6e0a, 0x4a8a, {0xbd, 0xf8, 0x19, 0x48, 0x87, 0x48, 0x54, 0xba}};
+static const GUID IID_ICoreTextServicesManagerStatics = {0x1520a388, 0xe2cf, 0x4d65, {0xae, 0xb9, 0xb3, 0x2d, 0x86, 0xfe, 0x39, 0xb9}};
+
+struct text_manager_instance
+{
+    struct { const void *lpVtbl; } ICoreTextServicesManager_iface;
+    LONG ref;
+};
+
+static HRESULT WINAPI text_mgr_QI(void *This, REFIID riid, void **ppvObject)
+{
+    struct text_manager_instance *impl = (struct text_manager_instance *)This;
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_ICoreTextServicesManager))
+    {
+        *ppvObject = &impl->ICoreTextServicesManager_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI text_mgr_AddRef(void *This)
+{
+    struct text_manager_instance *impl = (struct text_manager_instance *)This;
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI text_mgr_Release(void *This)
+{
+    struct text_manager_instance *impl = (struct text_manager_instance *)This;
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI text_mgr_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+
+static HRESULT WINAPI text_mgr_GetRuntimeClassName(void *This, HSTRING *n)
+{
+    return WindowsCreateString(L"Windows.UI.Text.Core.CoreTextServicesManager", 43, n);
+}
+
+static HRESULT WINAPI text_mgr_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI text_mgr_get_InputLanguage(void *This, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI text_mgr_add_InputLanguageChanged(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI text_mgr_remove_InputLanguageChanged(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI text_mgr_CreateEditContext(void *This, void **out)
+{
+    if (out) *out = NULL;
+    return S_OK;
+}
+
+static const void *text_mgr_vtbl[] = {
+    (void *)text_mgr_QI,
+    (void *)text_mgr_AddRef,
+    (void *)text_mgr_Release,
+    (void *)text_mgr_GetIids,
+    (void *)text_mgr_GetRuntimeClassName,
+    (void *)text_mgr_GetTrustLevel,
+    (void *)text_mgr_get_InputLanguage,
+    (void *)text_mgr_add_InputLanguageChanged,
+    (void *)text_mgr_remove_InputLanguageChanged,
+    (void *)text_mgr_CreateEditContext
+};
+
+struct text_mgr_factory_impl
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } ICoreTextServicesManagerStatics_iface;
+    LONG ref;
+};
+
+#define impl_from_text_mgr_fac(ptr) ((struct text_mgr_factory_impl *)((char *)(ptr) - offsetof(struct text_mgr_factory_impl, IActivationFactory_iface)))
+#define impl_from_text_mgr_stat(ptr) ((struct text_mgr_factory_impl *)((char *)(ptr) - offsetof(struct text_mgr_factory_impl, ICoreTextServicesManagerStatics_iface)))
+
+static HRESULT text_mgr_fac_QI_internal(struct text_mgr_factory_impl *impl, REFIID riid, void **ppvObject)
+{
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppvObject = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ICoreTextServicesManagerStatics))
+    {
+        *ppvObject = &impl->ICoreTextServicesManagerStatics_iface;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static HRESULT WINAPI text_mgr_fac_QueryInterface(IActivationFactory *iface, REFIID riid, void **ppvObject)
+{
+    return text_mgr_fac_QI_internal(impl_from_text_mgr_fac(iface), riid, ppvObject);
+}
+static ULONG WINAPI text_mgr_fac_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI text_mgr_fac_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI text_mgr_fac_GetIids(IActivationFactory *iface, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI text_mgr_fac_GetRuntimeClassName(IActivationFactory *iface, HSTRING *n)
+{
+    return WindowsCreateString(L"Windows.UI.Text.Core.CoreTextServicesManager", 43, n);
+}
+static HRESULT WINAPI text_mgr_fac_GetTrustLevel(IActivationFactory *iface, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI text_mgr_fac_ActivateInstance(IActivationFactory *iface, IInspectable **instance)
+{
+    struct text_manager_instance *inst = calloc(1, sizeof(*inst));
+    if (!inst) return E_OUTOFMEMORY;
+    inst->ICoreTextServicesManager_iface.lpVtbl = text_mgr_vtbl;
+    inst->ref = 1;
+    *instance = (IInspectable *)&inst->ICoreTextServicesManager_iface;
+    return S_OK;
+}
+
+static const IActivationFactoryVtbl text_mgr_activation_factory_vtbl = {
+    text_mgr_fac_QueryInterface,
+    text_mgr_fac_AddRef,
+    text_mgr_fac_Release,
+    text_mgr_fac_GetIids,
+    text_mgr_fac_GetRuntimeClassName,
+    text_mgr_fac_GetTrustLevel,
+    text_mgr_fac_ActivateInstance
+};
+
+static HRESULT WINAPI text_mgr_stat_QI(void *This, REFIID riid, void **ppvObject)
+{
+    return text_mgr_fac_QI_internal(impl_from_text_mgr_stat(This), riid, ppvObject);
+}
+static ULONG WINAPI text_mgr_stat_AddRef(void *This) { return 2; }
+static ULONG WINAPI text_mgr_stat_Release(void *This) { return 1; }
+static HRESULT WINAPI text_mgr_stat_GetForCurrentView(void *This, void **value)
+{
+    struct text_manager_instance *inst = calloc(1, sizeof(*inst));
+    if (!inst) return E_OUTOFMEMORY;
+    inst->ICoreTextServicesManager_iface.lpVtbl = text_mgr_vtbl;
+    inst->ref = 1;
+    *value = &inst->ICoreTextServicesManager_iface;
+    TRACE("CoreTextServicesManager GetForCurrentView -> %p\n", *value);
+    return S_OK;
+}
+
+static const void *text_mgr_statics_vtbl[] = {
+    (void *)text_mgr_stat_QI,
+    (void *)text_mgr_stat_AddRef,
+    (void *)text_mgr_stat_Release,
+    (void *)text_mgr_fac_GetIids,
+    (void *)text_mgr_fac_GetRuntimeClassName,
+    (void *)text_mgr_fac_GetTrustLevel,
+    (void *)text_mgr_stat_GetForCurrentView
+};
+
+static struct text_mgr_factory_impl default_text_mgr_factory = {
+    {&text_mgr_activation_factory_vtbl},
+    {text_mgr_statics_vtbl},
+    1
+};
+
+IActivationFactory *core_text_services_manager_factory = &default_text_mgr_factory.IActivationFactory_iface;

@@ -131,39 +131,41 @@ static HRESULT WINAPI client_device_information_GetTrustLevel( IEasClientDeviceI
 
 static HRESULT WINAPI client_device_information_get_Id( IEasClientDeviceInformation *iface, GUID *value )
 {
-    FIXME( "iface %p, value %p stub.\n", iface, value );
-
-    return E_NOTIMPL;
+    static const GUID device_id = {0x6bb16afe, 0xe97d, 0x4225, {0xb2, 0xa6, 0xa1, 0xe0, 0x77, 0x8d, 0x1d, 0x8c}};
+    TRACE( "iface %p, value %p.\n", iface, value );
+    if (!value) return E_POINTER;
+    *value = device_id;
+    return S_OK;
 }
 
 static HRESULT WINAPI client_device_information_get_OperatingSystem( IEasClientDeviceInformation *iface, HSTRING *value )
 {
-    FIXME( "iface %p, value %p stub.\n", iface, value );
-    return WindowsCreateString( NULL, 0, value );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return WindowsCreateString( L"WINDOWS", 7, value );
 }
 
 static HRESULT WINAPI client_device_information_get_FriendlyName( IEasClientDeviceInformation *iface, HSTRING *value )
 {
-    FIXME( "iface %p, value %p stub.\n", iface, value );
-    return WindowsCreateString( NULL, 0, value );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return WindowsCreateString( L"WinePC", 6, value );
 }
 
 static HRESULT WINAPI client_device_information_get_SystemManufacturer( IEasClientDeviceInformation *iface, HSTRING *value )
 {
-    FIXME( "iface %p, value %p stub.\n", iface, value );
-    return WindowsCreateString( NULL, 0, value );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return WindowsCreateString( L"Microsoft Corporation", 21, value );
 }
 
 static HRESULT WINAPI client_device_information_get_SystemProductName( IEasClientDeviceInformation *iface, HSTRING *value )
 {
-    FIXME( "iface %p, value %p stub.\n", iface, value );
-    return WindowsCreateString( NULL, 0, value );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return WindowsCreateString( L"System Product Name", 19, value );
 }
 
 static HRESULT WINAPI client_device_information_get_SystemSku( IEasClientDeviceInformation *iface, HSTRING *value )
 {
-    FIXME( "iface %p, value %p stub.\n", iface, value );
-    return WindowsCreateString( NULL, 0, value );
+    TRACE( "iface %p, value %p.\n", iface, value );
+    return WindowsCreateString( L"System SKU", 10, value );
 }
 
 static IEasClientDeviceInformationVtbl client_device_information_vtbl =
@@ -265,6 +267,7 @@ static HRESULT WINAPI factory_QueryInterface( IActivationFactory *iface, REFIID 
 
     if (IsEqualGUID( iid, &IID_IUnknown ) ||
         IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
         IsEqualGUID( iid, &IID_IActivationFactory ))
     {
         *out = &impl->IActivationFactory_iface;

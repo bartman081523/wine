@@ -239,8 +239,9 @@ static HRESULT WINAPI statics_get_VersionInfo( IAnalyticsInfoStatics *iface, IAn
 
 static HRESULT WINAPI statics_get_DeviceForm( IAnalyticsInfoStatics *iface, HSTRING *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p.\n", iface, value );
+    if (!value) return E_POINTER;
+    return WindowsCreateString( L"Desktop", 7, value );
 }
 
 static const struct IAnalyticsInfoStaticsVtbl statics_vtbl =

@@ -52,6 +52,10 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( page_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Grid" ))
         IActivationFactory_QueryInterface( grid_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Canvas" ))
+        IActivationFactory_QueryInterface( canvas_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.SwapChainPanel" ))
+        IActivationFactory_QueryInterface( swapchainpanel_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Control" ))
         IActivationFactory_QueryInterface( control_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.Button" ))
@@ -90,6 +94,13 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( property_path_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.UI.Xaml.Data.PropertyChangedEventArgs" ))
         IActivationFactory_QueryInterface( property_changed_event_args_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Text.Core.CoreTextServicesManager" ) ||
+             !wcscmp( buffer, L"Windows.UI.Text.Core.CoreTextServicesManager" ))
+        IActivationFactory_QueryInterface( core_text_services_manager_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Controls.ContentDialog" ))
+        IActivationFactory_QueryInterface( content_dialog_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.UI.Xaml.Media.CompositionTarget" ))
+        IActivationFactory_QueryInterface( composition_target_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

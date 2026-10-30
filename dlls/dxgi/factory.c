@@ -381,9 +381,31 @@ static BOOL CALLBACK find_host_proc(HWND hwnd, LPARAM lparam)
     HWND *out = (HWND *)lparam;
     WCHAR title[256] = {0};
     WCHAR class_name[256] = {0};
+    DWORD pid = 0;
 
+    GetWindowThreadProcessId(hwnd, &pid);
     GetClassNameW(hwnd, class_name, ARRAY_SIZE(class_name));
     GetWindowTextW(hwnd, title, ARRAY_SIZE(title));
+
+    if (pid == GetCurrentProcessId())
+    {
+        if (wcsstr(class_name, L"Windows.UI.Xaml.Window") ||
+            wcsstr(class_name, L"WinUIDesktopWin32WindowClass") ||
+            wcsstr(class_name, L"ApplicationFrameWindow"))
+        {
+            TRACE("find_host_proc matched process XAML window: hwnd %p, title %s, class %s\n",
+                    hwnd, debugstr_w(title), debugstr_w(class_name));
+            *out = hwnd;
+            return FALSE;
+        }
+        if (IsWindowVisible(hwnd) && GetWindow(hwnd, GW_OWNER) == NULL)
+        {
+            TRACE("find_host_proc matched visible top-level hwnd %p, title %s, class %s\n",
+                    hwnd, debugstr_w(title), debugstr_w(class_name));
+            *out = hwnd;
+            return FALSE;
+        }
+    }
 
     if (wcsstr(class_name, L"WinUIDesktopWin32WindowClass"))
     {

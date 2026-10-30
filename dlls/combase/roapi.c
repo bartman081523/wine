@@ -85,6 +85,61 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
             *out = wcsdup(L"dcomp.dll");
             return S_OK;
         }
+        if (!wcsncmp(classid, L"Windows.UI.Core.", 16))
+        {
+            *out = wcsdup(L"windows.ui.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.UI.Shell.", 17))
+        {
+            *out = wcsdup(L"windows.ui.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.UI.Notifications.", 25))
+        {
+            *out = wcsdup(L"windows.ui.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.UI.ViewManagement.", 26))
+        {
+            *out = wcsdup(L"windows.ui.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.UI.Input.", 17))
+        {
+            *out = wcsdup(L"windows.ui.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Graphics.Display.", 25))
+        {
+            *out = wcsdup(L"windows.ui.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Devices.Input.", 22))
+        {
+            *out = wcsdup(L"windows.ui.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Devices.Lights.", 23))
+        {
+            *out = wcsdup(L"windows.devices.enumeration.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.System.Profile.", 23))
+        {
+            *out = wcsdup(L"twinapi.appcore.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Web.Http.", 17))
+        {
+            *out = wcsdup(L"windows.web.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Security.Authentication.Web.Core.", 41))
+        {
+            *out = wcsdup(L"twinapi.appcore.dll");
+            return S_OK;
+        }
         if (!wcsncmp(classid, L"Windows.Networking.PushNotifications.", 37))
         {
             *out = wcsdup(L"windows.networking.dll");
@@ -108,6 +163,12 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
         if (!wcsncmp(classid, L"Windows.Globalization.", 22))
         {
             *out = wcsdup(L"windows.globalization.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Media.Audio.", 20) ||
+            !wcsncmp(classid, L"Windows.Media.Devices.", 22))
+        {
+            *out = wcsdup(L"windows.media.devices.dll");
             return S_OK;
         }
         if (!wcsncmp(classid, L"Windows.UI.Xaml.", 16))
@@ -149,6 +210,14 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
         if (!wcsncmp(classid, L"Microsoft.Web.WebView2.Core.", 29))
         {
             *out = wcsdup(L"Microsoft.Web.WebView2.Core.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Microsoft.Toolkit.Uwp.Notifications.", 36) ||
+            !wcsncmp(classid, L"McgBridge.", 10) ||
+            !wcsncmp(classid, L"Microsoft.AdSdk.", 16) ||
+            !wcsncmp(classid, L"OM.SDKWindows.", 14))
+        {
+            *out = wcsdup(L"Microsoft.MicrosoftSolitaireCollection.dll");
             return S_OK;
         }
         ERR("Class %s not found in registry\n", debugstr_w(classid));

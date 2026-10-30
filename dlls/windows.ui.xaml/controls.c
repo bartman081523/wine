@@ -45,10 +45,19 @@ static const GUID IID_IControlOverrides6     = {0xe194c96a, 0xd8cc, 0x4339, {0xa
 static const GUID IID_IContentControl        = {0xa26dd1dc, 0xcd44, 0x435c, {0xbe, 0x94, 0x01, 0xd6, 0x24, 0x1c, 0x23, 0x1c}};
 static const GUID IID_IContentControl2       = {0x652c208c, 0x8ccf, 0x4399, {0xbd, 0x3e, 0x5a, 0x01, 0x5a, 0xa1, 0xbc, 0x03}};
 static const GUID IID_IContentControlOverrides = {0x5f4c0b10, 0xe38e, 0x4b5d, {0xbe, 0x1a, 0x5e, 0xd0, 0x42, 0x46, 0xa6, 0x35}};
-static const GUID IID_IUserControl           = {0x2263886c, 0xc069, 0x570f, {0xb9, 0xcc, 0x9e, 0x21, 0xdd, 0x02, 0x8d, 0x8e}};
+static const GUID IID_IUserControl           = {0xa7a69ec9, 0xea35, 0x4679, {0xbf, 0x29, 0xf4, 0xf0, 0x92, 0x86, 0xd3, 0x14}};
+static const GUID IID_IUserControlStatics    = {0xe8887976, 0x2c5c, 0x41cf, {0xbe, 0x6a, 0x9e, 0x44, 0xbe, 0xfd, 0xf6, 0x55}};
 static const GUID IID_IPanel                 = {0xa50a4bbd, 0x8361, 0x469c, {0x90, 0xda, 0xe9, 0xa4, 0x0c, 0x74, 0x74, 0xdf}};
 static const GUID IID_IGrid                  = {0xfd104460, 0x2e15, 0x4ba3, {0x8b, 0x8f, 0xfa, 0x69, 0x3a, 0x41, 0x61, 0xe9}};
 static const GUID IID_IGridStatics           = {0x64fe2e9f, 0xf951, 0x42b6, {0xa9, 0xce, 0xbb, 0x17, 0x9a, 0xf1, 0x15, 0x95}};
+static const GUID IID_ICanvas                = {0x79190e19, 0xcd38, 0x4823, {0xae, 0xae, 0x64, 0xa7, 0x71, 0x32, 0xf5, 0x19}};
+static const GUID IID_ICanvasFactory         = {0x1b328bd1, 0xb400, 0x4a8e, {0x94, 0x3b, 0x5a, 0xd2, 0xc4, 0x5b, 0xe0, 0xdf}};
+static const GUID IID_ICanvasStatics         = {0x0e2bf0f9, 0xb041, 0x4497, {0xb0, 0xf6, 0x36, 0x59, 0x22, 0x9f, 0x61, 0x6b}};
+static const GUID IID_ISwapChainPanel        = {0xc589644f, 0xeba8, 0x427a, {0xb7, 0x5a, 0x9f, 0x1f, 0x93, 0xa1, 0x1a, 0xe9}};
+static const GUID IID_ISwapChainPanelFactory = {0xf38f8d7f, 0x1a48, 0x49cb, {0x86, 0xd2, 0x10, 0xea, 0xaa, 0xf6, 0xfd, 0x70}};
+static const GUID IID_ISwapChainPanelStatics = {0xf89c0297, 0xeea8, 0x498c, {0x99, 0xc4, 0x25, 0x7e, 0x36, 0x60, 0xdf, 0x7e}};
+static const GUID IID_ISwapChainPanelNative  = {0xf92f19d2, 0x3ade, 0x45a6, {0xa2, 0x0c, 0xf6, 0xf1, 0xea, 0x90, 0x55, 0x4b}};
+static const GUID IID_ISwapChainPanelNative2 = {0xd5a2f60c, 0x37b2, 0x44a2, {0x93, 0x7b, 0x8d, 0x8e, 0xb9, 0x72, 0x68, 0x21}};
 static const GUID IID_IBorder                = {0x797c4539, 0x45bd, 0x4633, {0xa0, 0x44, 0xbf, 0xb0, 0x2e, 0xf5, 0x17, 0x0f}};
 static const GUID IID_IButton                = {0x280335ae, 0x5570, 0x46c7, {0x8e, 0x0b, 0x60, 0x2b, 0xe7, 0x12, 0x29, 0xa2}};
 static const GUID IID_IButtonBase            = {0xfa002c1a, 0x494e, 0x46cf, {0x91, 0xd4, 0xe1, 0x4a, 0x8d, 0x79, 0x86, 0x74}};
@@ -103,6 +112,12 @@ static const GUID IID_IColumnDefinitionStatics  = {0x06b0d728, 0xd044, 0x40c6, {
 static const GUID IID_IAdaptiveTrigger          = {0xa5f04119, 0x0cd9, 0x49f1, {0xa2, 0x3f, 0x44, 0xe5, 0x47, 0xab, 0x9f, 0x1a}};
 static const GUID IID_IStateTriggerBase         = {0x48b20698, 0xaf06, 0x466c, {0x80, 0x52, 0x93, 0x66, 0x6d, 0xde, 0x0e, 0x49}};
 static const GUID IID_IAdaptiveTriggerFactory   = {0xc966d482, 0x5aeb, 0x4841, {0x92, 0x47, 0xc1, 0xa0, 0xbd, 0xd6, 0xf5, 0x9f}};
+static const GUID IID_IContentDialog            = {0x38dc4404, 0xd24e, 0x40d8, {0x94, 0x15, 0x34, 0x94, 0x64, 0xc1, 0xaf, 0xdc}};
+static const GUID IID_IContentDialog2           = {0x2f93eb45, 0xee43, 0x4303, {0x9b, 0x38, 0x3f, 0xe1, 0xa1, 0x11, 0xec, 0xbf}};
+static const GUID IID_IContentDialogFactory     = {0x05557178, 0x9d8e, 0x4315, {0xb3, 0x7d, 0x68, 0x0c, 0x14, 0x01, 0x2c, 0x35}};
+static const GUID IID_IContentDialogStatics     = {0x23ab47a6, 0x508a, 0x4f33, {0xb7, 0x86, 0xf2, 0xfa, 0x96, 0xd8, 0x69, 0xaf}};
+static const GUID IID_IContentDialogStatics2    = {0x329825b2, 0x8fb0, 0x4125, {0xbb, 0x07, 0xe7, 0x9a, 0x5a, 0x03, 0x81, 0x9f}};
+static const GUID IID_IAsyncInfo_local          = {0x00000036, 0x0000, 0x0000, {0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
 
 struct winrt_grid_length
 {
@@ -116,6 +131,8 @@ enum xaml_control_type
 {
     CONTROL_TYPE_ELEMENT,
     CONTROL_TYPE_GRID,
+    CONTROL_TYPE_CANVAS,
+    CONTROL_TYPE_SWAPCHAINPANEL,
     CONTROL_TYPE_STACKPANEL,
     CONTROL_TYPE_BORDER,
     CONTROL_TYPE_BUTTON,
@@ -131,7 +148,8 @@ enum xaml_control_type
     CONTROL_TYPE_PIVOTITEM,
     CONTROL_TYPE_MENUFLYOUT,
     CONTROL_TYPE_MENUFLYOUTITEM,
-    CONTROL_TYPE_ADAPTIVETRIGGER
+    CONTROL_TYPE_ADAPTIVETRIGGER,
+    CONTROL_TYPE_CONTENTDIALOG
 };
 
 struct xaml_element
@@ -145,6 +163,9 @@ struct xaml_element
     struct { const void *lpVtbl; } IUserControl_iface;
     struct { const void *lpVtbl; } IPanel_iface;
     struct { const void *lpVtbl; } IGrid_iface;
+    struct { const void *lpVtbl; } ICanvas_iface;
+    struct { const void *lpVtbl; } ISwapChainPanel_iface;
+    struct { const void *lpVtbl; } ISwapChainPanelNative_iface;
     struct { const void *lpVtbl; } IBorder_iface;
     struct { const void *lpVtbl; } IButton_iface;
     struct { const void *lpVtbl; } IButtonBase_iface;
@@ -164,6 +185,8 @@ struct xaml_element
     struct { const void *lpVtbl; } IColumnDefinition_iface;
     struct { const void *lpVtbl; } IWeakReferenceSource_iface;
     struct { const void *lpVtbl; } IAdaptiveTrigger_iface;
+    struct { const void *lpVtbl; } IContentDialog_iface;
+    struct { const void *lpVtbl; } IContentDialog2_iface;
 
     LONG ref;
     enum xaml_control_type type;
@@ -197,6 +220,7 @@ struct xaml_element
 
     /* Child for Border / ContentControl */
     struct xaml_element *child_content;
+    void *swapchain;
 
     /* Children for Panel / Grid */
     struct xaml_element **children;
@@ -219,6 +243,7 @@ struct xaml_element
     /* Events */
     void *click_handler;
     void *loaded_handler;
+    void *size_changed_handler;
     void *command;
     void *command_param;
 
@@ -241,6 +266,9 @@ struct xaml_element
 #define impl_from_IUserControl(ptr)           ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IUserControl_iface)))
 #define impl_from_IPanel(ptr)                 ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IPanel_iface)))
 #define impl_from_IGrid(ptr)                  ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IGrid_iface)))
+#define impl_from_ICanvas(ptr)                ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, ICanvas_iface)))
+#define impl_from_ISwapChainPanel(ptr)        ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, ISwapChainPanel_iface)))
+#define impl_from_ISwapChainPanelNative(ptr)  ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, ISwapChainPanelNative_iface)))
 #define impl_from_IBorder(ptr)                ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IBorder_iface)))
 #define impl_from_IButton(ptr)                ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IButton_iface)))
 #define impl_from_IButtonBase(ptr)            ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IButtonBase_iface)))
@@ -259,6 +287,8 @@ struct xaml_element
 #define impl_from_IRowDefinition(ptr)         ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IRowDefinition_iface)))
 #define impl_from_IColumnDefinition(ptr)      ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IColumnDefinition_iface)))
 #define impl_from_elem_IWRS(ptr)              ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IWeakReferenceSource_iface)))
+#define impl_from_IContentDialog(ptr)         ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IContentDialog_iface)))
+#define impl_from_IContentDialog2(ptr)        ((struct xaml_element *)((char *)(ptr) - offsetof(struct xaml_element, IContentDialog2_iface)))
 
 static HRESULT elem_QI_internal(struct xaml_element *impl, REFIID riid, void **ppvObject);
 static ULONG elem_AddRef_internal(struct xaml_element *impl);
@@ -276,6 +306,9 @@ static const void *elem_uc_vtbl[32];
 static const void *elem_page_vtbl[16];
 static const void *elem_panel_vtbl[32];
 static const void *elem_grid_vtbl[32];
+static const void *elem_canvas_vtbl[16];
+static const void *elem_scp_vtbl[16];
+static const void *elem_scp_native_vtbl[8];
 static const void *elem_border_vtbl[32];
 static const void *elem_btn_vtbl[32];
 static const void *elem_btnbase_vtbl[32];
@@ -294,13 +327,37 @@ static const void *elem_rowdef_vtbl[16];
 static const void *elem_coldef_vtbl[16];
 static const void *elem_wrs_vtbl[4];
 static const void *elem_adapt_vtbl[16];
+static const void *elem_cd_vtbl[64];
+static const void *elem_cd2_vtbl[32];
 static void init_elem_vtables(void);
 
 /* Global active root visual tree */
 static struct xaml_element *global_root_element = NULL;
+static struct xaml_element *global_swapchain_panel = NULL;
 static struct xaml_element *global_page_element = NULL;
 static void *global_page_component = NULL;
 static HWND global_xaml_hwnd = NULL;
+static BOOL global_swapchain_active = FALSE;
+
+static BOOL is_calculator_app(void)
+{
+    static int cached = -1;
+    if (cached == -1)
+    {
+        WCHAR modpath[MAX_PATH];
+        if (GetModuleFileNameW(NULL, modpath, MAX_PATH))
+        {
+            WCHAR *p = wcsrchr(modpath, L'\\');
+            if (!p) p = modpath;
+            else p++;
+            cached = (wcsicmp(p, L"CalculatorApp.exe") == 0 ||
+                      wcsicmp(p, L"Calculator.exe") == 0 ||
+                      wcsstr(modpath, L"Calculator") != NULL);
+        }
+        else cached = 0;
+    }
+    return cached != 0;
+}
 
 /* -------------------------------------------------------------------------
  * Element Constructor
@@ -320,6 +377,9 @@ static struct xaml_element *xaml_element_create(enum xaml_control_type type, con
     elem->IUserControl_iface.lpVtbl      = elem_uc_vtbl;
     elem->IPanel_iface.lpVtbl            = elem_panel_vtbl;
     elem->IGrid_iface.lpVtbl             = elem_grid_vtbl;
+    elem->ICanvas_iface.lpVtbl           = elem_canvas_vtbl;
+    elem->ISwapChainPanel_iface.lpVtbl   = elem_scp_vtbl;
+    elem->ISwapChainPanelNative_iface.lpVtbl = elem_scp_native_vtbl;
     elem->IBorder_iface.lpVtbl           = elem_border_vtbl;
     elem->IButton_iface.lpVtbl           = elem_btn_vtbl;
     elem->IButtonBase_iface.lpVtbl       = elem_btnbase_vtbl;
@@ -339,6 +399,8 @@ static struct xaml_element *xaml_element_create(enum xaml_control_type type, con
     elem->IColumnDefinition_iface.lpVtbl = elem_coldef_vtbl;
     elem->IWeakReferenceSource_iface.lpVtbl = elem_wrs_vtbl;
     elem->IAdaptiveTrigger_iface.lpVtbl = elem_adapt_vtbl;
+    elem->IContentDialog_iface.lpVtbl   = elem_cd_vtbl;
+    elem->IContentDialog2_iface.lpVtbl  = elem_cd2_vtbl;
 
     elem->ref = 1;
     elem->type = type;
@@ -495,6 +557,24 @@ static HRESULT elem_QI_internal(struct xaml_element *impl, REFIID riid, void **p
         return S_OK;
     }
 
+    if (IsEqualGUID(riid, &IID_IContentDialog))
+    {
+        if (!elem_is_uielement(impl))
+            return E_NOINTERFACE;
+        *ppvObject = &impl->IContentDialog_iface;
+        elem_AddRef_internal(impl);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IContentDialog2))
+    {
+        if (!elem_is_uielement(impl))
+            return E_NOINTERFACE;
+        *ppvObject = &impl->IContentDialog2_iface;
+        elem_AddRef_internal(impl);
+        return S_OK;
+    }
+
     if (IsEqualGUID(riid, &IID_IUserControl))
     {
         if (!elem_is_uielement(impl))
@@ -528,6 +608,34 @@ static HRESULT elem_QI_internal(struct xaml_element *impl, REFIID riid, void **p
         if (!elem_is_uielement(impl))
             return E_NOINTERFACE;
         *ppvObject = &impl->IGrid_iface;
+        elem_AddRef_internal(impl);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_ICanvas))
+    {
+        if (impl->type != CONTROL_TYPE_CANVAS)
+            return E_NOINTERFACE;
+        *ppvObject = &impl->ICanvas_iface;
+        elem_AddRef_internal(impl);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_ISwapChainPanel))
+    {
+        if (impl->type != CONTROL_TYPE_SWAPCHAINPANEL)
+            return E_NOINTERFACE;
+        *ppvObject = &impl->ISwapChainPanel_iface;
+        elem_AddRef_internal(impl);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_ISwapChainPanelNative) ||
+        IsEqualGUID(riid, &IID_ISwapChainPanelNative2))
+    {
+        if (impl->type != CONTROL_TYPE_SWAPCHAINPANEL)
+            return E_NOINTERFACE;
+        *ppvObject = &impl->ISwapChainPanelNative_iface;
         elem_AddRef_internal(impl);
         return S_OK;
     }
@@ -717,6 +825,7 @@ static ULONG elem_Release_internal(struct xaml_element *impl)
         if (impl->flyout_style) xaml_style_release(impl->flyout_style);
         if (impl->resources) IUnknown_Release((IUnknown *)impl->resources);
         if (impl->data_context) IUnknown_Release((IUnknown *)impl->data_context);
+        if (impl->size_changed_handler) IUnknown_Release((IUnknown *)impl->size_changed_handler);
         for (i = 0; i < impl->dp_count; i++)
         {
             if (impl->dp_entries[i].value) IInspectable_Release(impl->dp_entries[i].value);
@@ -759,6 +868,7 @@ static HRESULT WINAPI elem_ui_GetRuntimeClassName(void *This, HSTRING *n)
         switch (impl->type)
         {
         case CONTROL_TYPE_GRID:           name = L"Windows.UI.Xaml.Controls.Grid"; break;
+        case CONTROL_TYPE_CANVAS:         name = L"Windows.UI.Xaml.Controls.Canvas"; break;
         case CONTROL_TYPE_BORDER:         name = L"Windows.UI.Xaml.Controls.Border"; break;
         case CONTROL_TYPE_BUTTON:         name = L"Windows.UI.Xaml.Controls.Button"; break;
         case CONTROL_TYPE_TEXTBLOCK:      name = L"Windows.UI.Xaml.Controls.TextBlock"; break;
@@ -808,13 +918,35 @@ static ULONG WINAPI elem_fe_Release(void *This) { return elem_Release_internal(i
 static HRESULT WINAPI elem_fe_get_ActualWidth(void *This, DOUBLE *val)
 {
     struct xaml_element *impl = impl_from_IFrameworkElement(This);
-    if (val) *val = (DOUBLE)(impl->bounds.right - impl->bounds.left);
+    DOUBLE res = (DOUBLE)(impl->bounds.right - impl->bounds.left);
+    if (res <= 0.0)
+    {
+        if (global_xaml_hwnd)
+        {
+            RECT r;
+            if (GetClientRect(global_xaml_hwnd, &r) && (r.right - r.left > 0))
+                res = (DOUBLE)(r.right - r.left);
+        }
+        if (res <= 0.0) res = 1024.0;
+    }
+    if (val) *val = res;
     return S_OK;
 }
 static HRESULT WINAPI elem_fe_get_ActualHeight(void *This, DOUBLE *val)
 {
     struct xaml_element *impl = impl_from_IFrameworkElement(This);
-    if (val) *val = (DOUBLE)(impl->bounds.bottom - impl->bounds.top);
+    DOUBLE res = (DOUBLE)(impl->bounds.bottom - impl->bounds.top);
+    if (res <= 0.0)
+    {
+        if (global_xaml_hwnd)
+        {
+            RECT r;
+            if (GetClientRect(global_xaml_hwnd, &r) && (r.bottom - r.top > 0))
+                res = (DOUBLE)(r.bottom - r.top);
+        }
+        if (res <= 0.0) res = 768.0;
+    }
+    if (val) *val = res;
     return S_OK;
 }
 static HRESULT WINAPI elem_fe_get_Width(void *This, DOUBLE *val) { if (val) *val = impl_from_IFrameworkElement(This)->width; return S_OK; }
@@ -919,15 +1051,121 @@ static HRESULT WINAPI elem_fe_get_Parent(void *This, void **value)
     return S_OK;
 }
 
+static const GUID IID_ISizeChangedEventArgs = {0xd5312e60, 0x5cc1, 0x42a1, {0x92, 0x0c, 0x1a, 0xf4, 0x6b, 0xe2, 0xf9, 0x86}};
+
+struct size_changed_args_impl
+{
+    IInspectable IInspectable_iface;
+    LONG ref;
+    struct { FLOAT Width; FLOAT Height; } prev_size;
+    struct { FLOAT Width; FLOAT Height; } new_size;
+};
+
+static inline struct size_changed_args_impl *impl_from_ISizeChangedEventArgs(void *iface)
+{
+    return (struct size_changed_args_impl *)iface;
+}
+
+static HRESULT WINAPI sca_QueryInterface(void *This, REFIID riid, void **ppv)
+{
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_ISizeChangedEventArgs) ||
+        IsEqualGUID(riid, &IID_IAgileObject))
+    {
+        *ppv = This;
+        InterlockedIncrement(&impl_from_ISizeChangedEventArgs(This)->ref);
+        return S_OK;
+    }
+    *ppv = NULL;
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI sca_AddRef(void *This) { return InterlockedIncrement(&impl_from_ISizeChangedEventArgs(This)->ref); }
+static ULONG WINAPI sca_Release(void *This)
+{
+    struct size_changed_args_impl *impl = impl_from_ISizeChangedEventArgs(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+static HRESULT WINAPI sca_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI sca_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.SizeChangedEventArgs", 36, n); }
+static HRESULT WINAPI sca_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI sca_get_PreviousSize(void *This, void *val)
+{
+    struct size_changed_args_impl *impl = impl_from_ISizeChangedEventArgs(This);
+    if (val) memcpy(val, &impl->prev_size, sizeof(impl->prev_size));
+    return S_OK;
+}
+static HRESULT WINAPI sca_get_NewSize(void *This, void *val)
+{
+    struct size_changed_args_impl *impl = impl_from_ISizeChangedEventArgs(This);
+    if (val) memcpy(val, &impl->new_size, sizeof(impl->new_size));
+    return S_OK;
+}
+
+static const void *size_changed_args_vtbl[] = {
+    (void *)sca_QueryInterface,
+    (void *)sca_AddRef,
+    (void *)sca_Release,
+    (void *)sca_GetIids,
+    (void *)sca_GetRuntimeClassName,
+    (void *)sca_GetTrustLevel,
+    (void *)sca_get_PreviousSize,
+    (void *)sca_get_NewSize
+};
+
+static void elem_fire_size_changed(struct xaml_element *elem, float pw, float ph, float nw, float nh)
+{
+    struct size_changed_args_impl *args;
+    HRESULT (STDMETHODCALLTYPE *invoke_fn)(void *This, void *sender, void *e);
+    void **vtbl;
+
+    if (!elem || !elem->size_changed_handler) return;
+
+    args = calloc(1, sizeof(*args));
+    if (!args) return;
+    args->IInspectable_iface.lpVtbl = (void *)size_changed_args_vtbl;
+    args->ref = 1;
+    args->prev_size.Width = pw;
+    args->prev_size.Height = ph;
+    args->new_size.Width = nw;
+    args->new_size.Height = nh;
+
+    vtbl = *(void ***)elem->size_changed_handler;
+    invoke_fn = (HRESULT (STDMETHODCALLTYPE *)(void *, void *, void *))vtbl[3];
+    TRACE("Firing SizeChanged on elem %p (%s): %f x %f -> %f x %f\n",
+          elem, debugstr_w(elem->name), pw, ph, nw, nh);
+    invoke_fn(elem->size_changed_handler, (void *)&elem->IUIElement_iface, (void *)args);
+
+    sca_Release(&args->IInspectable_iface);
+}
+
 static HRESULT WINAPI elem_fe_add_SizeChanged(void *This, void *handler, EventRegistrationToken *token)
 {
-    TRACE("This %p, handler %p, token %p\n", This, handler, token);
+    struct xaml_element *elem = impl_from_IFrameworkElement(This);
+    DOUBLE w = 1024.0, h = 768.0;
+    TRACE("This %p (%s), handler %p, token %p\n", elem, debugstr_w(elem->name), handler, token);
     if (token) token->value = 1;
+    if (handler)
+    {
+        elem->size_changed_handler = handler;
+        IUnknown_AddRef((IUnknown *)handler);
+        elem_fe_get_ActualWidth(This, &w);
+        elem_fe_get_ActualHeight(This, &h);
+        elem_fire_size_changed(elem, 0.0f, 0.0f, (float)w, (float)h);
+    }
     return S_OK;
 }
 
 static HRESULT WINAPI elem_fe_remove_SizeChanged(void *This, EventRegistrationToken token)
 {
+    struct xaml_element *elem = impl_from_IFrameworkElement(This);
+    if (elem->size_changed_handler)
+    {
+        IUnknown_Release((IUnknown *)elem->size_changed_handler);
+        elem->size_changed_handler = NULL;
+    }
     return S_OK;
 }
 
@@ -1175,6 +1413,55 @@ static HRESULT WINAPI elem_panel_get_Children(void *This, void **val)
 static HRESULT WINAPI elem_grid_QI(void *This, REFIID riid, void **ppv) { return elem_QI_internal(impl_from_IGrid(This), riid, ppv); }
 static ULONG WINAPI elem_grid_AddRef(void *This) { return elem_AddRef_internal(impl_from_IGrid(This)); }
 static ULONG WINAPI elem_grid_Release(void *This) { return elem_Release_internal(impl_from_IGrid(This)); }
+
+static HRESULT WINAPI elem_canvas_QI(void *This, REFIID riid, void **ppv) { return elem_QI_internal(impl_from_ICanvas(This), riid, ppv); }
+static ULONG WINAPI elem_canvas_AddRef(void *This) { return elem_AddRef_internal(impl_from_ICanvas(This)); }
+static ULONG WINAPI elem_canvas_Release(void *This) { return elem_Release_internal(impl_from_ICanvas(This)); }
+static HRESULT WINAPI elem_canvas_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Controls.Canvas", 31, n); }
+
+static HRESULT WINAPI elem_scp_QI(void *This, REFIID riid, void **ppv) { return elem_QI_internal(impl_from_ISwapChainPanel(This), riid, ppv); }
+static ULONG WINAPI elem_scp_AddRef(void *This) { return elem_AddRef_internal(impl_from_ISwapChainPanel(This)); }
+static ULONG WINAPI elem_scp_Release(void *This) { return elem_Release_internal(impl_from_ISwapChainPanel(This)); }
+static HRESULT WINAPI elem_scp_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Controls.SwapChainPanel", 39, n); }
+static HRESULT WINAPI elem_scp_get_CompositionScaleX(void *This, float *val) { if (val) *val = 1.0f; return S_OK; }
+static HRESULT WINAPI elem_scp_get_CompositionScaleY(void *This, float *val) { if (val) *val = 1.0f; return S_OK; }
+static HRESULT WINAPI elem_scp_add_CompositionScaleChanged(void *This, void *handler, EventRegistrationToken *token) { if (token) token->value = 1; return S_OK; }
+static HRESULT WINAPI elem_scp_remove_CompositionScaleChanged(void *This, EventRegistrationToken token) { return S_OK; }
+static HRESULT WINAPI elem_scp_CreateCoreIndependentInputSource(void *This, int deviceTypes, void **ret) { if (ret) *ret = NULL; return E_NOTIMPL; }
+
+static HRESULT WINAPI elem_scp_native_QI(void *This, REFIID riid, void **ppv) { return elem_QI_internal(impl_from_ISwapChainPanelNative(This), riid, ppv); }
+static ULONG WINAPI elem_scp_native_AddRef(void *This) { return elem_AddRef_internal(impl_from_ISwapChainPanelNative(This)); }
+static ULONG WINAPI elem_scp_native_Release(void *This) { return elem_Release_internal(impl_from_ISwapChainPanelNative(This)); }
+static HRESULT WINAPI elem_scp_native_SetSwapChain(void *This, void *swapchain)
+{
+    struct xaml_element *impl = impl_from_ISwapChainPanelNative(This);
+    RECT rect;
+    FLOAT width = 1024.0f, height = 768.0f;
+
+    TRACE("SwapChainPanel %p SetSwapChain(%p)\n", impl, swapchain);
+    impl->swapchain = swapchain;
+    if (swapchain) global_swapchain_active = TRUE;
+    global_swapchain_panel = impl;
+    if (!global_root_element) global_root_element = impl;
+
+    if (global_xaml_hwnd && GetClientRect(global_xaml_hwnd, &rect))
+    {
+        width = (FLOAT)(rect.right - rect.left);
+        height = (FLOAT)(rect.bottom - rect.top);
+    }
+    if (width > 0.0f && height > 0.0f)
+    {
+        TRACE("Firing SizeChanged on SwapChainPanel %p upon SetSwapChain: %.0f x %.0f\n", impl, width, height);
+        elem_fire_size_changed(impl, 0.0f, 0.0f, width, height);
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_scp_native_SetSwapChainHandle(void *This, HANDLE handle)
+{
+    struct xaml_element *impl = impl_from_ISwapChainPanelNative(This);
+    TRACE("SwapChainPanel %p SetSwapChainHandle(%p)\n", impl, handle);
+    return S_OK;
+}
 
 static HRESULT WINAPI elem_ctrl_QI(void *This, REFIID riid, void **ppv) { return elem_QI_internal(impl_from_IControl(This), riid, ppv); }
 static ULONG WINAPI elem_ctrl_AddRef(void *This) { return elem_AddRef_internal(impl_from_IControl(This)); }
@@ -1852,6 +2139,218 @@ static const void *elem_wrs_vtbl[4] = {
     elem_wrs_QI, elem_wrs_AddRef, elem_wrs_Release, elem_wrs_GetWeakReference
 };
 
+/* -------------------------------------------------------------------------
+ * ContentDialog Async Result (IAsyncOperation<ContentDialogResult> & IAsyncInfo)
+ * ------------------------------------------------------------------------- */
+struct async_content_dialog_result
+{
+    IInspectable IInspectable_iface;
+    struct { const void *lpVtbl; } IAsyncInfo_iface;
+    LONG ref;
+    AsyncStatus status;
+    HRESULT hr;
+    INT32 result;
+};
+
+#define impl_from_async_cdr(ptr) ((struct async_content_dialog_result *)(ptr))
+#define impl_from_async_cdr_info(ptr) ((struct async_content_dialog_result *)((char *)(ptr) - offsetof(struct async_content_dialog_result, IAsyncInfo_iface)))
+
+static HRESULT WINAPI async_cdr_QI(IInspectable *iface, REFIID riid, void **ppv)
+{
+    struct async_content_dialog_result *impl = impl_from_async_cdr(iface);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject_local))
+    {
+        *ppv = &impl->IInspectable_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IAsyncInfo_local))
+    {
+        *ppv = &impl->IAsyncInfo_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    /* Fallback: accept any other interface queried as the parameterized IAsyncOperation<ContentDialogResult> */
+    *ppv = &impl->IInspectable_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
+}
+
+static ULONG WINAPI async_cdr_AddRef(IInspectable *iface)
+{
+    struct async_content_dialog_result *impl = impl_from_async_cdr(iface);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI async_cdr_Release(IInspectable *iface)
+{
+    struct async_content_dialog_result *impl = impl_from_async_cdr(iface);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI async_cdr_GetIids(IInspectable *iface, ULONG *c, IID **i)
+{
+    if (c) *c = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_cdr_GetRuntimeClassName(IInspectable *iface, HSTRING *n)
+{
+    return WindowsCreateString(L"Windows.Foundation.IAsyncOperation`1<Windows.UI.Xaml.Controls.ContentDialogResult>", 78, n);
+}
+
+static HRESULT WINAPI async_cdr_GetTrustLevel(IInspectable *iface, TrustLevel *t)
+{
+    if (t) *t = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_cdr_put_Completed(IInspectable *iface, void *handler)
+{
+    struct async_content_dialog_result *impl = impl_from_async_cdr(iface);
+    TRACE("async_cdr %p put_Completed handler %p\n", impl, handler);
+    if (handler)
+    {
+        typedef HRESULT (STDMETHODCALLTYPE *invoke_fn)(void *This, void *asyncInfo, AsyncStatus status);
+        void **vtbl = *(void ***)handler;
+        invoke_fn invoke = (invoke_fn)vtbl[3];
+        invoke(handler, &impl->IInspectable_iface, impl->status);
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI async_cdr_get_Completed(IInspectable *iface, void **handler)
+{
+    if (!handler) return E_POINTER;
+    *handler = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_cdr_GetResults(IInspectable *iface, INT32 *results)
+{
+    struct async_content_dialog_result *impl = impl_from_async_cdr(iface);
+    if (!results) return E_POINTER;
+    *results = impl->result;
+    return impl->hr;
+}
+
+static const void *async_cdr_vtbl[] = {
+    (void *)async_cdr_QI,
+    (void *)async_cdr_AddRef,
+    (void *)async_cdr_Release,
+    (void *)async_cdr_GetIids,
+    (void *)async_cdr_GetRuntimeClassName,
+    (void *)async_cdr_GetTrustLevel,
+    (void *)async_cdr_put_Completed,
+    (void *)async_cdr_get_Completed,
+    (void *)async_cdr_GetResults
+};
+
+static HRESULT WINAPI async_cdr_info_QI(void *This, REFIID riid, void **ppv)
+{
+    return async_cdr_QI(&impl_from_async_cdr_info(This)->IInspectable_iface, riid, ppv);
+}
+static ULONG WINAPI async_cdr_info_AddRef(void *This)
+{
+    return async_cdr_AddRef(&impl_from_async_cdr_info(This)->IInspectable_iface);
+}
+static ULONG WINAPI async_cdr_info_Release(void *This)
+{
+    return async_cdr_Release(&impl_from_async_cdr_info(This)->IInspectable_iface);
+}
+static HRESULT WINAPI async_cdr_info_GetIids(void *This, ULONG *c, IID **i)
+{
+    if (c) *c = 0;
+    return S_OK;
+}
+static HRESULT WINAPI async_cdr_info_GetRuntimeClassName(void *This, HSTRING *n)
+{
+    return WindowsCreateString(L"Windows.Foundation.IAsyncInfo", 29, n);
+}
+static HRESULT WINAPI async_cdr_info_GetTrustLevel(void *This, TrustLevel *t)
+{
+    if (t) *t = BaseTrust;
+    return S_OK;
+}
+static HRESULT WINAPI async_cdr_info_get_Id(void *This, UINT32 *id)
+{
+    if (!id) return E_POINTER;
+    *id = 1;
+    return S_OK;
+}
+static HRESULT WINAPI async_cdr_info_get_Status(void *This, AsyncStatus *status)
+{
+    struct async_content_dialog_result *impl = impl_from_async_cdr_info(This);
+    if (!status) return E_POINTER;
+    *status = impl->status;
+    return S_OK;
+}
+static HRESULT WINAPI async_cdr_info_get_ErrorCode(void *This, HRESULT *errorCode)
+{
+    struct async_content_dialog_result *impl = impl_from_async_cdr_info(This);
+    if (!errorCode) return E_POINTER;
+    *errorCode = impl->hr;
+    return S_OK;
+}
+static HRESULT WINAPI async_cdr_info_Cancel(void *This) { return S_OK; }
+static HRESULT WINAPI async_cdr_info_Close(void *This) { return S_OK; }
+
+static const void *async_cdr_info_vtbl[] = {
+    (void *)async_cdr_info_QI,
+    (void *)async_cdr_info_AddRef,
+    (void *)async_cdr_info_Release,
+    (void *)async_cdr_info_GetIids,
+    (void *)async_cdr_info_GetRuntimeClassName,
+    (void *)async_cdr_info_GetTrustLevel,
+    (void *)async_cdr_info_get_Id,
+    (void *)async_cdr_info_get_Status,
+    (void *)async_cdr_info_get_ErrorCode,
+    (void *)async_cdr_info_Cancel,
+    (void *)async_cdr_info_Close
+};
+
+static HRESULT async_content_dialog_result_create(INT32 result, HRESULT hr, IInspectable **out)
+{
+    struct async_content_dialog_result *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IInspectable_iface.lpVtbl = (const void *)async_cdr_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = (const void *)async_cdr_info_vtbl;
+    impl->ref = 1;
+    impl->status = 1; /* Completed */
+    impl->hr = hr;
+    impl->result = result;
+    *out = &impl->IInspectable_iface;
+    return S_OK;
+}
+
+/* -------------------------------------------------------------------------
+ * ContentDialog Instance Implementation
+ * ------------------------------------------------------------------------- */
+static HRESULT WINAPI elem_cd_QI(void *This, REFIID riid, void **ppv) { return elem_QI_internal(impl_from_IContentDialog(This), riid, ppv); }
+static ULONG WINAPI elem_cd_AddRef(void *This) { return elem_AddRef_internal(impl_from_IContentDialog(This)); }
+static ULONG WINAPI elem_cd_Release(void *This) { return elem_Release_internal(impl_from_IContentDialog(This)); }
+static HRESULT WINAPI elem_cd_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Controls.ContentDialog", 38, n); }
+
+static HRESULT WINAPI elem_cd_ShowAsync(void *This, void **returnValue)
+{
+    TRACE("ContentDialog %p ShowAsync\n", This);
+    if (!returnValue) return E_POINTER;
+    return async_content_dialog_result_create(1 /* Primary */, S_OK, (IInspectable **)returnValue);
+}
+
+static HRESULT WINAPI elem_cd2_QI(void *This, REFIID riid, void **ppv) { return elem_QI_internal(impl_from_IContentDialog2(This), riid, ppv); }
+static ULONG WINAPI elem_cd2_AddRef(void *This) { return elem_AddRef_internal(impl_from_IContentDialog2(This)); }
+static ULONG WINAPI elem_cd2_Release(void *This) { return elem_Release_internal(impl_from_IContentDialog2(This)); }
+static HRESULT WINAPI elem_cd2_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Controls.ContentDialog", 38, n); }
+
 /* Initialize VTables */
 static void init_elem_vtables(void)
 {
@@ -1962,6 +2461,34 @@ static void init_elem_vtables(void)
     elem_grid_vtbl[4] = (void *)elem_grid_GetRuntimeClassName;
     elem_grid_vtbl[5] = (void *)elem_ui_GetTrustLevel;
     elem_grid_vtbl[6] = (void *)elem_panel_get_Children;
+
+    for (i = 0; i < 16; i++) elem_canvas_vtbl[i] = (void *)elem_stub_ret_ok;
+    elem_canvas_vtbl[0] = (void *)elem_canvas_QI;
+    elem_canvas_vtbl[1] = (void *)elem_canvas_AddRef;
+    elem_canvas_vtbl[2] = (void *)elem_canvas_Release;
+    elem_canvas_vtbl[3] = (void *)elem_ui_GetIids;
+    elem_canvas_vtbl[4] = (void *)elem_canvas_GetRuntimeClassName;
+    elem_canvas_vtbl[5] = (void *)elem_ui_GetTrustLevel;
+
+    for (i = 0; i < 16; i++) elem_scp_vtbl[i] = (void *)elem_stub_ret_ok;
+    elem_scp_vtbl[0]  = (void *)elem_scp_QI;
+    elem_scp_vtbl[1]  = (void *)elem_scp_AddRef;
+    elem_scp_vtbl[2]  = (void *)elem_scp_Release;
+    elem_scp_vtbl[3]  = (void *)elem_ui_GetIids;
+    elem_scp_vtbl[4]  = (void *)elem_scp_GetRuntimeClassName;
+    elem_scp_vtbl[5]  = (void *)elem_ui_GetTrustLevel;
+    elem_scp_vtbl[6]  = (void *)elem_scp_get_CompositionScaleX;
+    elem_scp_vtbl[7]  = (void *)elem_scp_get_CompositionScaleY;
+    elem_scp_vtbl[8]  = (void *)elem_scp_add_CompositionScaleChanged;
+    elem_scp_vtbl[9]  = (void *)elem_scp_remove_CompositionScaleChanged;
+    elem_scp_vtbl[10] = (void *)elem_scp_CreateCoreIndependentInputSource;
+
+    for (i = 0; i < 8; i++) elem_scp_native_vtbl[i] = (void *)elem_stub_ret_ok;
+    elem_scp_native_vtbl[0] = (void *)elem_scp_native_QI;
+    elem_scp_native_vtbl[1] = (void *)elem_scp_native_AddRef;
+    elem_scp_native_vtbl[2] = (void *)elem_scp_native_Release;
+    elem_scp_native_vtbl[3] = (void *)elem_scp_native_SetSwapChain;
+    elem_scp_native_vtbl[4] = (void *)elem_scp_native_SetSwapChainHandle;
 
     for (i = 0; i < 32; i++) elem_border_vtbl[i] = (void *)elem_stub_ret_ok;
     elem_border_vtbl[0]  = (void *)elem_border_QI;
@@ -2174,6 +2701,23 @@ static void init_elem_vtables(void)
     elem_adapt_vtbl[7] = (void *)elem_adapt_put_MinWindowWidth;
     elem_adapt_vtbl[8] = (void *)elem_adapt_get_MinWindowHeight;
     elem_adapt_vtbl[9] = (void *)elem_adapt_put_MinWindowHeight;
+
+    for (i = 0; i < 64; i++) elem_cd_vtbl[i] = (void *)elem_stub_ret_ok;
+    elem_cd_vtbl[0]  = (void *)elem_cd_QI;
+    elem_cd_vtbl[1]  = (void *)elem_cd_AddRef;
+    elem_cd_vtbl[2]  = (void *)elem_cd_Release;
+    elem_cd_vtbl[3]  = (void *)elem_ui_GetIids;
+    elem_cd_vtbl[4]  = (void *)elem_cd_GetRuntimeClassName;
+    elem_cd_vtbl[5]  = (void *)elem_ui_GetTrustLevel;
+    elem_cd_vtbl[39] = (void *)elem_cd_ShowAsync;
+
+    for (i = 0; i < 32; i++) elem_cd2_vtbl[i] = (void *)elem_stub_ret_ok;
+    elem_cd2_vtbl[0] = (void *)elem_cd2_QI;
+    elem_cd2_vtbl[1] = (void *)elem_cd2_AddRef;
+    elem_cd2_vtbl[2] = (void *)elem_cd2_Release;
+    elem_cd2_vtbl[3] = (void *)elem_ui_GetIids;
+    elem_cd2_vtbl[4] = (void *)elem_cd2_GetRuntimeClassName;
+    elem_cd2_vtbl[5] = (void *)elem_ui_GetTrustLevel;
 }
 
 /* -------------------------------------------------------------------------
@@ -2306,6 +2850,266 @@ static const struct { const void *lpVtbl; } grid_factory_obj = {
                       (void *)grid_fac_Activate }
 };
 IActivationFactory *grid_factory = (IActivationFactory *)&grid_factory_obj;
+
+/* -------------------------------------------------------------------------
+ * Canvas Implementation & Factory (with ICanvasFactory and ICanvasStatics)
+ * ------------------------------------------------------------------------- */
+struct canvas_factory_impl
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } ICanvasFactory_iface;
+    struct { const void *lpVtbl; } ICanvasStatics_iface;
+};
+
+#define impl_from_canvas_factory(ptr) ((struct canvas_factory_impl *)((char *)(ptr) - offsetof(struct canvas_factory_impl, IActivationFactory_iface)))
+#define impl_from_canvas_fac_iface(ptr) ((struct canvas_factory_impl *)((char *)(ptr) - offsetof(struct canvas_factory_impl, ICanvasFactory_iface)))
+#define impl_from_canvas_stat_iface(ptr) ((struct canvas_factory_impl *)((char *)(ptr) - offsetof(struct canvas_factory_impl, ICanvasStatics_iface)))
+
+static HRESULT WINAPI canvas_fac_QI(IActivationFactory *iface, REFIID riid, void **ppv)
+{
+    struct canvas_factory_impl *impl = impl_from_canvas_factory(iface);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject_local) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppv = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ICanvasFactory))
+    {
+        *ppv = &impl->ICanvasFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ICanvasStatics))
+    {
+        *ppv = &impl->ICanvasStatics_iface;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI canvas_fac_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI canvas_fac_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI canvas_fac_GetIids(IActivationFactory *iface, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI canvas_fac_GetRuntimeClassName(IActivationFactory *iface, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Controls.Canvas", 31, n); }
+static HRESULT WINAPI canvas_fac_GetTrustLevel(IActivationFactory *iface, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI canvas_fac_CreateInstance(void *This, void *outer, void **inner, void **instance)
+{
+    struct xaml_element *elem;
+    init_elem_vtables();
+    elem = xaml_element_create(CONTROL_TYPE_CANVAS, L"Canvas");
+    if (!elem) return E_OUTOFMEMORY;
+    elem->outer = outer;
+    if (inner)
+    {
+        *inner = &elem->IUIElement_iface;
+        InterlockedIncrement(&elem->ref);
+    }
+    if (instance) *instance = (void *)&elem->ICanvas_iface;
+    TRACE("canvas_fac_CreateInstance outer %p -> inner %p, instance %p\n", outer, inner ? *inner : NULL, instance ? *instance : NULL);
+    return S_OK;
+}
+
+static HRESULT WINAPI canvas_fac_ActivateInstance(IActivationFactory *iface, IInspectable **instance)
+{
+    return canvas_fac_CreateInstance(iface, NULL, NULL, (void **)instance);
+}
+
+static HRESULT WINAPI canvas_fac_iface_QI(void *This, REFIID riid, void **ppv)
+{
+    return canvas_fac_QI((IActivationFactory *)impl_from_canvas_fac_iface(This), riid, ppv);
+}
+static ULONG WINAPI canvas_fac_iface_AddRef(void *This) { return 2; }
+static ULONG WINAPI canvas_fac_iface_Release(void *This) { return 1; }
+
+static const void *canvas_factory_vtbl[] = {
+    (void *)canvas_fac_iface_QI,
+    (void *)canvas_fac_iface_AddRef,
+    (void *)canvas_fac_iface_Release,
+    (void *)canvas_fac_GetIids,
+    (void *)canvas_fac_GetRuntimeClassName,
+    (void *)canvas_fac_GetTrustLevel,
+    (void *)canvas_fac_CreateInstance
+};
+
+static HRESULT WINAPI canvas_stat_iface_QI(void *This, REFIID riid, void **ppv)
+{
+    return canvas_fac_QI((IActivationFactory *)impl_from_canvas_stat_iface(This), riid, ppv);
+}
+static ULONG WINAPI canvas_stat_iface_AddRef(void *This) { return 2; }
+static ULONG WINAPI canvas_stat_iface_Release(void *This) { return 1; }
+
+static HRESULT WINAPI canvas_dp_Left(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"Left"); return S_OK; }
+static HRESULT WINAPI canvas_GetLeft(void *This, void *e, double *v) { if (v) *v = 0.0; return S_OK; }
+static HRESULT WINAPI canvas_SetLeft(void *This, void *e, double v) { return S_OK; }
+static HRESULT WINAPI canvas_dp_Top(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"Top"); return S_OK; }
+static HRESULT WINAPI canvas_GetTop(void *This, void *e, double *v) { if (v) *v = 0.0; return S_OK; }
+static HRESULT WINAPI canvas_SetTop(void *This, void *e, double v) { return S_OK; }
+static HRESULT WINAPI canvas_dp_ZIndex(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"ZIndex"); return S_OK; }
+static HRESULT WINAPI canvas_GetZIndex(void *This, void *e, int *v) { if (v) *v = 0; return S_OK; }
+static HRESULT WINAPI canvas_SetZIndex(void *This, void *e, int v) { return S_OK; }
+
+static const void *canvas_statics_vtbl[] = {
+    (void *)canvas_stat_iface_QI,
+    (void *)canvas_stat_iface_AddRef,
+    (void *)canvas_stat_iface_Release,
+    (void *)canvas_fac_GetIids,
+    (void *)canvas_fac_GetRuntimeClassName,
+    (void *)canvas_fac_GetTrustLevel,
+    (void *)canvas_dp_Left,   /* 6 */
+    (void *)canvas_GetLeft,   /* 7 */
+    (void *)canvas_SetLeft,   /* 8 */
+    (void *)canvas_dp_Top,    /* 9 */
+    (void *)canvas_GetTop,    /* 10 */
+    (void *)canvas_SetTop,    /* 11 */
+    (void *)canvas_dp_ZIndex, /* 12 */
+    (void *)canvas_GetZIndex, /* 13 */
+    (void *)canvas_SetZIndex  /* 14 */
+};
+
+static const IActivationFactoryVtbl canvas_activation_factory_vtbl = {
+    canvas_fac_QI,
+    canvas_fac_AddRef,
+    canvas_fac_Release,
+    canvas_fac_GetIids,
+    canvas_fac_GetRuntimeClassName,
+    canvas_fac_GetTrustLevel,
+    canvas_fac_ActivateInstance
+};
+
+static struct canvas_factory_impl canvas_factory_obj = {
+    { &canvas_activation_factory_vtbl },
+    { canvas_factory_vtbl },
+    { canvas_statics_vtbl }
+};
+IActivationFactory *canvas_factory = &canvas_factory_obj.IActivationFactory_iface;
+
+/* -------------------------------------------------------------------------
+ * SwapChainPanel Implementation & Factory (with ISwapChainPanelFactory and ISwapChainPanelStatics)
+ * ------------------------------------------------------------------------- */
+struct swapchainpanel_factory_impl
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } ISwapChainPanelFactory_iface;
+    struct { const void *lpVtbl; } ISwapChainPanelStatics_iface;
+};
+
+#define impl_from_scp_factory(ptr) ((struct swapchainpanel_factory_impl *)((char *)(ptr) - offsetof(struct swapchainpanel_factory_impl, IActivationFactory_iface)))
+#define impl_from_scp_fac_iface(ptr) ((struct swapchainpanel_factory_impl *)((char *)(ptr) - offsetof(struct swapchainpanel_factory_impl, ISwapChainPanelFactory_iface)))
+#define impl_from_scp_stat_iface(ptr) ((struct swapchainpanel_factory_impl *)((char *)(ptr) - offsetof(struct swapchainpanel_factory_impl, ISwapChainPanelStatics_iface)))
+
+static HRESULT WINAPI scp_fac_QI(IActivationFactory *iface, REFIID riid, void **ppv)
+{
+    struct swapchainpanel_factory_impl *impl = impl_from_scp_factory(iface);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject_local) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppv = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ISwapChainPanelFactory))
+    {
+        *ppv = &impl->ISwapChainPanelFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ISwapChainPanelStatics))
+    {
+        *ppv = &impl->ISwapChainPanelStatics_iface;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI scp_fac_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI scp_fac_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI scp_fac_GetIids(IActivationFactory *iface, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI scp_fac_GetRuntimeClassName(IActivationFactory *iface, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Controls.SwapChainPanel", 39, n); }
+static HRESULT WINAPI scp_fac_GetTrustLevel(IActivationFactory *iface, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI scp_fac_CreateInstance(void *This, void *outer, void **inner, void **instance)
+{
+    struct xaml_element *elem;
+    init_elem_vtables();
+    elem = xaml_element_create(CONTROL_TYPE_SWAPCHAINPANEL, L"SwapChainPanel");
+    if (!elem) return E_OUTOFMEMORY;
+    elem->outer = outer;
+    if (inner)
+    {
+        *inner = &elem->IUIElement_iface;
+        InterlockedIncrement(&elem->ref);
+    }
+    if (instance) *instance = (void *)&elem->ISwapChainPanel_iface;
+    global_swapchain_panel = elem;
+    if (!global_root_element) global_root_element = elem;
+    TRACE("scp_fac_CreateInstance outer %p -> inner %p, instance %p\n", outer, inner ? *inner : NULL, instance ? *instance : NULL);
+    return S_OK;
+}
+
+static HRESULT WINAPI scp_fac_ActivateInstance(IActivationFactory *iface, IInspectable **instance)
+{
+    return scp_fac_CreateInstance(iface, NULL, NULL, (void **)instance);
+}
+
+static HRESULT WINAPI scp_fac_iface_QI(void *This, REFIID riid, void **ppv)
+{
+    return scp_fac_QI((IActivationFactory *)impl_from_scp_fac_iface(This), riid, ppv);
+}
+static ULONG WINAPI scp_fac_iface_AddRef(void *This) { return 2; }
+static ULONG WINAPI scp_fac_iface_Release(void *This) { return 1; }
+
+static const void *swapchainpanel_factory_vtbl[] = {
+    (void *)scp_fac_iface_QI,
+    (void *)scp_fac_iface_AddRef,
+    (void *)scp_fac_iface_Release,
+    (void *)scp_fac_GetIids,
+    (void *)scp_fac_GetRuntimeClassName,
+    (void *)scp_fac_GetTrustLevel,
+    (void *)scp_fac_CreateInstance
+};
+
+static HRESULT WINAPI scp_stat_iface_QI(void *This, REFIID riid, void **ppv)
+{
+    return scp_fac_QI((IActivationFactory *)impl_from_scp_stat_iface(This), riid, ppv);
+}
+static ULONG WINAPI scp_stat_iface_AddRef(void *This) { return 2; }
+static ULONG WINAPI scp_stat_iface_Release(void *This) { return 1; }
+
+static HRESULT WINAPI scp_dp_CompositionScaleX(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"CompositionScaleX"); return S_OK; }
+static HRESULT WINAPI scp_dp_CompositionScaleY(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"CompositionScaleY"); return S_OK; }
+
+static const void *swapchainpanel_statics_vtbl[] = {
+    (void *)scp_stat_iface_QI,
+    (void *)scp_stat_iface_AddRef,
+    (void *)scp_stat_iface_Release,
+    (void *)scp_fac_GetIids,
+    (void *)scp_fac_GetRuntimeClassName,
+    (void *)scp_fac_GetTrustLevel,
+    (void *)scp_dp_CompositionScaleX, /* 6 */
+    (void *)scp_dp_CompositionScaleY  /* 7 */
+};
+
+static const IActivationFactoryVtbl swapchainpanel_activation_factory_vtbl = {
+    scp_fac_QI,
+    scp_fac_AddRef,
+    scp_fac_Release,
+    scp_fac_GetIids,
+    scp_fac_GetRuntimeClassName,
+    scp_fac_GetTrustLevel,
+    scp_fac_ActivateInstance
+};
+
+static struct swapchainpanel_factory_impl swapchainpanel_factory_obj = {
+    { &swapchainpanel_activation_factory_vtbl },
+    { swapchainpanel_factory_vtbl },
+    { swapchainpanel_statics_vtbl }
+};
+IActivationFactory *swapchainpanel_factory = &swapchainpanel_factory_obj.IActivationFactory_iface;
 
 /* -------------------------------------------------------------------------
  * Control Factory (with IControlFactory WinRT aggregation)
@@ -2716,10 +3520,12 @@ struct usercontrol_factory_impl
 {
     IActivationFactory IActivationFactory_iface;
     struct { const void *lpVtbl; } IUserControlFactory_iface;
+    struct { const void *lpVtbl; } IUserControlStatics_iface;
 };
 
 #define impl_from_uc_factory(ptr) ((struct usercontrol_factory_impl *)((char *)(ptr) - offsetof(struct usercontrol_factory_impl, IActivationFactory_iface)))
 #define impl_from_uc_fac_iface(ptr) ((struct usercontrol_factory_impl *)((char *)(ptr) - offsetof(struct usercontrol_factory_impl, IUserControlFactory_iface)))
+#define impl_from_uc_stat_iface(ptr) ((struct usercontrol_factory_impl *)((char *)(ptr) - offsetof(struct usercontrol_factory_impl, IUserControlStatics_iface)))
 
 static HRESULT WINAPI usercontrol_fac_QI(IActivationFactory *iface, REFIID riid, void **ppv)
 {
@@ -2728,6 +3534,7 @@ static HRESULT WINAPI usercontrol_fac_QI(IActivationFactory *iface, REFIID riid,
     *ppv = NULL;
     if (IsEqualGUID(riid, &IID_IUnknown) ||
         IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject_local) ||
         IsEqualGUID(riid, &IID_IActivationFactory))
     {
         *ppv = &impl->IActivationFactory_iface;
@@ -2736,6 +3543,11 @@ static HRESULT WINAPI usercontrol_fac_QI(IActivationFactory *iface, REFIID riid,
     if (IsEqualGUID(riid, &IID_IUserControlFactory))
     {
         *ppv = &impl->IUserControlFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IUserControlStatics))
+    {
+        *ppv = &impl->IUserControlStatics_iface;
         return S_OK;
     }
     return E_NOINTERFACE;
@@ -2775,6 +3587,25 @@ static HRESULT WINAPI usercontrol_fac_iface_QI(void *This, REFIID riid, void **p
 static ULONG WINAPI usercontrol_fac_iface_AddRef(void *This) { return 2; }
 static ULONG WINAPI usercontrol_fac_iface_Release(void *This) { return 1; }
 
+static HRESULT WINAPI usercontrol_stat_iface_QI(void *This, REFIID riid, void **ppv)
+{
+    return usercontrol_fac_QI((IActivationFactory *)impl_from_uc_stat_iface(This), riid, ppv);
+}
+static ULONG WINAPI usercontrol_stat_iface_AddRef(void *This) { return 2; }
+static ULONG WINAPI usercontrol_stat_iface_Release(void *This) { return 1; }
+
+static HRESULT WINAPI usercontrol_dp_Content(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"Content"); return S_OK; }
+
+static const void *usercontrol_statics_vtbl[] = {
+    (void *)usercontrol_stat_iface_QI,
+    (void *)usercontrol_stat_iface_AddRef,
+    (void *)usercontrol_stat_iface_Release,
+    (void *)usercontrol_fac_GetIids,
+    (void *)usercontrol_fac_GetRuntimeClassName,
+    (void *)usercontrol_fac_GetTrustLevel,
+    (void *)usercontrol_dp_Content /* 6 */
+};
+
 static const IActivationFactoryVtbl usercontrol_activation_factory_vtbl = {
     usercontrol_fac_QI,
     usercontrol_fac_AddRef,
@@ -2797,7 +3628,8 @@ static const void *usercontrol_factory_vtbl[] = {
 
 static struct usercontrol_factory_impl usercontrol_factory_obj = {
     { &usercontrol_activation_factory_vtbl },
-    { usercontrol_factory_vtbl }
+    { usercontrol_factory_vtbl },
+    { usercontrol_statics_vtbl }
 };
 IActivationFactory *usercontrol_factory = &usercontrol_factory_obj.IActivationFactory_iface;
 
@@ -2895,6 +3727,185 @@ static struct contentcontrol_factory_impl contentcontrol_factory_impl_obj = {
     { contentcontrol_factory_vtbl }
 };
 IActivationFactory *contentcontrol_factory = &contentcontrol_factory_impl_obj.IActivationFactory_iface;
+
+/* -------------------------------------------------------------------------
+ * ContentDialog Factory & Statics Implementation
+ * ------------------------------------------------------------------------- */
+struct content_dialog_factory_impl
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } IContentDialogFactory_iface;
+    struct { const void *lpVtbl; } IContentDialogStatics_iface;
+    struct { const void *lpVtbl; } IContentDialogStatics2_iface;
+};
+
+#define impl_from_cd_factory(ptr) ((struct content_dialog_factory_impl *)((char *)(ptr) - offsetof(struct content_dialog_factory_impl, IActivationFactory_iface)))
+#define impl_from_cd_fac_iface(ptr) ((struct content_dialog_factory_impl *)((char *)(ptr) - offsetof(struct content_dialog_factory_impl, IContentDialogFactory_iface)))
+#define impl_from_cd_stat_iface(ptr) ((struct content_dialog_factory_impl *)((char *)(ptr) - offsetof(struct content_dialog_factory_impl, IContentDialogStatics_iface)))
+#define impl_from_cd_stat2_iface(ptr) ((struct content_dialog_factory_impl *)((char *)(ptr) - offsetof(struct content_dialog_factory_impl, IContentDialogStatics2_iface)))
+
+static HRESULT WINAPI cd_fac_QI(IActivationFactory *iface, REFIID riid, void **ppv)
+{
+    struct content_dialog_factory_impl *impl = impl_from_cd_factory(iface);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject_local) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppv = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IContentDialogFactory))
+    {
+        *ppv = &impl->IContentDialogFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IContentDialogStatics))
+    {
+        *ppv = &impl->IContentDialogStatics_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IContentDialogStatics2))
+    {
+        *ppv = &impl->IContentDialogStatics2_iface;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI cd_fac_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI cd_fac_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI cd_fac_GetIids(IActivationFactory *iface, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI cd_fac_GetRuntimeClassName(IActivationFactory *iface, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Controls.ContentDialog", 38, n); }
+static HRESULT WINAPI cd_fac_GetTrustLevel(IActivationFactory *iface, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI cd_fac_CreateInstance(void *This, void *outer, void **inner, void **instance)
+{
+    struct xaml_element *elem;
+    init_elem_vtables();
+    elem = xaml_element_create(CONTROL_TYPE_CONTENTDIALOG, L"ContentDialog");
+    if (!elem) return E_OUTOFMEMORY;
+    elem->outer = outer;
+    if (inner)
+    {
+        *inner = &elem->IUIElement_iface;
+        InterlockedIncrement(&elem->ref);
+    }
+    if (instance) *instance = (void *)&elem->IContentDialog_iface;
+    TRACE("cd_fac_CreateInstance outer %p -> inner %p, instance %p\n", outer, inner ? *inner : NULL, instance ? *instance : NULL);
+    return S_OK;
+}
+
+static HRESULT WINAPI cd_fac_ActivateInstance(IActivationFactory *iface, IInspectable **instance)
+{
+    return cd_fac_CreateInstance(iface, NULL, NULL, (void **)instance);
+}
+
+static HRESULT WINAPI cd_fac_iface_QI(void *This, REFIID riid, void **ppv)
+{
+    return cd_fac_QI((IActivationFactory *)impl_from_cd_fac_iface(This), riid, ppv);
+}
+static ULONG WINAPI cd_fac_iface_AddRef(void *This) { return 2; }
+static ULONG WINAPI cd_fac_iface_Release(void *This) { return 1; }
+
+static const void *content_dialog_fac_vtbl[] = {
+    (void *)cd_fac_iface_QI,
+    (void *)cd_fac_iface_AddRef,
+    (void *)cd_fac_iface_Release,
+    (void *)cd_fac_GetIids,
+    (void *)cd_fac_GetRuntimeClassName,
+    (void *)cd_fac_GetTrustLevel,
+    (void *)cd_fac_CreateInstance
+};
+
+static HRESULT WINAPI cd_stat_iface_QI(void *This, REFIID riid, void **ppv)
+{
+    return cd_fac_QI((IActivationFactory *)impl_from_cd_stat_iface(This), riid, ppv);
+}
+static ULONG WINAPI cd_stat_iface_AddRef(void *This) { return 2; }
+static ULONG WINAPI cd_stat_iface_Release(void *This) { return 1; }
+
+static HRESULT WINAPI cd_dp_Title(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"Title"); return S_OK; }
+static HRESULT WINAPI cd_dp_TitleTemplate(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"TitleTemplate"); return S_OK; }
+static HRESULT WINAPI cd_dp_FullSizeDesired(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"FullSizeDesired"); return S_OK; }
+static HRESULT WINAPI cd_dp_PrimaryButtonText(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"PrimaryButtonText"); return S_OK; }
+static HRESULT WINAPI cd_dp_SecondaryButtonText(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"SecondaryButtonText"); return S_OK; }
+static HRESULT WINAPI cd_dp_PrimaryButtonCommand(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"PrimaryButtonCommand"); return S_OK; }
+static HRESULT WINAPI cd_dp_SecondaryButtonCommand(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"SecondaryButtonCommand"); return S_OK; }
+static HRESULT WINAPI cd_dp_PrimaryButtonCommandParameter(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"PrimaryButtonCommandParameter"); return S_OK; }
+static HRESULT WINAPI cd_dp_SecondaryButtonCommandParameter(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"SecondaryButtonCommandParameter"); return S_OK; }
+static HRESULT WINAPI cd_dp_IsPrimaryButtonEnabled(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"IsPrimaryButtonEnabled"); return S_OK; }
+static HRESULT WINAPI cd_dp_IsSecondaryButtonEnabled(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"IsSecondaryButtonEnabled"); return S_OK; }
+
+static const void *content_dialog_stat_vtbl[] = {
+    (void *)cd_stat_iface_QI,
+    (void *)cd_stat_iface_AddRef,
+    (void *)cd_stat_iface_Release,
+    (void *)cd_fac_GetIids,
+    (void *)cd_fac_GetRuntimeClassName,
+    (void *)cd_fac_GetTrustLevel,
+    (void *)cd_dp_Title,
+    (void *)cd_dp_TitleTemplate,
+    (void *)cd_dp_FullSizeDesired,
+    (void *)cd_dp_PrimaryButtonText,
+    (void *)cd_dp_SecondaryButtonText,
+    (void *)cd_dp_PrimaryButtonCommand,
+    (void *)cd_dp_SecondaryButtonCommand,
+    (void *)cd_dp_PrimaryButtonCommandParameter,
+    (void *)cd_dp_SecondaryButtonCommandParameter,
+    (void *)cd_dp_IsPrimaryButtonEnabled,
+    (void *)cd_dp_IsSecondaryButtonEnabled
+};
+
+static HRESULT WINAPI cd_stat2_iface_QI(void *This, REFIID riid, void **ppv)
+{
+    return cd_fac_QI((IActivationFactory *)impl_from_cd_stat2_iface(This), riid, ppv);
+}
+static ULONG WINAPI cd_stat2_iface_AddRef(void *This) { return 2; }
+static ULONG WINAPI cd_stat2_iface_Release(void *This) { return 1; }
+
+static HRESULT WINAPI cd_dp_CloseButtonText(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"CloseButtonText"); return S_OK; }
+static HRESULT WINAPI cd_dp_CloseButtonCommand(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"CloseButtonCommand"); return S_OK; }
+static HRESULT WINAPI cd_dp_CloseButtonCommandParameter(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"CloseButtonCommandParameter"); return S_OK; }
+static HRESULT WINAPI cd_dp_PrimaryButtonStyle(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"PrimaryButtonStyle"); return S_OK; }
+static HRESULT WINAPI cd_dp_SecondaryButtonStyle(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"SecondaryButtonStyle"); return S_OK; }
+static HRESULT WINAPI cd_dp_CloseButtonStyle(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"CloseButtonStyle"); return S_OK; }
+static HRESULT WINAPI cd_dp_DefaultButton(void *This, void **v) { if (!v) return E_POINTER; *v = create_dependency_property_named(L"DefaultButton"); return S_OK; }
+
+static const void *content_dialog_stat2_vtbl[] = {
+    (void *)cd_stat2_iface_QI,
+    (void *)cd_stat2_iface_AddRef,
+    (void *)cd_stat2_iface_Release,
+    (void *)cd_fac_GetIids,
+    (void *)cd_fac_GetRuntimeClassName,
+    (void *)cd_fac_GetTrustLevel,
+    (void *)cd_dp_CloseButtonText,
+    (void *)cd_dp_CloseButtonCommand,
+    (void *)cd_dp_CloseButtonCommandParameter,
+    (void *)cd_dp_PrimaryButtonStyle,
+    (void *)cd_dp_SecondaryButtonStyle,
+    (void *)cd_dp_CloseButtonStyle,
+    (void *)cd_dp_DefaultButton
+};
+
+static const IActivationFactoryVtbl content_dialog_activation_factory_vtbl = {
+    cd_fac_QI,
+    cd_fac_AddRef,
+    cd_fac_Release,
+    cd_fac_GetIids,
+    cd_fac_GetRuntimeClassName,
+    cd_fac_GetTrustLevel,
+    cd_fac_ActivateInstance
+};
+
+static struct content_dialog_factory_impl content_dialog_factory_impl_obj = {
+    { &content_dialog_activation_factory_vtbl },
+    { content_dialog_fac_vtbl },
+    { content_dialog_stat_vtbl },
+    { content_dialog_stat2_vtbl }
+};
+IActivationFactory *content_dialog_factory = &content_dialog_factory_impl_obj.IActivationFactory_iface;
 
 static HRESULT WINAPI rowdef_fac_Activate(void *This, IInspectable **instance)
 {
@@ -5936,6 +6947,12 @@ static void xaml_render_window(HWND hwnd, HDC hdc)
     height = client.bottom - client.top;
     if (width <= 0 || height <= 0) return;
 
+    if (!is_calculator_app())
+    {
+        if (global_swapchain_active || (global_root_element && (global_root_element->type == CONTROL_TYPE_SWAPCHAINPANEL || global_root_element->swapchain)))
+            return;
+    }
+
     mem_dc = CreateCompatibleDC(hdc);
     mem_bmp = CreateCompatibleBitmap(hdc, width, height);
     old_bmp = SelectObject(mem_dc, mem_bmp);
@@ -6524,6 +7541,9 @@ static void xaml_handle_keydown(WPARAM key)
  * ------------------------------------------------------------------------- */
 static struct xaml_element *active_pressed_button = NULL;
 
+extern void core_window_fire_size_changed(FLOAT width, FLOAT height);
+extern void core_window_fire_activated(int state);
+
 LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     switch (msg)
@@ -6533,7 +7553,10 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             xaml_fire_loaded_events();
-            xaml_render_window(hwnd, hdc);
+            if (is_calculator_app() || (!global_swapchain_active && (!global_root_element || (!global_root_element->swapchain && global_root_element->type != CONTROL_TYPE_SWAPCHAINPANEL))))
+            {
+                xaml_render_window(hwnd, hdc);
+            }
             EndPaint(hwnd, &ps);
             return 0;
         }
@@ -6543,6 +7566,8 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
         {
             POINT pt;
             RECT client;
+            if (!is_calculator_app())
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
             pt.x = (short)LOWORD(lparam);
             pt.y = (short)HIWORD(lparam);
             GetClientRect(hwnd, &client);
@@ -6721,6 +7746,8 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
         }
         case WM_LBUTTONUP:
         {
+            if (!is_calculator_app())
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
             if (active_pressed_button)
             {
                 POINT pt;
@@ -6740,11 +7767,37 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
             return 0;
         }
         case WM_KEYDOWN:
-            xaml_handle_keydown(wparam);
-            return 0;
+            if (is_calculator_app())
+            {
+                xaml_handle_keydown(wparam);
+                return 0;
+            }
+            return DefWindowProcW(hwnd, msg, wparam, lparam);
         case WM_SIZE:
+        {
+            int w = LOWORD(lparam);
+            int h = HIWORD(lparam);
+            if (global_swapchain_panel)
+            {
+                elem_fire_size_changed(global_swapchain_panel, 0.0f, 0.0f, (float)w, (float)h);
+            }
+            if (global_root_element && global_root_element != global_swapchain_panel)
+            {
+                elem_fire_size_changed(global_root_element, 0.0f, 0.0f, (float)w, (float)h);
+            }
+            if (w > 0 && h > 0)
+                core_window_fire_size_changed((FLOAT)w, (FLOAT)h);
             InvalidateRect(hwnd, NULL, FALSE);
             return 0;
+        }
+        case WM_ACTIVATE:
+        {
+            if (wparam != WA_INACTIVE)
+                core_window_fire_activated(0 /* CodeActivated */);
+            else
+                core_window_fire_activated(1 /* Deactivated */);
+            break;
+        }
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
@@ -6755,6 +7808,19 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
 void xaml_window_init(HWND hwnd)
 {
     global_xaml_hwnd = hwnd;
+}
+
+void xaml_fire_swapchain_size_changed(FLOAT width, FLOAT height)
+{
+    if (global_swapchain_panel)
+    {
+        TRACE("Firing SizeChanged on global_swapchain_panel %p: %.0f x %.0f\n", global_swapchain_panel, width, height);
+        elem_fire_size_changed(global_swapchain_panel, 0.0f, 0.0f, width, height);
+    }
+    if (global_root_element && global_root_element != global_swapchain_panel)
+    {
+        elem_fire_size_changed(global_root_element, 0.0f, 0.0f, width, height);
+    }
 }
 
 static const GUID IID_IRoutedEventArgs = {0x5c985ac6, 0xd802, 0x4b38, {0xa2, 0x23, 0xbf, 0x07, 0x0c, 0x43, 0xfe, 0xdf}};
