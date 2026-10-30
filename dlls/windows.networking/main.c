@@ -801,6 +801,244 @@ static struct push_notification_factory push_notification_factory =
     .refcount = 1,
 };
 
+/* -------------------------------------------------------------------------
+ * Windows.Networking.EndpointPair Implementation
+ * ------------------------------------------------------------------------- */
+DEFINE_GUID(IID_IEndpointPair, 0x33a0aa36, 0xf8fa, 0x4b30, 0xb8, 0x56, 0x76, 0x51, 0x7c, 0x3b, 0xd0, 0x6d);
+DEFINE_GUID(IID_IEndpointPairFactory, 0xb609d971, 0x64e0, 0x442b, 0xaa, 0x6f, 0xcc, 0x8c, 0x8f, 0x18, 0x1f, 0x78);
+
+struct endpoint_pair_impl
+{
+    struct { const void *lpVtbl; } IEndpointPair_iface;
+    LONG ref;
+    IUnknown *local_host;
+    HSTRING local_service;
+    IUnknown *remote_host;
+    HSTRING remote_service;
+};
+
+static HRESULT WINAPI ep_QI(void *This, REFIID riid, void **ppv)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IEndpointPair))
+    {
+        *ppv = This;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI ep_AddRef(void *This)
+{
+    struct endpoint_pair_impl *impl = This;
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI ep_Release(void *This)
+{
+    struct endpoint_pair_impl *impl = This;
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->local_host) IUnknown_Release(impl->local_host);
+        if (impl->remote_host) IUnknown_Release(impl->remote_host);
+        if (impl->local_service) WindowsDeleteString(impl->local_service);
+        if (impl->remote_service) WindowsDeleteString(impl->remote_service);
+        free(impl);
+    }
+    return ref;
+}
+
+static HRESULT WINAPI ep_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI ep_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.EndpointPair", 31, n); }
+static HRESULT WINAPI ep_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI ep_get_LocalHostName(void *This, void **value)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (!value) return E_POINTER;
+    *value = impl->local_host;
+    if (impl->local_host) IUnknown_AddRef(impl->local_host);
+    return S_OK;
+}
+
+static HRESULT WINAPI ep_put_LocalHostName(void *This, void *value)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (impl->local_host) IUnknown_Release(impl->local_host);
+    impl->local_host = (IUnknown *)value;
+    if (impl->local_host) IUnknown_AddRef(impl->local_host);
+    return S_OK;
+}
+
+static HRESULT WINAPI ep_get_LocalServiceName(void *This, HSTRING *value)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (!value) return E_POINTER;
+    return WindowsDuplicateString(impl->local_service, value);
+}
+
+static HRESULT WINAPI ep_put_LocalServiceName(void *This, HSTRING value)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (impl->local_service) WindowsDeleteString(impl->local_service);
+    return WindowsDuplicateString(value, &impl->local_service);
+}
+
+static HRESULT WINAPI ep_get_RemoteHostName(void *This, void **value)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (!value) return E_POINTER;
+    *value = impl->remote_host;
+    if (impl->remote_host) IUnknown_AddRef(impl->remote_host);
+    return S_OK;
+}
+
+static HRESULT WINAPI ep_put_RemoteHostName(void *This, void *value)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (impl->remote_host) IUnknown_Release(impl->remote_host);
+    impl->remote_host = (IUnknown *)value;
+    if (impl->remote_host) IUnknown_AddRef(impl->remote_host);
+    return S_OK;
+}
+
+static HRESULT WINAPI ep_get_RemoteServiceName(void *This, HSTRING *value)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (!value) return E_POINTER;
+    return WindowsDuplicateString(impl->remote_service, value);
+}
+
+static HRESULT WINAPI ep_put_RemoteServiceName(void *This, HSTRING value)
+{
+    struct endpoint_pair_impl *impl = This;
+    if (impl->remote_service) WindowsDeleteString(impl->remote_service);
+    return WindowsDuplicateString(value, &impl->remote_service);
+}
+
+static const void *endpoint_pair_vtbl[] = {
+    (void *)ep_QI,
+    (void *)ep_AddRef,
+    (void *)ep_Release,
+    (void *)ep_GetIids,
+    (void *)ep_GetRuntimeClassName,
+    (void *)ep_GetTrustLevel,
+    (void *)ep_get_LocalHostName,
+    (void *)ep_put_LocalHostName,
+    (void *)ep_get_LocalServiceName,
+    (void *)ep_put_LocalServiceName,
+    (void *)ep_get_RemoteHostName,
+    (void *)ep_put_RemoteHostName,
+    (void *)ep_get_RemoteServiceName,
+    (void *)ep_put_RemoteServiceName
+};
+
+static HRESULT create_endpoint_pair(void *local_host, HSTRING local_service,
+                                    void *remote_host, HSTRING remote_service,
+                                    void **out)
+{
+    struct endpoint_pair_impl *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IEndpointPair_iface.lpVtbl = endpoint_pair_vtbl;
+    impl->ref = 1;
+    impl->local_host = (IUnknown *)local_host;
+    if (impl->local_host) IUnknown_AddRef(impl->local_host);
+    impl->remote_host = (IUnknown *)remote_host;
+    if (impl->remote_host) IUnknown_AddRef(impl->remote_host);
+    if (local_service) WindowsDuplicateString(local_service, &impl->local_service);
+    if (remote_service) WindowsDuplicateString(remote_service, &impl->remote_service);
+    *out = impl;
+    return S_OK;
+}
+
+struct endpoint_pair_factory_impl
+{
+    struct { const void *lpVtbl; } IActivationFactory_iface;
+    struct { const void *lpVtbl; } IEndpointPairFactory_iface;
+};
+
+#define impl_from_ep_factory(ptr) ((struct endpoint_pair_factory_impl *)((char *)(ptr) - offsetof(struct endpoint_pair_factory_impl, IActivationFactory_iface)))
+#define impl_from_ep_pair_factory(ptr) ((struct endpoint_pair_factory_impl *)((char *)(ptr) - offsetof(struct endpoint_pair_factory_impl, IEndpointPairFactory_iface)))
+
+static HRESULT WINAPI ep_fac_QI(void *This, REFIID riid, void **ppv)
+{
+    struct endpoint_pair_factory_impl *impl = impl_from_ep_factory(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppv = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IEndpointPairFactory))
+    {
+        *ppv = &impl->IEndpointPairFactory_iface;
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static HRESULT WINAPI ep_pair_fac_QI(void *This, REFIID riid, void **ppv)
+{
+    struct endpoint_pair_factory_impl *impl = impl_from_ep_pair_factory(This);
+    return ep_fac_QI(&impl->IActivationFactory_iface, riid, ppv);
+}
+static ULONG WINAPI ep_fac_AddRef(void *This) { return 2; }
+static ULONG WINAPI ep_fac_Release(void *This) { return 1; }
+static HRESULT WINAPI ep_fac_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI ep_fac_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.EndpointPair", 31, n); }
+static HRESULT WINAPI ep_fac_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI ep_fac_ActivateInstance(void *This, IInspectable **instance)
+{
+    if (!instance) return E_POINTER;
+    return create_endpoint_pair(NULL, NULL, NULL, NULL, (void **)instance);
+}
+
+static HRESULT WINAPI ep_pair_fac_CreateEndpointPair(void *This, void *local_host, HSTRING local_service,
+                                                     void *remote_host, HSTRING remote_service,
+                                                     void **value)
+{
+    TRACE("CreateEndpointPair local_host=%p, remote_host=%p, value=%p\n", local_host, remote_host, value);
+    if (!value) return E_POINTER;
+    return create_endpoint_pair(local_host, local_service, remote_host, remote_service, value);
+}
+
+static const void *endpoint_pair_activation_factory_vtbl[] = {
+    (void *)ep_fac_QI,
+    (void *)ep_fac_AddRef,
+    (void *)ep_fac_Release,
+    (void *)ep_fac_GetIids,
+    (void *)ep_fac_GetRuntimeClassName,
+    (void *)ep_fac_GetTrustLevel,
+    (void *)ep_fac_ActivateInstance
+};
+
+static const void *endpoint_pair_custom_factory_vtbl[] = {
+    (void *)ep_pair_fac_QI,
+    (void *)ep_fac_AddRef,
+    (void *)ep_fac_Release,
+    (void *)ep_fac_GetIids,
+    (void *)ep_fac_GetRuntimeClassName,
+    (void *)ep_fac_GetTrustLevel,
+    (void *)ep_pair_fac_CreateEndpointPair
+};
+
+static struct endpoint_pair_factory_impl endpoint_pair_factory = {
+    { endpoint_pair_activation_factory_vtbl },
+    { endpoint_pair_custom_factory_vtbl }
+};
+
 HRESULT WINAPI SetSocketMediaStreamingMode(BOOL value)
 {
     FIXME("value %d stub!\n", value);
@@ -820,6 +1058,11 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, void **factory)
     {
         *factory = &push_notification_factory.IActivationFactory_iface;
         IActivationFactory_AddRef((IActivationFactory *)*factory);
+        return S_OK;
+    }
+    if (!wcscmp(name, L"Windows.Networking.EndpointPair"))
+    {
+        *factory = &endpoint_pair_factory.IActivationFactory_iface;
         return S_OK;
     }
 

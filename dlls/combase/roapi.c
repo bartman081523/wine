@@ -140,7 +140,7 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
             *out = wcsdup(L"twinapi.appcore.dll");
             return S_OK;
         }
-        if (!wcsncmp(classid, L"Windows.Networking.PushNotifications.", 37))
+        if (!wcsncmp(classid, L"Windows.Networking.", 19))
         {
             *out = wcsdup(L"windows.networking.dll");
             return S_OK;
