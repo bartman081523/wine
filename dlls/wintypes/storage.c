@@ -427,10 +427,11 @@ static HRESULT WINAPI data_writer_put_ByteOrder(IDataWriter *iface, ByteOrder va
     return E_NOTIMPL;
 }
 
+static HRESULT WINAPI data_writer_WriteBytes(IDataWriter *iface, UINT32 value_size, BYTE *value);
+
 static HRESULT WINAPI data_writer_WriteByte(IDataWriter *iface, BYTE value)
 {
-    FIXME("iface %p, value %u stub!\n", iface, value);
-    return E_NOTIMPL;
+    return data_writer_WriteBytes(iface, 1, &value);
 }
 
 static HRESULT WINAPI data_writer_WriteBytes(IDataWriter *iface, UINT32 value_size, BYTE *value)
@@ -537,14 +538,32 @@ static HRESULT WINAPI data_writer_WriteTimeSpan(IDataWriter *iface, TimeSpan val
 
 static HRESULT WINAPI data_writer_WriteString(IDataWriter *iface, HSTRING value, UINT32 *code_unit_count)
 {
-    FIXME("iface %p, value %p, code_unit_count %p stub!\n", iface, value, code_unit_count);
-    return E_NOTIMPL;
+    UINT32 length = 0;
+    const WCHAR *wstr = WindowsGetStringRawBuffer(value, &length);
+    int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wstr, length, NULL, 0, NULL, NULL);
+    char *utf8_buf;
+    HRESULT hr;
+
+    TRACE("iface %p, value %p, code_unit_count %p.\n", iface, value, code_unit_count);
+
+    if (utf8_len < 0) return E_FAIL;
+    if (code_unit_count) *code_unit_count = utf8_len;
+    if (!utf8_len) return S_OK;
+
+    if (!(utf8_buf = malloc(utf8_len))) return E_OUTOFMEMORY;
+    WideCharToMultiByte(CP_UTF8, 0, wstr, length, utf8_buf, utf8_len, NULL, NULL);
+    hr = data_writer_WriteBytes(iface, utf8_len, (BYTE *)utf8_buf);
+    free(utf8_buf);
+    return hr;
 }
 
 static HRESULT WINAPI data_writer_MeasureString(IDataWriter *iface, HSTRING value, UINT32 *code_unit_count)
 {
-    FIXME("iface %p, value %p, code_unit_count %p stub!\n", iface, value, code_unit_count);
-    return E_NOTIMPL;
+    UINT32 length = 0;
+    const WCHAR *wstr = WindowsGetStringRawBuffer(value, &length);
+    if (!code_unit_count) return E_POINTER;
+    *code_unit_count = WideCharToMultiByte(CP_UTF8, 0, wstr, length, NULL, 0, NULL, NULL);
+    return S_OK;
 }
 
 static HRESULT data_writer_async_complete(struct data_writer *impl)
@@ -585,14 +604,12 @@ static HRESULT WINAPI data_writer_FlushAsync(IDataWriter *iface, IAsyncOperation
 {
     struct data_writer *impl = impl_from_IDataWriter(iface);
 
-    FIXME("iface %p, operation %p stub!\n", iface, operation);
-
-    *operation = NULL;
+    TRACE("iface %p, operation %p.\n", iface, operation);
 
     if (!impl->stream)
         return HRESULT_FROM_WIN32(ERROR_INVALID_OPERATION);
 
-    return E_NOTIMPL;
+    return IOutputStream_FlushAsync(impl->stream, operation);
 }
 
 static HRESULT WINAPI data_writer_DetachBuffer(IDataWriter *iface, IBuffer **buffer)

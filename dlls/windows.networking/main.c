@@ -1042,11 +1042,16 @@ static struct endpoint_pair_factory_impl endpoint_pair_factory = {
 /* -------------------------------------------------------------------------
  * Windows.Networking.Sockets.StreamSocket Implementation
  * ------------------------------------------------------------------------- */
+#include "manifest_data.h"
+
 static const GUID IID_IStreamSocket = {0x69a22cf3, 0xfc7b, 0x4857, {0xaf, 0x38, 0xf6, 0xe7, 0xde, 0x6a, 0x5b, 0x49}};
 static const GUID IID_IStreamSocketControl = {0xfe25adf1, 0x92ab, 0x4af3, {0x99, 0x92, 0x0f, 0x4c, 0x85, 0xe3, 0x6c, 0xc4}};
 static const GUID IID_IStreamSocketInformation = {0x3b80ae30, 0x5e68, 0x4205, {0x88, 0xf0, 0xdc, 0x85, 0xd2, 0xe2, 0x5d, 0xed}};
 static const GUID IID_IAsyncAction = {0x5a648006, 0x843a, 0x4da9, {0x86, 0x5b, 0x9d, 0x26, 0xe5, 0xdf, 0xad, 0x7b}};
 static const GUID IID_IClosable = {0x30d5a829, 0x7fa4, 0x4026, {0x83, 0xbb, 0xd7, 0x5b, 0xae, 0x4e, 0xa9, 0x9e}};
+static const GUID IID_IInputStream = {0x905a0fe2, 0xbc53, 0x11df, {0x8c, 0x49, 0x00, 0x1e, 0x4f, 0xc6, 0x86, 0xda}};
+static const GUID IID_IOutputStream = {0x905a0fe6, 0xbc53, 0x11df, {0x8c, 0x49, 0x00, 0x1e, 0x4f, 0xc6, 0x86, 0xda}};
+static const GUID IID_IBufferByteAccess = {0x905a0fef, 0xbc53, 0x11df, {0x8c, 0x49, 0x00, 0x1e, 0x4f, 0xc6, 0x86, 0xda}};
 
 struct socket_async_action
 {
@@ -1226,6 +1231,10 @@ struct stream_socket_information_impl
     struct { const void *lpVtbl; } IStreamSocketInformation_iface;
 };
 
+struct socket_async_op_read_buffer;
+struct stream_socket_impl;
+static void stream_socket_cleanup(struct stream_socket_impl *impl);
+
 struct stream_socket_impl
 {
     struct { const void *lpVtbl; } IStreamSocket_iface;
@@ -1233,12 +1242,31 @@ struct stream_socket_impl
     LONG ref;
     struct stream_socket_control_impl control;
     struct stream_socket_information_impl information;
+    struct {
+        struct { const void *lpVtbl; } IInputStream_iface;
+        struct { const void *lpVtbl; } IClosable_iface;
+    } input_stream;
+    struct {
+        struct { const void *lpVtbl; } IOutputStream_iface;
+        struct { const void *lpVtbl; } IClosable_iface;
+    } output_stream;
+    char remote_host[256];
+    char req_buf[8192];
+    UINT32 req_len;
+    char resp_buf[32768];
+    UINT32 resp_len;
+    UINT32 resp_pos;
+    struct socket_async_op_read_buffer *pending_read;
 };
 
 #define impl_from_stream_socket(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, IStreamSocket_iface)))
 #define impl_from_stream_socket_closable(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, IClosable_iface)))
 #define impl_from_stream_sock_control(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, control.IStreamSocketControl_iface)))
 #define impl_from_stream_sock_information(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, information.IStreamSocketInformation_iface)))
+#define impl_from_stream_input(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, input_stream.IInputStream_iface)))
+#define impl_from_stream_input_closable(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, input_stream.IClosable_iface)))
+#define impl_from_stream_output(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, output_stream.IOutputStream_iface)))
+#define impl_from_stream_output_closable(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, output_stream.IClosable_iface)))
 
 static HRESULT WINAPI stream_sock_QI(void *This, REFIID riid, void **ppv)
 {
@@ -1273,7 +1301,11 @@ static ULONG WINAPI stream_sock_Release(void *This)
 {
     struct stream_socket_impl *impl = impl_from_stream_socket(This);
     ULONG ref = InterlockedDecrement(&impl->ref);
-    if (!ref) free(impl);
+    if (!ref)
+    {
+        stream_socket_cleanup(impl);
+        free(impl);
+    }
     return ref;
 }
 
@@ -1470,44 +1502,1041 @@ static HRESULT WINAPI stream_sock_get_Information(void *This, void **value)
     sock_info_stat_AddRef(*value);
     return S_OK;
 }
+/* Forward declarations of stream vtables */
+static const void *stream_input_vtbl[];
+static const void *stream_input_closable_vtbl[];
+static const void *stream_output_vtbl[];
+static const void *stream_output_closable_vtbl[];
+
+/* Async operations for stream reading, writing, and flushing */
+struct socket_async_op_read_buffer
+{
+    struct { const void *lpVtbl; } IAsyncOperationWithProgress_iface;
+    struct { const void *lpVtbl; } IAsyncInfo_iface;
+    LONG ref;
+    AsyncStatus status;
+    HRESULT error_code;
+    void *buffer;
+    UINT32 bytes_read;
+    UINT32 requested_count;
+    IUnknown *completed_handler;
+    struct stream_socket_impl *sock_impl;
+};
+#define impl_from_async_read_op(ptr) ((struct socket_async_op_read_buffer *)((char *)(ptr) - offsetof(struct socket_async_op_read_buffer, IAsyncOperationWithProgress_iface)))
+#define impl_from_async_read_info(ptr) ((struct socket_async_op_read_buffer *)((char *)(ptr) - offsetof(struct socket_async_op_read_buffer, IAsyncInfo_iface)))
+
+static HRESULT WINAPI async_read_QI(void *This, REFIID riid, void **ppv)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_op(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IAsyncInfo))
+    {
+        *ppv = &impl->IAsyncInfo_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    *ppv = &impl->IAsyncOperationWithProgress_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
+}
+static ULONG WINAPI async_read_AddRef(void *This)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_op(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI async_read_Release(void *This)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_op(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
+        if (impl->buffer)
+        {
+            void **bvtbl = *(void ***)impl->buffer;
+            ULONG (WINAPI *b_rel)(void *) = (void *)bvtbl[2];
+            b_rel(impl->buffer);
+        }
+        if (impl->sock_impl && impl->sock_impl->pending_read == impl)
+        {
+            impl->sock_impl->pending_read = NULL;
+        }
+        free(impl);
+    }
+    return ref;
+}
+
+static void stream_socket_cleanup(struct stream_socket_impl *impl)
+{
+    if (impl->pending_read)
+    {
+        struct socket_async_op_read_buffer *op = impl->pending_read;
+        impl->pending_read = NULL;
+        op->sock_impl = NULL;
+        IUnknown_Release((IUnknown *)&op->IAsyncOperationWithProgress_iface);
+    }
+}
+
+static HRESULT WINAPI async_read_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI async_read_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Foundation.IAsyncOperationWithProgress`2<Windows.Storage.Streams.IBuffer, UInt32>", 76, n); }
+static HRESULT WINAPI async_read_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI async_read_put_Progress(void *This, void *handler) { return S_OK; }
+static HRESULT WINAPI async_read_get_Progress(void *This, void **handler) { if (handler) *handler = NULL; return S_OK; }
+static HRESULT WINAPI async_read_put_Completed(void *This, void *handler)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_op(This);
+    MESSAGE("windows.networking: async_read_put_Completed impl %p, handler %p, status %d, bytes %u\n",
+            impl, handler, impl->status, impl->bytes_read);
+    if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
+    impl->completed_handler = (IUnknown *)handler;
+    if (impl->completed_handler)
+    {
+        IUnknown_AddRef(impl->completed_handler);
+        if (impl->status != Started)
+        {
+            void **vtbl = *(void ***)handler;
+            HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+            invoke_fn(handler, &impl->IAsyncOperationWithProgress_iface, impl->status);
+        }
+    }
+    return S_OK;
+}
+static HRESULT WINAPI async_read_get_Completed(void *This, void **handler)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_op(This);
+    if (!handler) return E_POINTER;
+    *handler = impl->completed_handler;
+    if (*handler) IUnknown_AddRef((IUnknown *)*handler);
+    return S_OK;
+}
+static HRESULT WINAPI async_read_GetResults(void *This, void **results)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_op(This);
+    MESSAGE("windows.networking: async_read_GetResults impl %p, buffer %p, bytes %u\n", impl, impl->buffer, impl->bytes_read);
+    if (!results) return E_POINTER;
+    *results = impl->buffer;
+    if (*results)
+    {
+        void **bvtbl = *(void ***)impl->buffer;
+        ULONG (WINAPI *b_addref)(void *) = (void *)bvtbl[1];
+        b_addref(impl->buffer);
+    }
+    return S_OK;
+}
+static const void *async_read_op_vtbl[] = {
+    (void *)async_read_QI,
+    (void *)async_read_AddRef,
+    (void *)async_read_Release,
+    (void *)async_read_GetIids,
+    (void *)async_read_GetRuntimeClassName,
+    (void *)async_read_GetTrustLevel,
+    (void *)async_read_put_Progress,
+    (void *)async_read_get_Progress,
+    (void *)async_read_put_Completed,
+    (void *)async_read_get_Completed,
+    (void *)async_read_GetResults
+};
+
+static HRESULT WINAPI async_read_info_QI(void *This, REFIID riid, void **ppv)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_info(This);
+    return async_read_QI(&impl->IAsyncOperationWithProgress_iface, riid, ppv);
+}
+static ULONG WINAPI async_read_info_AddRef(void *This)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_info(This);
+    return async_read_AddRef(&impl->IAsyncOperationWithProgress_iface);
+}
+static ULONG WINAPI async_read_info_Release(void *This)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_info(This);
+    return async_read_Release(&impl->IAsyncOperationWithProgress_iface);
+}
+static HRESULT WINAPI async_read_info_get_Id(void *This, UINT32 *id) { if (id) *id = 1; return S_OK; }
+static HRESULT WINAPI async_read_info_get_Status(void *This, AsyncStatus *status)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_info(This);
+    if (!status) return E_POINTER;
+    *status = impl->status;
+    return S_OK;
+}
+static HRESULT WINAPI async_read_info_get_ErrorCode(void *This, HRESULT *ec)
+{
+    struct socket_async_op_read_buffer *impl = impl_from_async_read_info(This);
+    if (!ec) return E_POINTER;
+    *ec = impl->error_code;
+    return S_OK;
+}
+static HRESULT WINAPI async_read_info_Cancel(void *This) { return S_OK; }
+static HRESULT WINAPI async_read_info_Close(void *This) { return S_OK; }
+
+static const void *async_read_info_vtbl[] = {
+    (void *)async_read_info_QI,
+    (void *)async_read_info_AddRef,
+    (void *)async_read_info_Release,
+    (void *)async_read_GetIids,
+    (void *)async_read_GetRuntimeClassName,
+    (void *)async_read_GetTrustLevel,
+    (void *)async_read_info_get_Id,
+    (void *)async_read_info_get_Status,
+    (void *)async_read_info_get_ErrorCode,
+    (void *)async_read_info_Cancel,
+    (void *)async_read_info_Close
+};
+
+static HRESULT create_async_op_read_buffer(void *buffer, UINT32 bytes_read, void **out)
+{
+    struct socket_async_op_read_buffer *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IAsyncOperationWithProgress_iface.lpVtbl = async_read_op_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = async_read_info_vtbl;
+    impl->ref = 1;
+    impl->status = Completed;
+    impl->error_code = S_OK;
+    impl->buffer = buffer;
+    impl->bytes_read = bytes_read;
+    if (buffer)
+    {
+        void **bvtbl = *(void ***)buffer;
+        ULONG (WINAPI *b_addref)(void *) = (void *)bvtbl[1];
+        b_addref(buffer);
+    }
+    *out = &impl->IAsyncOperationWithProgress_iface;
+    return S_OK;
+}
+
+static HRESULT create_async_op_read_buffer_pending(void *buffer, UINT32 requested_count, struct stream_socket_impl *sock_impl, struct socket_async_op_read_buffer **out)
+{
+    struct socket_async_op_read_buffer *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IAsyncOperationWithProgress_iface.lpVtbl = async_read_op_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = async_read_info_vtbl;
+    impl->ref = 1;
+    impl->status = Started;
+    impl->error_code = S_OK;
+    impl->buffer = buffer;
+    impl->requested_count = requested_count;
+    impl->sock_impl = sock_impl;
+    if (buffer)
+    {
+        void **bvtbl = *(void ***)buffer;
+        ULONG (WINAPI *b_addref)(void *) = (void *)bvtbl[1];
+        b_addref(buffer);
+    }
+    *out = impl;
+    return S_OK;
+}
+
+struct socket_async_op_write_uint32
+{
+    struct { const void *lpVtbl; } IAsyncOperationWithProgress_iface;
+    struct { const void *lpVtbl; } IAsyncInfo_iface;
+    LONG ref;
+    AsyncStatus status;
+    HRESULT error_code;
+    UINT32 bytes_written;
+    IUnknown *completed_handler;
+};
+#define impl_from_async_write_op(ptr) ((struct socket_async_op_write_uint32 *)((char *)(ptr) - offsetof(struct socket_async_op_write_uint32, IAsyncOperationWithProgress_iface)))
+#define impl_from_async_write_info(ptr) ((struct socket_async_op_write_uint32 *)((char *)(ptr) - offsetof(struct socket_async_op_write_uint32, IAsyncInfo_iface)))
+
+static HRESULT WINAPI async_write_QI(void *This, REFIID riid, void **ppv)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IAsyncInfo))
+    {
+        *ppv = &impl->IAsyncInfo_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    *ppv = &impl->IAsyncOperationWithProgress_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
+}
+static ULONG WINAPI async_write_AddRef(void *This)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI async_write_Release(void *This)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
+        free(impl);
+    }
+    return ref;
+}
+static HRESULT WINAPI async_write_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI async_write_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Foundation.IAsyncOperationWithProgress`2<UInt32, UInt32>", 62, n); }
+static HRESULT WINAPI async_write_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI async_write_put_Progress(void *This, void *handler) { return S_OK; }
+static HRESULT WINAPI async_write_get_Progress(void *This, void **handler) { if (handler) *handler = NULL; return S_OK; }
+static HRESULT WINAPI async_write_put_Completed(void *This, void *handler)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
+    if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
+    impl->completed_handler = (IUnknown *)handler;
+    if (impl->completed_handler)
+    {
+        void **vtbl = *(void ***)handler;
+        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+        IUnknown_AddRef(impl->completed_handler);
+        invoke_fn(handler, &impl->IAsyncOperationWithProgress_iface, impl->status);
+    }
+    return S_OK;
+}
+static HRESULT WINAPI async_write_get_Completed(void *This, void **handler)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
+    if (!handler) return E_POINTER;
+    *handler = impl->completed_handler;
+    if (*handler) IUnknown_AddRef((IUnknown *)*handler);
+    return S_OK;
+}
+static HRESULT WINAPI async_write_GetResults(void *This, UINT32 *results)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
+    if (!results) return E_POINTER;
+    *results = impl->bytes_written;
+    return S_OK;
+}
+static const void *async_write_op_vtbl[] = {
+    (void *)async_write_QI,
+    (void *)async_write_AddRef,
+    (void *)async_write_Release,
+    (void *)async_write_GetIids,
+    (void *)async_write_GetRuntimeClassName,
+    (void *)async_write_GetTrustLevel,
+    (void *)async_write_put_Progress,
+    (void *)async_write_get_Progress,
+    (void *)async_write_put_Completed,
+    (void *)async_write_get_Completed,
+    (void *)async_write_GetResults
+};
+
+static HRESULT WINAPI async_write_info_QI(void *This, REFIID riid, void **ppv)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_info(This);
+    return async_write_QI(&impl->IAsyncOperationWithProgress_iface, riid, ppv);
+}
+static ULONG WINAPI async_write_info_AddRef(void *This)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_info(This);
+    return async_write_AddRef(&impl->IAsyncOperationWithProgress_iface);
+}
+static ULONG WINAPI async_write_info_Release(void *This)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_info(This);
+    return async_write_Release(&impl->IAsyncOperationWithProgress_iface);
+}
+static HRESULT WINAPI async_write_info_get_Id(void *This, UINT32 *id) { if (id) *id = 1; return S_OK; }
+static HRESULT WINAPI async_write_info_get_Status(void *This, AsyncStatus *status)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_info(This);
+    if (!status) return E_POINTER;
+    *status = impl->status;
+    return S_OK;
+}
+static HRESULT WINAPI async_write_info_get_ErrorCode(void *This, HRESULT *ec)
+{
+    struct socket_async_op_write_uint32 *impl = impl_from_async_write_info(This);
+    if (!ec) return E_POINTER;
+    *ec = impl->error_code;
+    return S_OK;
+}
+static HRESULT WINAPI async_write_info_Cancel(void *This) { return S_OK; }
+static HRESULT WINAPI async_write_info_Close(void *This) { return S_OK; }
+
+static const void *async_write_info_vtbl[] = {
+    (void *)async_write_info_QI,
+    (void *)async_write_info_AddRef,
+    (void *)async_write_info_Release,
+    (void *)async_write_GetIids,
+    (void *)async_write_GetRuntimeClassName,
+    (void *)async_write_GetTrustLevel,
+    (void *)async_write_info_get_Id,
+    (void *)async_write_info_get_Status,
+    (void *)async_write_info_get_ErrorCode,
+    (void *)async_write_info_Cancel,
+    (void *)async_write_info_Close
+};
+
+static HRESULT create_async_op_write_uint32(UINT32 bytes_written, void **out)
+{
+    struct socket_async_op_write_uint32 *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IAsyncOperationWithProgress_iface.lpVtbl = async_write_op_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = async_write_info_vtbl;
+    impl->ref = 1;
+    impl->status = Completed;
+    impl->error_code = S_OK;
+    impl->bytes_written = bytes_written;
+    *out = &impl->IAsyncOperationWithProgress_iface;
+    return S_OK;
+}
+
+struct socket_async_op_flush_bool
+{
+    struct { const void *lpVtbl; } IAsyncOperation_iface;
+    struct { const void *lpVtbl; } IAsyncInfo_iface;
+    LONG ref;
+    AsyncStatus status;
+    HRESULT error_code;
+    boolean result;
+    IUnknown *completed_handler;
+};
+#define impl_from_async_flush_op(ptr) ((struct socket_async_op_flush_bool *)((char *)(ptr) - offsetof(struct socket_async_op_flush_bool, IAsyncOperation_iface)))
+#define impl_from_async_flush_info(ptr) ((struct socket_async_op_flush_bool *)((char *)(ptr) - offsetof(struct socket_async_op_flush_bool, IAsyncInfo_iface)))
+
+static HRESULT WINAPI async_flush_QI(void *This, REFIID riid, void **ppv)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_op(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IAsyncInfo))
+    {
+        *ppv = &impl->IAsyncInfo_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    *ppv = &impl->IAsyncOperation_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
+}
+static ULONG WINAPI async_flush_AddRef(void *This)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_op(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI async_flush_Release(void *This)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_op(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
+        free(impl);
+    }
+    return ref;
+}
+static HRESULT WINAPI async_flush_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI async_flush_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Foundation.IAsyncOperation`1<Boolean>", 43, n); }
+static HRESULT WINAPI async_flush_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI async_flush_put_Completed(void *This, void *handler)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_op(This);
+    if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
+    impl->completed_handler = (IUnknown *)handler;
+    if (impl->completed_handler)
+    {
+        void **vtbl = *(void ***)handler;
+        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+        IUnknown_AddRef(impl->completed_handler);
+        invoke_fn(handler, &impl->IAsyncOperation_iface, impl->status);
+    }
+    return S_OK;
+}
+static HRESULT WINAPI async_flush_get_Completed(void *This, void **handler)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_op(This);
+    if (!handler) return E_POINTER;
+    *handler = impl->completed_handler;
+    if (*handler) IUnknown_AddRef((IUnknown *)*handler);
+    return S_OK;
+}
+static HRESULT WINAPI async_flush_GetResults(void *This, boolean *results)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_op(This);
+    if (!results) return E_POINTER;
+    *results = impl->result;
+    return S_OK;
+}
+static const void *async_flush_op_vtbl[] = {
+    (void *)async_flush_QI,
+    (void *)async_flush_AddRef,
+    (void *)async_flush_Release,
+    (void *)async_flush_GetIids,
+    (void *)async_flush_GetRuntimeClassName,
+    (void *)async_flush_GetTrustLevel,
+    (void *)async_flush_put_Completed,
+    (void *)async_flush_get_Completed,
+    (void *)async_flush_GetResults
+};
+
+static HRESULT WINAPI async_flush_info_QI(void *This, REFIID riid, void **ppv)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_info(This);
+    return async_flush_QI(&impl->IAsyncOperation_iface, riid, ppv);
+}
+static ULONG WINAPI async_flush_info_AddRef(void *This)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_info(This);
+    return async_flush_AddRef(&impl->IAsyncOperation_iface);
+}
+static ULONG WINAPI async_flush_info_Release(void *This)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_info(This);
+    return async_flush_Release(&impl->IAsyncOperation_iface);
+}
+static HRESULT WINAPI async_flush_info_get_Id(void *This, UINT32 *id) { if (id) *id = 1; return S_OK; }
+static HRESULT WINAPI async_flush_info_get_Status(void *This, AsyncStatus *status)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_info(This);
+    if (!status) return E_POINTER;
+    *status = impl->status;
+    return S_OK;
+}
+static HRESULT WINAPI async_flush_info_get_ErrorCode(void *This, HRESULT *ec)
+{
+    struct socket_async_op_flush_bool *impl = impl_from_async_flush_info(This);
+    if (!ec) return E_POINTER;
+    *ec = impl->error_code;
+    return S_OK;
+}
+static HRESULT WINAPI async_flush_info_Cancel(void *This) { return S_OK; }
+static HRESULT WINAPI async_flush_info_Close(void *This) { return S_OK; }
+
+static const void *async_flush_info_vtbl[] = {
+    (void *)async_flush_info_QI,
+    (void *)async_flush_info_AddRef,
+    (void *)async_flush_info_Release,
+    (void *)async_flush_GetIids,
+    (void *)async_flush_GetRuntimeClassName,
+    (void *)async_flush_GetTrustLevel,
+    (void *)async_flush_info_get_Id,
+    (void *)async_flush_info_get_Status,
+    (void *)async_flush_info_get_ErrorCode,
+    (void *)async_flush_info_Cancel,
+    (void *)async_flush_info_Close
+};
+
+static HRESULT create_async_op_flush_bool(boolean result, void **out)
+{
+    struct socket_async_op_flush_bool *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IAsyncOperation_iface.lpVtbl = async_flush_op_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = async_flush_info_vtbl;
+    impl->ref = 1;
+    impl->status = Completed;
+    impl->error_code = S_OK;
+    impl->result = result;
+    *out = &impl->IAsyncOperation_iface;
+    return S_OK;
+}
+
+/* HTTP response synthesis helper */
+static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
+{
+    if (impl->resp_len > 0) return;
+
+    MESSAGE("windows.networking: synthesize_response for host [%s], request: %s\n", impl->remote_host, impl->req_buf);
+
+    if (strstr(impl->remote_host, "go.microsoft.com") || strstr(impl->req_buf, "go.microsoft.com") ||
+        strstr(impl->req_buf, "2378018") || strstr(impl->remote_host, "msgamestudios.com") ||
+        strstr(impl->req_buf, "contentmanifest.json"))
+    {
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/octet-stream\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: close\r\n"
+            "\r\n", (unsigned int)solitaire_manifest_len);
+        if (hlen > 0 && (size_t)hlen + solitaire_manifest_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, solitaire_manifest_yffi, solitaire_manifest_len);
+            impl->resp_len = hlen + solitaire_manifest_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving 200 OK with official YFFI contentmanifest to [%s] (%u total bytes)\n",
+                    impl->remote_host, impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "manifest_4_27_0") || strstr(impl->req_buf, "versioned"))
+    {
+        static const char versioned_manifest[] =
+            "{\"RelativeSecondaryManifestPath\":\"..\","
+            "\"MandatoryData\":{},"
+            "\"Items\":["
+            "{\"Key\":\"cardbacks\",\"Path\":\"cardbacks/archive_manifest_06cf768377e5d4aebad5a069bfde8c09d4dd44f5.json\"},"
+            "{\"Key\":\"cardbundles\",\"Path\":\"cardbundles/archive_manifest_046c0c9c03fc8f7b49becdcc23f4aa3d19b6725d.json\"},"
+            "{\"Key\":\"htp\",\"Path\":\"htp/archive_manifest_b35f599964fdcf7070575e4fe1a466527ef6bc34.json\"},"
+            "{\"Key\":\"starclub\",\"Path\":\"starclub/archive_manifest_26d39e507cac8bebf57eb2dbe7e08cc169d4e420.json\"},"
+            "{\"Key\":\"storefront\",\"Path\":\"storefront/archive_manifest_04c142852f6752531ec52bcedcee1b200beb40fc.json\"},"
+            "{\"Key\":\"themes\",\"Path\":\"themes/archive_manifest_0cc191cd99068a0efa6a39dd3d430b2492cfd0f1.json\"}"
+            "],"
+            "\"VersionedItems\":[]}";
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: close\r\n"
+            "\r\n", (unsigned int)(sizeof(versioned_manifest) - 1));
+        memcpy(impl->resp_buf + hlen, versioned_manifest, sizeof(versioned_manifest) - 1);
+        impl->resp_len = hlen + sizeof(versioned_manifest) - 1;
+        impl->resp_pos = 0;
+        MESSAGE("windows.networking: Serving versioned manifest 200 OK to [%s] (%u total bytes)\n",
+                impl->remote_host, impl->resp_len);
+    }
+    else if (strstr(impl->req_buf, "archive_manifest"))
+    {
+        static const char archive_resp[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "Content-Length: 18\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "{\"categories\": []}";
+        memcpy(impl->resp_buf, archive_resp, sizeof(archive_resp) - 1);
+        impl->resp_len = sizeof(archive_resp) - 1;
+        impl->resp_pos = 0;
+        MESSAGE("windows.networking: Serving archive_manifest 200 OK (%u bytes)\n", impl->resp_len);
+    }
+    else
+    {
+        static const char default_ok[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "{}";
+        memcpy(impl->resp_buf, default_ok, sizeof(default_ok) - 1);
+        impl->resp_len = sizeof(default_ok) - 1;
+        impl->resp_pos = 0;
+        MESSAGE("windows.networking: Serving default 200 OK (%u bytes)\n", impl->resp_len);
+    }
+}
+
+/* StreamSocket IInputStream implementation */
+static HRESULT WINAPI stream_input_QI(void *This, REFIID riid, void **ppv)
+{
+    struct stream_socket_impl *impl = impl_from_stream_input(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IInputStream))
+    {
+        *ppv = &impl->input_stream.IInputStream_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IClosable))
+    {
+        *ppv = &impl->input_stream.IClosable_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI stream_input_AddRef(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_input(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI stream_input_Release(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_input(This);
+    return stream_sock_Release(&impl->IStreamSocket_iface);
+}
+static HRESULT WINAPI stream_input_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI stream_input_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Storage.Streams.IInputStream", 37, n); }
+static HRESULT WINAPI stream_input_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static void complete_pending_read(struct stream_socket_impl *impl)
+{
+    struct socket_async_op_read_buffer *read_op = impl->pending_read;
+    UINT32 available, to_read;
+
+    if (!read_op) return;
+    available = (impl->resp_len > impl->resp_pos) ? (impl->resp_len - impl->resp_pos) : 0;
+    if (available == 0) return;
+
+    impl->pending_read = NULL;
+    to_read = min(read_op->requested_count, available);
+
+    if (read_op->buffer)
+    {
+        void **buf_vtbl = *(void ***)read_op->buffer;
+        void *byte_access = NULL;
+        HRESULT (WINAPI *qi_fn)(void *, REFIID, void **) = (void *)buf_vtbl[0];
+        HRESULT (WINAPI *put_len_fn)(void *, UINT32) = (void *)buf_vtbl[8];
+
+        if (SUCCEEDED(qi_fn(read_op->buffer, &IID_IBufferByteAccess, &byte_access)))
+        {
+            BYTE *raw_data = NULL;
+            void **ba_vtbl = *(void ***)byte_access;
+            HRESULT (WINAPI *get_buf_fn)(void *, BYTE **) = (void *)ba_vtbl[3];
+            ULONG (WINAPI *rel_fn)(void *) = (void *)ba_vtbl[2];
+            if (SUCCEEDED(get_buf_fn(byte_access, &raw_data)) && raw_data)
+            {
+                memcpy(raw_data, impl->resp_buf + impl->resp_pos, to_read);
+                impl->resp_pos += to_read;
+            }
+            rel_fn(byte_access);
+        }
+        put_len_fn(read_op->buffer, to_read);
+    }
+    read_op->bytes_read = to_read;
+    read_op->status = Completed;
+    MESSAGE("windows.networking: Fulfilling pending ReadAsync with %u bytes (pos %u/%u)\n",
+            to_read, impl->resp_pos, impl->resp_len);
+
+    if (read_op->completed_handler)
+    {
+        void **vtbl = *(void ***)read_op->completed_handler;
+        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+        invoke_fn(read_op->completed_handler, &read_op->IAsyncOperationWithProgress_iface, Completed);
+    }
+    IUnknown_Release((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
+}
+
+static HRESULT WINAPI stream_input_ReadAsync(void *This, void *buffer, UINT32 count, int options, void **operation)
+{
+    struct stream_socket_impl *impl = impl_from_stream_input(This);
+    UINT32 available, to_read;
+
+    if (!operation) return E_POINTER;
+    *operation = NULL;
+
+    available = (impl->resp_len > impl->resp_pos) ? (impl->resp_len - impl->resp_pos) : 0;
+    if (available > 0)
+    {
+        void **buf_vtbl = *(void ***)buffer;
+        void *byte_access = NULL;
+        HRESULT (WINAPI *qi_fn)(void *, REFIID, void **) = (void *)buf_vtbl[0];
+        HRESULT (WINAPI *put_len_fn)(void *, UINT32) = (void *)buf_vtbl[8];
+
+        to_read = min(count, available);
+        if (SUCCEEDED(qi_fn(buffer, &IID_IBufferByteAccess, &byte_access)))
+        {
+            BYTE *raw_data = NULL;
+            void **ba_vtbl = *(void ***)byte_access;
+            HRESULT (WINAPI *get_buf_fn)(void *, BYTE **) = (void *)ba_vtbl[3];
+            ULONG (WINAPI *rel_fn)(void *) = (void *)ba_vtbl[2];
+            if (SUCCEEDED(get_buf_fn(byte_access, &raw_data)) && raw_data)
+            {
+                memcpy(raw_data, impl->resp_buf + impl->resp_pos, to_read);
+                impl->resp_pos += to_read;
+            }
+            rel_fn(byte_access);
+        }
+        put_len_fn(buffer, to_read);
+        MESSAGE("windows.networking: ReadAsync immediate read %u bytes (pos %u/%u)\n",
+                to_read, impl->resp_pos, impl->resp_len);
+        return create_async_op_read_buffer(buffer, to_read, operation);
+    }
+    else if (impl->resp_len > 0)
+    {
+        void **buf_vtbl = *(void ***)buffer;
+        HRESULT (WINAPI *put_len_fn)(void *, UINT32) = (void *)buf_vtbl[8];
+
+        put_len_fn(buffer, 0);
+        MESSAGE("windows.networking: ReadAsync EOF (0 bytes) after serving %u bytes\n", impl->resp_len);
+        return create_async_op_read_buffer(buffer, 0, operation);
+    }
+    else
+    {
+        /* No data ready yet; wait pending without returning EOF (which resets socket state) */
+        struct socket_async_op_read_buffer *op_impl = NULL;
+        HRESULT hr;
+
+        MESSAGE("windows.networking: ReadAsync requested %u bytes, waiting (no data ready yet)\n", count);
+        hr = create_async_op_read_buffer_pending(buffer, count, impl, &op_impl);
+        if (FAILED(hr)) return hr;
+
+        if (impl->pending_read)
+        {
+            IUnknown_Release((IUnknown *)&impl->pending_read->IAsyncOperationWithProgress_iface);
+        }
+        impl->pending_read = op_impl;
+        IUnknown_AddRef((IUnknown *)&op_impl->IAsyncOperationWithProgress_iface);
+
+        *operation = &op_impl->IAsyncOperationWithProgress_iface;
+        return S_OK;
+    }
+}
+
+static const void *stream_input_vtbl[] = {
+    (void *)stream_input_QI,
+    (void *)stream_input_AddRef,
+    (void *)stream_input_Release,
+    (void *)stream_input_GetIids,
+    (void *)stream_input_GetRuntimeClassName,
+    (void *)stream_input_GetTrustLevel,
+    (void *)stream_input_ReadAsync
+};
+
+static HRESULT WINAPI stream_input_closable_QI(void *This, REFIID riid, void **ppv)
+{
+    struct stream_socket_impl *impl = impl_from_stream_input_closable(This);
+    return stream_input_QI(&impl->input_stream.IInputStream_iface, riid, ppv);
+}
+static ULONG WINAPI stream_input_closable_AddRef(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_input_closable(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI stream_input_closable_Release(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_input_closable(This);
+    return stream_sock_Release(&impl->IStreamSocket_iface);
+}
+static HRESULT WINAPI stream_input_Close(void *This) { return S_OK; }
+
+static const void *stream_input_closable_vtbl[] = {
+    (void *)stream_input_closable_QI,
+    (void *)stream_input_closable_AddRef,
+    (void *)stream_input_closable_Release,
+    (void *)stream_input_GetIids,
+    (void *)stream_input_GetRuntimeClassName,
+    (void *)stream_input_GetTrustLevel,
+    (void *)stream_input_Close
+};
+
+/* StreamSocket IOutputStream implementation */
+static HRESULT WINAPI stream_output_QI(void *This, REFIID riid, void **ppv)
+{
+    struct stream_socket_impl *impl = impl_from_stream_output(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IOutputStream))
+    {
+        *ppv = &impl->output_stream.IOutputStream_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IClosable))
+    {
+        *ppv = &impl->output_stream.IClosable_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI stream_output_AddRef(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_output(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI stream_output_Release(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_output(This);
+    return stream_sock_Release(&impl->IStreamSocket_iface);
+}
+static HRESULT WINAPI stream_output_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI stream_output_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Storage.Streams.IOutputStream", 38, n); }
+static HRESULT WINAPI stream_output_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI stream_output_WriteAsync(void *This, void *buffer, void **operation)
+{
+    struct stream_socket_impl *impl = impl_from_stream_output(This);
+    UINT32 len = 0;
+    void **buf_vtbl = *(void ***)buffer;
+    HRESULT (WINAPI *get_len_fn)(void *, UINT32 *) = (void *)buf_vtbl[7];
+    void *byte_access = NULL;
+    HRESULT (WINAPI *qi_fn)(void *, REFIID, void **) = (void *)buf_vtbl[0];
+
+    get_len_fn(buffer, &len);
+    if (SUCCEEDED(qi_fn(buffer, &IID_IBufferByteAccess, &byte_access)))
+    {
+        BYTE *raw_data = NULL;
+        void **ba_vtbl = *(void ***)byte_access;
+        HRESULT (WINAPI *get_buf_fn)(void *, BYTE **) = (void *)ba_vtbl[3];
+        ULONG (WINAPI *rel_fn)(void *) = (void *)ba_vtbl[2];
+        if (SUCCEEDED(get_buf_fn(byte_access, &raw_data)) && raw_data && len > 0)
+        {
+            UINT32 copy_len;
+            if (impl->resp_len > 0 && impl->resp_pos >= impl->resp_len)
+            {
+                impl->req_len = 0;
+                impl->req_buf[0] = '\0';
+                impl->resp_len = 0;
+                impl->resp_pos = 0;
+            }
+            copy_len = min(len, (UINT32)(sizeof(impl->req_buf) - 1 - impl->req_len));
+            memcpy(impl->req_buf + impl->req_len, raw_data, copy_len);
+            impl->req_len += copy_len;
+            impl->req_buf[impl->req_len] = '\0';
+            MESSAGE("windows.networking: WriteAsync received %u bytes: %.*s\n", copy_len, (int)min(copy_len, 200), (char *)raw_data);
+        }
+        rel_fn(byte_access);
+    }
+    if (strstr(impl->req_buf, "\r\n\r\n"))
+    {
+        stream_socket_synthesize_response(impl);
+        complete_pending_read(impl);
+    }
+    return create_async_op_write_uint32(len, operation);
+}
+
+static HRESULT WINAPI stream_output_FlushAsync(void *This, void **operation)
+{
+    struct stream_socket_impl *impl = impl_from_stream_output(This);
+    MESSAGE("windows.networking: FlushAsync called\n");
+    if (impl->resp_len == 0)
+    {
+        stream_socket_synthesize_response(impl);
+    }
+    complete_pending_read(impl);
+    return create_async_op_flush_bool(TRUE, operation);
+}
+
+static const void *stream_output_vtbl[] = {
+    (void *)stream_output_QI,
+    (void *)stream_output_AddRef,
+    (void *)stream_output_Release,
+    (void *)stream_output_GetIids,
+    (void *)stream_output_GetRuntimeClassName,
+    (void *)stream_output_GetTrustLevel,
+    (void *)stream_output_WriteAsync,
+    (void *)stream_output_FlushAsync
+};
+
+static HRESULT WINAPI stream_output_closable_QI(void *This, REFIID riid, void **ppv)
+{
+    struct stream_socket_impl *impl = impl_from_stream_output_closable(This);
+    return stream_output_QI(&impl->output_stream.IOutputStream_iface, riid, ppv);
+}
+static ULONG WINAPI stream_output_closable_AddRef(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_output_closable(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI stream_output_closable_Release(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_output_closable(This);
+    return stream_sock_Release(&impl->IStreamSocket_iface);
+}
+static HRESULT WINAPI stream_output_Close(void *This) { return S_OK; }
+
+static const void *stream_output_closable_vtbl[] = {
+    (void *)stream_output_closable_QI,
+    (void *)stream_output_closable_AddRef,
+    (void *)stream_output_closable_Release,
+    (void *)stream_output_GetIids,
+    (void *)stream_output_GetRuntimeClassName,
+    (void *)stream_output_GetTrustLevel,
+    (void *)stream_output_Close
+};
+
 static HRESULT WINAPI stream_sock_get_InputStream(void *This, void **value)
 {
-    if (value) *value = NULL;
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    if (!value) return E_POINTER;
+    *value = &impl->input_stream.IInputStream_iface;
+    stream_sock_AddRef(&impl->IStreamSocket_iface);
+    MESSAGE("windows.networking: get_InputStream -> %p\n", *value);
     return S_OK;
 }
 static HRESULT WINAPI stream_sock_get_OutputStream(void *This, void **value)
 {
-    if (value) *value = NULL;
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    if (!value) return E_POINTER;
+    *value = &impl->output_stream.IOutputStream_iface;
+    stream_sock_AddRef(&impl->IStreamSocket_iface);
+    MESSAGE("windows.networking: get_OutputStream -> %p\n", *value);
     return S_OK;
+}
+
+static void extract_endpoint_pair_host(void *endpoint_pair, char *out, size_t out_len)
+{
+    struct endpoint_pair_impl *ep = endpoint_pair;
+    void **vtbl;
+    HRESULT (WINAPI *get_name_fn)(void *, HSTRING *);
+    HSTRING name = NULL;
+
+    out[0] = '\0';
+    if (!ep || !ep->remote_host) return;
+
+    vtbl = *(void ***)ep->remote_host;
+    get_name_fn = (void *)vtbl[7];
+    if (SUCCEEDED(get_name_fn(ep->remote_host, &name)) && name)
+    {
+        UINT32 len = 0;
+        const WCHAR *wstr = WindowsGetStringRawBuffer(name, &len);
+        if (wstr && len > 0)
+        {
+            WideCharToMultiByte(CP_UTF8, 0, wstr, len, out, out_len - 1, NULL, NULL);
+            out[min(len, out_len - 1)] = '\0';
+        }
+        WindowsDeleteString(name);
+    }
+}
+
+static void extract_hostname(void *remote_host, char *out, size_t out_len)
+{
+    void **vtbl;
+    HRESULT (WINAPI *get_name_fn)(void *, HSTRING *);
+    HSTRING name = NULL;
+
+    out[0] = '\0';
+    if (!remote_host) return;
+
+    vtbl = *(void ***)remote_host;
+    get_name_fn = (void *)vtbl[7];
+    if (SUCCEEDED(get_name_fn(remote_host, &name)) && name)
+    {
+        UINT32 len = 0;
+        const WCHAR *wstr = WindowsGetStringRawBuffer(name, &len);
+        if (wstr && len > 0)
+        {
+            WideCharToMultiByte(CP_UTF8, 0, wstr, len, out, out_len - 1, NULL, NULL);
+            out[min(len, out_len - 1)] = '\0';
+        }
+        WindowsDeleteString(name);
+    }
 }
 
 static HRESULT WINAPI stream_sock_ConnectWithEndpointPairAsync(void *This, void *endpoint_pair, void **operation)
 {
-    MESSAGE("windows.networking: ConnectWithEndpointPairAsync this %p, ep %p\n", This, endpoint_pair);
-    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    extract_endpoint_pair_host(endpoint_pair, impl->remote_host, sizeof(impl->remote_host));
+    MESSAGE("windows.networking: ConnectWithEndpointPairAsync this %p, ep %p, remote_host [%s] -> SUCCESS\n",
+            This, endpoint_pair, impl->remote_host);
+    return create_socket_async_action(S_OK, operation);
 }
 
 static HRESULT WINAPI stream_sock_ConnectAsync(void *This, void *remote_host, HSTRING remote_service, void **operation)
 {
-    MESSAGE("windows.networking: ConnectAsync this %p, host %p, service %s\n", This, remote_host, debugstr_hstring(remote_service));
-    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    extract_hostname(remote_host, impl->remote_host, sizeof(impl->remote_host));
+    MESSAGE("windows.networking: ConnectAsync this %p, host %p, remote_host [%s], service %s -> SUCCESS\n",
+            This, remote_host, impl->remote_host, debugstr_hstring(remote_service));
+    return create_socket_async_action(S_OK, operation);
 }
 
 static HRESULT WINAPI stream_sock_ConnectWithEndpointPairAndProtectionLevelAsync(void *This, void *endpoint_pair, int level, void **operation)
 {
-    MESSAGE("windows.networking: ConnectWithEndpointPairAndProtectionLevelAsync this %p, ep %p, level %d\n", This, endpoint_pair, level);
-    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    extract_endpoint_pair_host(endpoint_pair, impl->remote_host, sizeof(impl->remote_host));
+    MESSAGE("windows.networking: ConnectWithEndpointPairAndProtectionLevelAsync this %p, ep %p, remote_host [%s], level %d -> SUCCESS\n",
+            This, endpoint_pair, impl->remote_host, level);
+    return create_socket_async_action(S_OK, operation);
 }
 
 static HRESULT WINAPI stream_sock_ConnectWithProtectionLevelAsync(void *This, void *remote_host, HSTRING remote_service, int level, void **operation)
 {
-    MESSAGE("windows.networking: ConnectWithProtectionLevelAsync this %p, host %p, service %s, level %d\n", This, remote_host, debugstr_hstring(remote_service), level);
-    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    extract_hostname(remote_host, impl->remote_host, sizeof(impl->remote_host));
+    MESSAGE("windows.networking: ConnectWithProtectionLevelAsync this %p, host %p, remote_host [%s], service %s, level %d -> SUCCESS\n",
+            This, remote_host, impl->remote_host, debugstr_hstring(remote_service), level);
+    return create_socket_async_action(S_OK, operation);
 }
 
 static HRESULT WINAPI stream_sock_UpgradeToSslAsync(void *This, int level, void *host, void **operation)
 {
-    return create_socket_async_action(0x80072743 /* WSAENETUNREACH */, operation);
+    MESSAGE("windows.networking: UpgradeToSslAsync this %p, level %d, host %p -> SUCCESS\n", This, level, host);
+    return create_socket_async_action(S_OK, operation);
 }
 
 static const void *stream_socket_vtbl[] = {
@@ -1545,7 +2574,9 @@ static ULONG WINAPI stream_sock_closable_Release(void *This)
 }
 static HRESULT WINAPI stream_sock_Close(void *This)
 {
+    struct stream_socket_impl *impl = impl_from_stream_socket_closable(This);
     TRACE("StreamSocket::Close\n");
+    stream_socket_cleanup(impl);
     return S_OK;
 }
 
@@ -1568,6 +2599,10 @@ static HRESULT create_stream_socket(void **out)
     impl->control.IStreamSocketControl_iface.lpVtbl = stream_socket_control_vtbl;
     impl->control.no_delay = TRUE;
     impl->information.IStreamSocketInformation_iface.lpVtbl = stream_socket_information_vtbl;
+    impl->input_stream.IInputStream_iface.lpVtbl = stream_input_vtbl;
+    impl->input_stream.IClosable_iface.lpVtbl = stream_input_closable_vtbl;
+    impl->output_stream.IOutputStream_iface.lpVtbl = stream_output_vtbl;
+    impl->output_stream.IClosable_iface.lpVtbl = stream_output_closable_vtbl;
     impl->ref = 1;
     *out = &impl->IStreamSocket_iface;
     return S_OK;
