@@ -1042,9 +1042,9 @@ static struct endpoint_pair_factory_impl endpoint_pair_factory = {
 /* -------------------------------------------------------------------------
  * Windows.Networking.Sockets.StreamSocket Implementation
  * ------------------------------------------------------------------------- */
-static const GUID IID_IStreamSocket = {0x80a9babb, 0xc714, 0x4ed6, {0x82, 0xe3, 0x6e, 0x07, 0x45, 0x41, 0x50, 0x38}};
-static const GUID IID_IStreamSocketControl = {0xfe25ada8, 0x920f, 0x43ac, {0x89, 0x70, 0x95, 0x80, 0x3d, 0x60, 0x15, 0xda}};
-static const GUID IID_IStreamSocketInformation = {0x3b1e8c7c, 0x6161, 0x4bbb, {0xb0, 0x9e, 0xdc, 0x31, 0x86, 0x1f, 0x77, 0x3e}};
+static const GUID IID_IStreamSocket = {0x69a22cf3, 0xfc7b, 0x4857, {0xaf, 0x38, 0xf6, 0xe7, 0xde, 0x6a, 0x5b, 0x49}};
+static const GUID IID_IStreamSocketControl = {0xfe25adf1, 0x92ab, 0x4af3, {0x99, 0x92, 0x0f, 0x4c, 0x85, 0xe3, 0x6c, 0xc4}};
+static const GUID IID_IStreamSocketInformation = {0x3b80ae30, 0x5e68, 0x4205, {0x88, 0xf0, 0xdc, 0x85, 0xd2, 0xe2, 0x5d, 0xed}};
 static const GUID IID_IAsyncAction = {0x5a648006, 0x843a, 0x4da9, {0x86, 0x5b, 0x9d, 0x26, 0xe5, 0xdf, 0xad, 0x7b}};
 static const GUID IID_IClosable = {0x30d5a829, 0x7fa4, 0x4026, {0x83, 0xbb, 0xd7, 0x5b, 0xae, 0x4e, 0xa9, 0x9e}};
 
@@ -1208,15 +1208,34 @@ static HRESULT create_socket_async_action(HRESULT error_code, void **out)
     return S_OK;
 }
 
+struct stream_socket_control_impl
+{
+    struct { const void *lpVtbl; } IStreamSocketControl_iface;
+    boolean no_delay;
+    boolean keep_alive;
+    UINT32 outbound_buffer_size;
+    int qos;
+    BYTE hop_limit;
+};
+
+struct stream_socket_information_impl
+{
+    struct { const void *lpVtbl; } IStreamSocketInformation_iface;
+};
+
 struct stream_socket_impl
 {
     struct { const void *lpVtbl; } IStreamSocket_iface;
     struct { const void *lpVtbl; } IClosable_iface;
     LONG ref;
+    struct stream_socket_control_impl control;
+    struct stream_socket_information_impl information;
 };
 
 #define impl_from_stream_socket(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, IStreamSocket_iface)))
 #define impl_from_stream_socket_closable(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, IClosable_iface)))
+#define impl_from_stream_sock_control(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, control.IStreamSocketControl_iface)))
+#define impl_from_stream_sock_information(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, information.IStreamSocketInformation_iface)))
 
 static HRESULT WINAPI stream_sock_QI(void *This, REFIID riid, void **ppv)
 {
@@ -1226,9 +1245,7 @@ static HRESULT WINAPI stream_sock_QI(void *This, REFIID riid, void **ppv)
     if (IsEqualGUID(riid, &IID_IUnknown) ||
         IsEqualGUID(riid, &IID_IInspectable) ||
         IsEqualGUID(riid, &IID_IAgileObject) ||
-        IsEqualGUID(riid, &IID_IStreamSocket) ||
-        IsEqualGUID(riid, &IID_IStreamSocketControl) ||
-        IsEqualGUID(riid, &IID_IStreamSocketInformation))
+        IsEqualGUID(riid, &IID_IStreamSocket))
     {
         *ppv = &impl->IStreamSocket_iface;
         InterlockedIncrement(&impl->ref);
@@ -1261,14 +1278,193 @@ static HRESULT WINAPI stream_sock_GetIids(void *This, ULONG *c, IID **i) { if (c
 static HRESULT WINAPI stream_sock_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.Sockets.StreamSocket", 39, n); }
 static HRESULT WINAPI stream_sock_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
 
+/* IStreamSocketControl */
+static HRESULT WINAPI sock_ctrl_QI(void *This, REFIID riid, void **ppv)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IStreamSocketControl))
+    {
+        *ppv = &impl->control.IStreamSocketControl_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI sock_ctrl_AddRef(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI sock_ctrl_Release(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    return stream_sock_Release(&impl->IStreamSocket_iface);
+}
+static HRESULT WINAPI sock_ctrl_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI sock_ctrl_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.Sockets.StreamSocketControl", 46, n); }
+static HRESULT WINAPI sock_ctrl_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI sock_ctrl_get_NoDelay(void *This, boolean *value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    if (!value) return E_POINTER;
+    *value = impl->control.no_delay;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_put_NoDelay(void *This, boolean value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    impl->control.no_delay = value;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_get_KeepAlive(void *This, boolean *value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    if (!value) return E_POINTER;
+    *value = impl->control.keep_alive;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_put_KeepAlive(void *This, boolean value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    impl->control.keep_alive = value;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_get_OutboundBufferSizeInBytes(void *This, UINT32 *value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    if (!value) return E_POINTER;
+    *value = impl->control.outbound_buffer_size;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_put_OutboundBufferSizeInBytes(void *This, UINT32 value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    impl->control.outbound_buffer_size = value;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_get_QualityOfService(void *This, int *value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    if (!value) return E_POINTER;
+    *value = impl->control.qos;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_put_QualityOfService(void *This, int value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    impl->control.qos = value;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_get_OutboundUnicastHopLimit(void *This, BYTE *value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    if (!value) return E_POINTER;
+    *value = impl->control.hop_limit;
+    return S_OK;
+}
+static HRESULT WINAPI sock_ctrl_put_OutboundUnicastHopLimit(void *This, BYTE value)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_control(This);
+    impl->control.hop_limit = value;
+    return S_OK;
+}
+
+static const void *stream_socket_control_vtbl[] = {
+    (void *)sock_ctrl_QI,
+    (void *)sock_ctrl_AddRef,
+    (void *)sock_ctrl_Release,
+    (void *)sock_ctrl_GetIids,
+    (void *)sock_ctrl_GetRuntimeClassName,
+    (void *)sock_ctrl_GetTrustLevel,
+    (void *)sock_ctrl_get_NoDelay,
+    (void *)sock_ctrl_put_NoDelay,
+    (void *)sock_ctrl_get_KeepAlive,
+    (void *)sock_ctrl_put_KeepAlive,
+    (void *)sock_ctrl_get_OutboundBufferSizeInBytes,
+    (void *)sock_ctrl_put_OutboundBufferSizeInBytes,
+    (void *)sock_ctrl_get_QualityOfService,
+    (void *)sock_ctrl_put_QualityOfService,
+    (void *)sock_ctrl_get_OutboundUnicastHopLimit,
+    (void *)sock_ctrl_put_OutboundUnicastHopLimit
+};
+
+/* IStreamSocketInformation */
+static HRESULT WINAPI sock_info_stat_QI(void *This, REFIID riid, void **ppv)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_information(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IStreamSocketInformation))
+    {
+        *ppv = &impl->information.IStreamSocketInformation_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI sock_info_stat_AddRef(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_information(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI sock_info_stat_Release(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_sock_information(This);
+    return stream_sock_Release(&impl->IStreamSocket_iface);
+}
+static HRESULT WINAPI sock_info_stat_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI sock_info_stat_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.Sockets.StreamSocketInformation", 50, n); }
+static HRESULT WINAPI sock_info_stat_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI sock_info_stat_get_LocalAddress(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI sock_info_stat_get_LocalPort(void *This, HSTRING *value) { return WindowsCreateString(L"", 0, value); }
+static HRESULT WINAPI sock_info_stat_get_RemoteAddress(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI sock_info_stat_get_RemotePort(void *This, HSTRING *value) { return WindowsCreateString(L"", 0, value); }
+static HRESULT WINAPI sock_info_stat_get_RoundTripTimeStatistics(void *This, void *value) { return S_OK; }
+static HRESULT WINAPI sock_info_stat_get_BandwidthStatistics(void *This, void *value) { return S_OK; }
+static HRESULT WINAPI sock_info_stat_get_ProtectionLevel(void *This, int *value) { if (value) *value = 0; return S_OK; }
+static HRESULT WINAPI sock_info_stat_get_ServerCertificate(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+
+static const void *stream_socket_information_vtbl[] = {
+    (void *)sock_info_stat_QI,
+    (void *)sock_info_stat_AddRef,
+    (void *)sock_info_stat_Release,
+    (void *)sock_info_stat_GetIids,
+    (void *)sock_info_stat_GetRuntimeClassName,
+    (void *)sock_info_stat_GetTrustLevel,
+    (void *)sock_info_stat_get_LocalAddress,
+    (void *)sock_info_stat_get_LocalPort,
+    (void *)sock_info_stat_get_RemoteAddress,
+    (void *)sock_info_stat_get_RemotePort,
+    (void *)sock_info_stat_get_RoundTripTimeStatistics,
+    (void *)sock_info_stat_get_BandwidthStatistics,
+    (void *)sock_info_stat_get_ProtectionLevel,
+    (void *)sock_info_stat_get_ServerCertificate
+};
+
 static HRESULT WINAPI stream_sock_get_Control(void *This, void **value)
 {
-    if (value) *value = NULL;
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    if (!value) return E_POINTER;
+    *value = &impl->control.IStreamSocketControl_iface;
+    sock_ctrl_AddRef(*value);
     return S_OK;
 }
 static HRESULT WINAPI stream_sock_get_Information(void *This, void **value)
 {
-    if (value) *value = NULL;
+    struct stream_socket_impl *impl = impl_from_stream_socket(This);
+    if (!value) return E_POINTER;
+    *value = &impl->information.IStreamSocketInformation_iface;
+    sock_info_stat_AddRef(*value);
     return S_OK;
 }
 static HRESULT WINAPI stream_sock_get_InputStream(void *This, void **value)
@@ -1327,6 +1523,21 @@ static const void *stream_socket_vtbl[] = {
     (void *)stream_sock_UpgradeToSslAsync
 };
 
+static HRESULT WINAPI stream_sock_closable_QI(void *This, REFIID riid, void **ppv)
+{
+    struct stream_socket_impl *impl = impl_from_stream_socket_closable(This);
+    return stream_sock_QI(&impl->IStreamSocket_iface, riid, ppv);
+}
+static ULONG WINAPI stream_sock_closable_AddRef(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_socket_closable(This);
+    return InterlockedIncrement(&impl->ref);
+}
+static ULONG WINAPI stream_sock_closable_Release(void *This)
+{
+    struct stream_socket_impl *impl = impl_from_stream_socket_closable(This);
+    return stream_sock_Release(&impl->IStreamSocket_iface);
+}
 static HRESULT WINAPI stream_sock_Close(void *This)
 {
     TRACE("StreamSocket::Close\n");
@@ -1334,9 +1545,9 @@ static HRESULT WINAPI stream_sock_Close(void *This)
 }
 
 static const void *stream_socket_closable_vtbl[] = {
-    (void *)stream_sock_QI,
-    (void *)stream_sock_AddRef,
-    (void *)stream_sock_Release,
+    (void *)stream_sock_closable_QI,
+    (void *)stream_sock_closable_AddRef,
+    (void *)stream_sock_closable_Release,
     (void *)stream_sock_GetIids,
     (void *)stream_sock_GetRuntimeClassName,
     (void *)stream_sock_GetTrustLevel,
@@ -1349,6 +1560,9 @@ static HRESULT create_stream_socket(void **out)
     if (!impl) return E_OUTOFMEMORY;
     impl->IStreamSocket_iface.lpVtbl = stream_socket_vtbl;
     impl->IClosable_iface.lpVtbl = stream_socket_closable_vtbl;
+    impl->control.IStreamSocketControl_iface.lpVtbl = stream_socket_control_vtbl;
+    impl->control.no_delay = TRUE;
+    impl->information.IStreamSocketInformation_iface.lpVtbl = stream_socket_information_vtbl;
     impl->ref = 1;
     *out = &impl->IStreamSocket_iface;
     return S_OK;
