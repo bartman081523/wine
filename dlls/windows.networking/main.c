@@ -1589,6 +1589,27 @@ static HRESULT WINAPI async_read_GetRuntimeClassName(void *This, HSTRING *n) { r
 static HRESULT WINAPI async_read_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
 static HRESULT WINAPI async_read_put_Progress(void *This, void *handler) { return S_OK; }
 static HRESULT WINAPI async_read_get_Progress(void *This, void **handler) { if (handler) *handler = NULL; return S_OK; }
+static DWORD WINAPI async_read_worker(void *param)
+{
+    struct socket_async_op_read_buffer *impl = (struct socket_async_op_read_buffer *)param;
+    IUnknown *handler;
+    AsyncStatus status;
+
+    if ((handler = impl->completed_handler))
+    {
+        void **vtbl = *(void ***)handler;
+        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+        IUnknown_AddRef(handler);
+        status = impl->status;
+        MESSAGE("windows.networking: async_read_worker invoking handler %p, status %d, bytes %u\n",
+                handler, status, impl->bytes_read);
+        invoke_fn(handler, &impl->IAsyncOperationWithProgress_iface, status);
+        IUnknown_Release(handler);
+    }
+    async_read_Release(&impl->IAsyncOperationWithProgress_iface);
+    return 0;
+}
+
 static HRESULT WINAPI async_read_put_Completed(void *This, void *handler)
 {
     struct socket_async_op_read_buffer *impl = impl_from_async_read_op(This);
@@ -1601,9 +1622,15 @@ static HRESULT WINAPI async_read_put_Completed(void *This, void *handler)
         IUnknown_AddRef(impl->completed_handler);
         if (impl->status != Started)
         {
-            void **vtbl = *(void ***)handler;
-            HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
-            invoke_fn(handler, &impl->IAsyncOperationWithProgress_iface, impl->status);
+            async_read_AddRef(&impl->IAsyncOperationWithProgress_iface);
+            if (!QueueUserWorkItem(async_read_worker, impl, WT_EXECUTEDEFAULT))
+            {
+                void **vtbl = *(void ***)handler;
+                HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+                WARN("QueueUserWorkItem failed, falling back to synchronous completion\n");
+                invoke_fn(handler, &impl->IAsyncOperationWithProgress_iface, impl->status);
+                async_read_Release(&impl->IAsyncOperationWithProgress_iface);
+            }
         }
     }
     return S_OK;
@@ -1783,6 +1810,27 @@ static HRESULT WINAPI async_write_GetRuntimeClassName(void *This, HSTRING *n) { 
 static HRESULT WINAPI async_write_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
 static HRESULT WINAPI async_write_put_Progress(void *This, void *handler) { return S_OK; }
 static HRESULT WINAPI async_write_get_Progress(void *This, void **handler) { if (handler) *handler = NULL; return S_OK; }
+static DWORD WINAPI async_write_worker(void *param)
+{
+    struct socket_async_op_write_uint32 *impl = (struct socket_async_op_write_uint32 *)param;
+    IUnknown *handler;
+    AsyncStatus status;
+
+    if ((handler = impl->completed_handler))
+    {
+        void **vtbl = *(void ***)handler;
+        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+        IUnknown_AddRef(handler);
+        status = impl->status;
+        MESSAGE("windows.networking: async_write_worker invoking handler %p, status %d, bytes %u\n",
+                handler, status, impl->bytes_written);
+        invoke_fn(handler, &impl->IAsyncOperationWithProgress_iface, status);
+        IUnknown_Release(handler);
+    }
+    async_write_Release(&impl->IAsyncOperationWithProgress_iface);
+    return 0;
+}
+
 static HRESULT WINAPI async_write_put_Completed(void *This, void *handler)
 {
     struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
@@ -1792,10 +1840,16 @@ static HRESULT WINAPI async_write_put_Completed(void *This, void *handler)
     impl->completed_handler = (IUnknown *)handler;
     if (impl->completed_handler)
     {
-        void **vtbl = *(void ***)handler;
-        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
         IUnknown_AddRef(impl->completed_handler);
-        invoke_fn(handler, &impl->IAsyncOperationWithProgress_iface, impl->status);
+        async_write_AddRef(&impl->IAsyncOperationWithProgress_iface);
+        if (!QueueUserWorkItem(async_write_worker, impl, WT_EXECUTEDEFAULT))
+        {
+            void **vtbl = *(void ***)handler;
+            HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+            WARN("QueueUserWorkItem failed, falling back to synchronous completion\n");
+            invoke_fn(handler, &impl->IAsyncOperationWithProgress_iface, impl->status);
+            async_write_Release(&impl->IAsyncOperationWithProgress_iface);
+        }
     }
     return S_OK;
 }
@@ -1938,17 +1992,45 @@ static ULONG WINAPI async_flush_Release(void *This)
 static HRESULT WINAPI async_flush_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
 static HRESULT WINAPI async_flush_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Foundation.IAsyncOperation`1<Boolean>", 43, n); }
 static HRESULT WINAPI async_flush_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static DWORD WINAPI async_flush_worker(void *param)
+{
+    struct socket_async_op_flush_bool *impl = (struct socket_async_op_flush_bool *)param;
+    IUnknown *handler;
+    AsyncStatus status;
+
+    if ((handler = impl->completed_handler))
+    {
+        void **vtbl = *(void ***)handler;
+        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+        IUnknown_AddRef(handler);
+        status = impl->status;
+        MESSAGE("windows.networking: async_flush_worker invoking handler %p, status %d\n", handler, status);
+        invoke_fn(handler, &impl->IAsyncOperation_iface, status);
+        IUnknown_Release(handler);
+    }
+    async_flush_Release(&impl->IAsyncOperation_iface);
+    return 0;
+}
+
 static HRESULT WINAPI async_flush_put_Completed(void *This, void *handler)
 {
     struct socket_async_op_flush_bool *impl = impl_from_async_flush_op(This);
+    MESSAGE("windows.networking: async_flush_put_Completed impl %p, handler %p, status %d\n",
+            impl, handler, impl->status);
     if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
     impl->completed_handler = (IUnknown *)handler;
     if (impl->completed_handler)
     {
-        void **vtbl = *(void ***)handler;
-        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
         IUnknown_AddRef(impl->completed_handler);
-        invoke_fn(handler, &impl->IAsyncOperation_iface, impl->status);
+        async_flush_AddRef(&impl->IAsyncOperation_iface);
+        if (!QueueUserWorkItem(async_flush_worker, impl, WT_EXECUTEDEFAULT))
+        {
+            void **vtbl = *(void ***)handler;
+            HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+            WARN("QueueUserWorkItem failed, falling back to synchronous completion\n");
+            invoke_fn(handler, &impl->IAsyncOperation_iface, impl->status);
+            async_flush_Release(&impl->IAsyncOperation_iface);
+        }
     }
     return S_OK;
 }
@@ -2055,7 +2137,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Server: Kestrel\r\n"
             "Location: https://download-ssl.msgamestudios.com/content/mgs/ce/production/Solitaire/prod/contentmanifest/2026_09_17/contentmanifest.json\r\n"
             "Content-Length: 0\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n";
         memcpy(impl->resp_buf, redir_resp, sizeof(redir_resp) - 1);
         impl->resp_len = sizeof(redir_resp) - 1;
@@ -2074,7 +2156,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "ETag: \"776c5c7cd1736290b28f562771bc2d80:1789661554.828492\"\r\n"
             "Server: AkamaiNetStorage\r\n"
             "Content-Length: %u\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n", json_len);
         if (hlen > 0 && (size_t)hlen + json_len < sizeof(impl->resp_buf))
         {
@@ -2094,7 +2176,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"9f0243f0fba72ee7ca0388a67f50b280:1789661557.491549\"\r\n"
             "Content-Length: %u\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n", payload_len);
         if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
         {
@@ -2114,7 +2196,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"19a2d80099c878f61cc43c2f50768649:1749252656.65227\"\r\n"
             "Content-Length: %u\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n", payload_len);
         if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
         {
@@ -2133,7 +2215,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"6c83043900478c518dabed9d87b4ff2d:1687377437.647538\"\r\n"
             "Content-Length: %u\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n", payload_len);
         if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
         {
@@ -2152,7 +2234,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"0aede919904f01d214bdf894bda34368:1748643211.504534\"\r\n"
             "Content-Length: %u\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n", payload_len);
         if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
         {
@@ -2171,7 +2253,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"1fbb17d035feac529162888c60fd83dc:1649892693.161427\"\r\n"
             "Content-Length: %u\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n", payload_len);
         if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
         {
@@ -2190,7 +2272,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"dc79219e61c71bd525d8f8a241e65bc6:1749252618.355252\"\r\n"
             "Content-Length: %u\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n", payload_len);
         if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
         {
@@ -2209,7 +2291,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"43589ad88e6b2a44e3990a8179ce4fe5:1789661555.440097\"\r\n"
             "Content-Length: %u\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n", payload_len);
         if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
         {
@@ -2226,7 +2308,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"generic_archive\"\r\n"
             "Content-Length: 18\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n"
             "{\"categories\": []}";
         memcpy(impl->resp_buf, archive_resp, sizeof(archive_resp) - 1);
@@ -2241,7 +2323,7 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             "Content-Type: application/json; charset=utf-8\r\n"
             "ETag: \"default_etag\"\r\n"
             "Content-Length: 2\r\n"
-            "Connection: keep-alive\r\n"
+            "Connection: close\r\n"
             "\r\n"
             "{}";
         memcpy(impl->resp_buf, default_ok, sizeof(default_ok) - 1);
@@ -2292,6 +2374,8 @@ static void complete_pending_read(struct stream_socket_impl *impl)
 {
     struct socket_async_op_read_buffer *read_op = NULL;
     UINT32 available, to_read;
+    void **vtbl;
+    HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus);
 
     EnterCriticalSection(&impl->cs);
     read_op = impl->pending_read;
@@ -2303,6 +2387,33 @@ static void complete_pending_read(struct stream_socket_impl *impl)
     available = (impl->resp_len > impl->resp_pos) ? (impl->resp_len - impl->resp_pos) : 0;
     if (available == 0)
     {
+        if (impl->resp_len > 0)
+        {
+            impl->pending_read = NULL;
+            if (read_op->buffer)
+            {
+                void **buf_vtbl = *(void ***)read_op->buffer;
+                HRESULT (WINAPI *put_len_fn)(void *, UINT32) = (void *)buf_vtbl[8];
+                put_len_fn(read_op->buffer, 0);
+            }
+            read_op->bytes_read = 0;
+            read_op->status = Completed;
+            MESSAGE("windows.networking: Fulfilling pending ReadAsync with EOF (0 bytes, pos %u/%u)\n",
+                    impl->resp_pos, impl->resp_len);
+
+            IUnknown_AddRef((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
+            LeaveCriticalSection(&impl->cs);
+
+            if (read_op->completed_handler)
+            {
+                vtbl = *(void ***)read_op->completed_handler;
+                invoke_fn = (void *)vtbl[3];
+                invoke_fn(read_op->completed_handler, &read_op->IAsyncOperationWithProgress_iface, Completed);
+            }
+            IUnknown_Release((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
+            IUnknown_Release((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
+            return;
+        }
         LeaveCriticalSection(&impl->cs);
         return;
     }
@@ -2343,8 +2454,8 @@ static void complete_pending_read(struct stream_socket_impl *impl)
 
     if (read_op->completed_handler)
     {
-        void **vtbl = *(void ***)read_op->completed_handler;
-        HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
+        vtbl = *(void ***)read_op->completed_handler;
+        invoke_fn = (void *)vtbl[3];
         invoke_fn(read_op->completed_handler, &read_op->IAsyncOperationWithProgress_iface, Completed);
     }
     IUnknown_Release((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
@@ -2407,9 +2518,19 @@ static HRESULT WINAPI stream_input_ReadAsync(void *This, void *buffer, UINT32 co
         LeaveCriticalSection(&impl->cs);
         return create_async_op_read_buffer(buffer, to_read, operation);
     }
+    else if (impl->resp_len > 0 && impl->resp_pos >= impl->resp_len)
+    {
+        void **buf_vtbl = *(void ***)buffer;
+        HRESULT (WINAPI *put_len_fn)(void *, UINT32) = (void *)buf_vtbl[8];
+
+        put_len_fn(buffer, 0);
+        MESSAGE("windows.networking: ReadAsync EOF (all %u bytes already read), returning 0 bytes\n", impl->resp_len);
+        LeaveCriticalSection(&impl->cs);
+        return create_async_op_read_buffer(buffer, 0, operation);
+    }
     else
     {
-        /* No data ready yet (or all current response bytes consumed); wait pending without returning EOF */
+        /* No data ready yet; wait pending without returning EOF */
         struct socket_async_op_read_buffer *op_impl = NULL;
         HRESULT hr;
 
