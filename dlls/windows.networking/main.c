@@ -1044,6 +1044,7 @@ static struct endpoint_pair_factory_impl endpoint_pair_factory = {
  * ------------------------------------------------------------------------- */
 #include "manifest_data.h"
 #include "archive_manifests_data.h"
+#include "archive_manifests_data_ext.h"
 
 static const GUID IID_IStreamSocket = {0x69a22cf3, 0xfc7b, 0x4857, {0xaf, 0x38, 0xf6, 0xe7, 0xde, 0x6a, 0x5b, 0x49}};
 static const GUID IID_IStreamSocketControl = {0xfe25adf1, 0x92ab, 0x4af3, {0x99, 0x92, 0x0f, 0x4c, 0x85, 0xe3, 0x6c, 0xc4}};
@@ -2129,23 +2130,24 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
 
     MESSAGE("windows.networking: synthesize_response for host [%s], request: %s\n", impl->remote_host, impl->req_buf);
 
-    if (strstr(impl->req_buf, "2378018") || strstr(impl->req_buf, "fwlink") ||
-        strstr(impl->remote_host, "go.microsoft.com"))
+    if (strstr(impl->remote_host, "solitaireevents.microsoftcasualgames.com") ||
+             strstr(impl->remote_host, "microsoftcasualgames.com"))
     {
-        static const char redir_resp[] =
-            "HTTP/1.1 302 Moved Temporarily\r\n"
-            "Server: Kestrel\r\n"
-            "Location: https://download-ssl.msgamestudios.com/content/mgs/ce/production/Solitaire/prod/contentmanifest/2026_09_17/contentmanifest.json\r\n"
+        static const char events_ok[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
             "Content-Length: 0\r\n"
             "Connection: close\r\n"
             "\r\n";
-        memcpy(impl->resp_buf, redir_resp, sizeof(redir_resp) - 1);
-        impl->resp_len = sizeof(redir_resp) - 1;
+        memcpy(impl->resp_buf, events_ok, sizeof(events_ok) - 1);
+        impl->resp_len = sizeof(events_ok) - 1;
         impl->resp_pos = 0;
-        MESSAGE("windows.networking: Serving 302 redirect for fwlink to [%s] (%u bytes)\n",
-                impl->remote_host, impl->resp_len);
+        MESSAGE("windows.networking: Serving 200 OK (0 bytes) to telemetry host [%s]\n", impl->remote_host);
     }
     else if (strstr(impl->req_buf, "contentmanifest.json") ||
+             strstr(impl->req_buf, "fwlink") ||
+             strstr(impl->req_buf, "2378018") ||
+             strstr(impl->remote_host, "go.microsoft.com") ||
              (strstr(impl->remote_host, "msgamestudios.com") && strstr(impl->req_buf, "contentmanifest")))
     {
         const unsigned char *json_payload = solitaire_manifest_yffi + solitaire_manifest_json_offset;
@@ -2299,6 +2301,44 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
             impl->resp_len = hlen + payload_len;
             impl->resp_pos = 0;
             MESSAGE("windows.networking: Serving themes archive manifest (%u bytes)\n", impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "solvableseedpacks") || strstr(impl->req_buf, "1a82242d90effa4009e2cae3c1f8353cea358453"))
+    {
+        const unsigned char *payload = solitaire_solvableseedpacks_data;
+        unsigned int payload_len = solitaire_solvableseedpacks_len;
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"solvableseedpacks_etag\"\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: close\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving solvableseedpacks archive manifest (%u bytes)\n", impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "xpconfigs") || strstr(impl->req_buf, "ac6a624763470086fd8d397c325b6a2c0bcfbe47"))
+    {
+        const unsigned char *payload = solitaire_xpconfigs_data;
+        unsigned int payload_len = solitaire_xpconfigs_len;
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"xpconfigs_etag\"\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: close\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving xpconfigs archive manifest (%u bytes)\n", impl->resp_len);
         }
     }
     else if (strstr(impl->req_buf, "archive_manifest"))
@@ -2518,19 +2558,9 @@ static HRESULT WINAPI stream_input_ReadAsync(void *This, void *buffer, UINT32 co
         LeaveCriticalSection(&impl->cs);
         return create_async_op_read_buffer(buffer, to_read, operation);
     }
-    else if (impl->resp_len > 0 && impl->resp_pos >= impl->resp_len)
-    {
-        void **buf_vtbl = *(void ***)buffer;
-        HRESULT (WINAPI *put_len_fn)(void *, UINT32) = (void *)buf_vtbl[8];
-
-        put_len_fn(buffer, 0);
-        MESSAGE("windows.networking: ReadAsync EOF (all %u bytes already read), returning 0 bytes\n", impl->resp_len);
-        LeaveCriticalSection(&impl->cs);
-        return create_async_op_read_buffer(buffer, 0, operation);
-    }
     else
     {
-        /* No data ready yet; wait pending without returning EOF */
+        /* No data ready yet; wait pending without returning premature EOF */
         struct socket_async_op_read_buffer *op_impl = NULL;
         HRESULT hr;
 
