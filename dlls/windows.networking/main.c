@@ -1043,6 +1043,7 @@ static struct endpoint_pair_factory_impl endpoint_pair_factory = {
  * Windows.Networking.Sockets.StreamSocket Implementation
  * ------------------------------------------------------------------------- */
 #include "manifest_data.h"
+#include "archive_manifests_data.h"
 
 static const GUID IID_IStreamSocket = {0x69a22cf3, 0xfc7b, 0x4857, {0xaf, 0x38, 0xf6, 0xe7, 0xde, 0x6a, 0x5b, 0x49}};
 static const GUID IID_IStreamSocketControl = {0xfe25adf1, 0x92ab, 0x4af3, {0x99, 0x92, 0x0f, 0x4c, 0x85, 0xe3, 0x6c, 0xc4}};
@@ -1253,10 +1254,11 @@ struct stream_socket_impl
     char remote_host[256];
     char req_buf[8192];
     UINT32 req_len;
-    char resp_buf[32768];
+    char resp_buf[65536];
     UINT32 resp_len;
     UINT32 resp_pos;
     struct socket_async_op_read_buffer *pending_read;
+    CRITICAL_SECTION cs;
 };
 
 #define impl_from_stream_socket(ptr) ((struct stream_socket_impl *)((char *)(ptr) - offsetof(struct stream_socket_impl, IStreamSocket_iface)))
@@ -1304,6 +1306,7 @@ static ULONG WINAPI stream_sock_Release(void *This)
     if (!ref)
     {
         stream_socket_cleanup(impl);
+        DeleteCriticalSection(&impl->cs);
         free(impl);
     }
     return ref;
@@ -1569,11 +1572,14 @@ static ULONG WINAPI async_read_Release(void *This)
 
 static void stream_socket_cleanup(struct stream_socket_impl *impl)
 {
-    if (impl->pending_read)
+    struct socket_async_op_read_buffer *op = NULL;
+    EnterCriticalSection(&impl->cs);
+    op = impl->pending_read;
+    impl->pending_read = NULL;
+    if (op) op->sock_impl = NULL;
+    LeaveCriticalSection(&impl->cs);
+    if (op)
     {
-        struct socket_async_op_read_buffer *op = impl->pending_read;
-        impl->pending_read = NULL;
-        op->sock_impl = NULL;
         IUnknown_Release((IUnknown *)&op->IAsyncOperationWithProgress_iface);
     }
 }
@@ -1780,6 +1786,8 @@ static HRESULT WINAPI async_write_get_Progress(void *This, void **handler) { if 
 static HRESULT WINAPI async_write_put_Completed(void *This, void *handler)
 {
     struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
+    MESSAGE("windows.networking: async_write_put_Completed impl %p, handler %p, status %d, bytes %u\n",
+            impl, handler, impl->status, impl->bytes_written);
     if (impl->completed_handler) IUnknown_Release(impl->completed_handler);
     impl->completed_handler = (IUnknown *)handler;
     if (impl->completed_handler)
@@ -1802,6 +1810,8 @@ static HRESULT WINAPI async_write_get_Completed(void *This, void **handler)
 static HRESULT WINAPI async_write_GetResults(void *This, UINT32 *results)
 {
     struct socket_async_op_write_uint32 *impl = impl_from_async_write_op(This);
+    MESSAGE("windows.networking: async_write_GetResults impl %p, results %p (returning %u)\n",
+            impl, results, impl->bytes_written);
     if (!results) return E_POINTER;
     *results = impl->bytes_written;
     return S_OK;
@@ -2037,72 +2047,201 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
 
     MESSAGE("windows.networking: synthesize_response for host [%s], request: %s\n", impl->remote_host, impl->req_buf);
 
-    if (strstr(impl->remote_host, "go.microsoft.com") || strstr(impl->req_buf, "go.microsoft.com") ||
-        strstr(impl->req_buf, "2378018") || strstr(impl->remote_host, "msgamestudios.com") ||
-        strstr(impl->req_buf, "contentmanifest.json"))
+    if (strstr(impl->req_buf, "2378018") || strstr(impl->req_buf, "fwlink") ||
+        strstr(impl->remote_host, "go.microsoft.com"))
     {
+        static const char redir_resp[] =
+            "HTTP/1.1 302 Moved Temporarily\r\n"
+            "Server: Kestrel\r\n"
+            "Location: https://download-ssl.msgamestudios.com/content/mgs/ce/production/Solitaire/prod/contentmanifest/2026_09_17/contentmanifest.json\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n";
+        memcpy(impl->resp_buf, redir_resp, sizeof(redir_resp) - 1);
+        impl->resp_len = sizeof(redir_resp) - 1;
+        impl->resp_pos = 0;
+        MESSAGE("windows.networking: Serving 302 redirect for fwlink to [%s] (%u bytes)\n",
+                impl->remote_host, impl->resp_len);
+    }
+    else if (strstr(impl->req_buf, "contentmanifest.json") ||
+             (strstr(impl->remote_host, "msgamestudios.com") && strstr(impl->req_buf, "contentmanifest")))
+    {
+        const unsigned char *json_payload = solitaire_manifest_yffi + solitaire_manifest_json_offset;
+        unsigned int json_len = solitaire_manifest_json_len;
         int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
             "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/octet-stream\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"776c5c7cd1736290b28f562771bc2d80:1789661554.828492\"\r\n"
+            "Server: AkamaiNetStorage\r\n"
             "Content-Length: %u\r\n"
-            "Connection: close\r\n"
-            "\r\n", (unsigned int)solitaire_manifest_len);
-        if (hlen > 0 && (size_t)hlen + solitaire_manifest_len < sizeof(impl->resp_buf))
+            "Connection: keep-alive\r\n"
+            "\r\n", json_len);
+        if (hlen > 0 && (size_t)hlen + json_len < sizeof(impl->resp_buf))
         {
-            memcpy(impl->resp_buf + hlen, solitaire_manifest_yffi, solitaire_manifest_len);
-            impl->resp_len = hlen + solitaire_manifest_len;
+            memcpy(impl->resp_buf + hlen, json_payload, json_len);
+            impl->resp_len = hlen + json_len;
             impl->resp_pos = 0;
-            MESSAGE("windows.networking: Serving 200 OK with official YFFI contentmanifest to [%s] (%u total bytes)\n",
+            MESSAGE("windows.networking: Serving 200 OK with official JSON contentmanifest to [%s] (%u total bytes)\n",
                     impl->remote_host, impl->resp_len);
         }
     }
     else if (strstr(impl->req_buf, "manifest_4_27_0") || strstr(impl->req_buf, "versioned"))
     {
-        static const char versioned_manifest[] =
-            "{\"RelativeSecondaryManifestPath\":\"..\","
-            "\"MandatoryData\":{},"
-            "\"Items\":["
-            "{\"Key\":\"cardbacks\",\"Path\":\"cardbacks/archive_manifest_06cf768377e5d4aebad5a069bfde8c09d4dd44f5.json\"},"
-            "{\"Key\":\"cardbundles\",\"Path\":\"cardbundles/archive_manifest_046c0c9c03fc8f7b49becdcc23f4aa3d19b6725d.json\"},"
-            "{\"Key\":\"htp\",\"Path\":\"htp/archive_manifest_b35f599964fdcf7070575e4fe1a466527ef6bc34.json\"},"
-            "{\"Key\":\"starclub\",\"Path\":\"starclub/archive_manifest_26d39e507cac8bebf57eb2dbe7e08cc169d4e420.json\"},"
-            "{\"Key\":\"storefront\",\"Path\":\"storefront/archive_manifest_04c142852f6752531ec52bcedcee1b200beb40fc.json\"},"
-            "{\"Key\":\"themes\",\"Path\":\"themes/archive_manifest_0cc191cd99068a0efa6a39dd3d430b2492cfd0f1.json\"}"
-            "],"
-            "\"VersionedItems\":[]}";
+        const unsigned char *payload = solitaire_versioned_4_27_0_data;
+        unsigned int payload_len = solitaire_versioned_4_27_0_len;
         int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"9f0243f0fba72ee7ca0388a67f50b280:1789661557.491549\"\r\n"
             "Content-Length: %u\r\n"
-            "Connection: close\r\n"
-            "\r\n", (unsigned int)(sizeof(versioned_manifest) - 1));
-        memcpy(impl->resp_buf + hlen, versioned_manifest, sizeof(versioned_manifest) - 1);
-        impl->resp_len = hlen + sizeof(versioned_manifest) - 1;
-        impl->resp_pos = 0;
-        MESSAGE("windows.networking: Serving versioned manifest 200 OK to [%s] (%u total bytes)\n",
-                impl->remote_host, impl->resp_len);
+            "Connection: keep-alive\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving versioned manifest 200 OK to [%s] (%u total bytes)\n",
+                    impl->remote_host, impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "cardbacks") || strstr(impl->req_buf, "06cf768377e5d4aebad5a069bfde8c09d4dd44f5"))
+    {
+        const unsigned char *payload = solitaire_cardbacks_data;
+        unsigned int payload_len = solitaire_cardbacks_len;
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"19a2d80099c878f61cc43c2f50768649:1749252656.65227\"\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving cardbacks archive manifest (%u bytes)\n", impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "cardbundles") || strstr(impl->req_buf, "046c0c9c03fc8f7b49becdcc23f4aa3d19b6725d"))
+    {
+        const unsigned char *payload = solitaire_cardbundles_data;
+        unsigned int payload_len = solitaire_cardbundles_len;
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"6c83043900478c518dabed9d87b4ff2d:1687377437.647538\"\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving cardbundles archive manifest (%u bytes)\n", impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "htp") || strstr(impl->req_buf, "b35f599964fdcf7070575e4fe1a466527ef6bc34"))
+    {
+        const unsigned char *payload = solitaire_htp_data;
+        unsigned int payload_len = solitaire_htp_len;
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"0aede919904f01d214bdf894bda34368:1748643211.504534\"\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving htp archive manifest (%u bytes)\n", impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "starclub") || strstr(impl->req_buf, "26d39e507cac8bebf57eb2dbe7e08cc169d4e420"))
+    {
+        const unsigned char *payload = solitaire_starclub_data;
+        unsigned int payload_len = solitaire_starclub_len;
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"1fbb17d035feac529162888c60fd83dc:1649892693.161427\"\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving starclub archive manifest (%u bytes)\n", impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "storefront") || strstr(impl->req_buf, "04c142852f6752531ec52bcedcee1b200beb40fc"))
+    {
+        const unsigned char *payload = solitaire_storefront_data;
+        unsigned int payload_len = solitaire_storefront_len;
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"dc79219e61c71bd525d8f8a241e65bc6:1749252618.355252\"\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving storefront archive manifest (%u bytes)\n", impl->resp_len);
+        }
+    }
+    else if (strstr(impl->req_buf, "themes") || strstr(impl->req_buf, "0cc191cd99068a0efa6a39dd3d430b2492cfd0f1"))
+    {
+        const unsigned char *payload = solitaire_themes_data;
+        unsigned int payload_len = solitaire_themes_len;
+        int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"43589ad88e6b2a44e3990a8179ce4fe5:1789661555.440097\"\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
+        {
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving themes archive manifest (%u bytes)\n", impl->resp_len);
+        }
     }
     else if (strstr(impl->req_buf, "archive_manifest"))
     {
         static const char archive_resp[] =
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"generic_archive\"\r\n"
             "Content-Length: 18\r\n"
-            "Connection: close\r\n"
+            "Connection: keep-alive\r\n"
             "\r\n"
             "{\"categories\": []}";
         memcpy(impl->resp_buf, archive_resp, sizeof(archive_resp) - 1);
         impl->resp_len = sizeof(archive_resp) - 1;
         impl->resp_pos = 0;
-        MESSAGE("windows.networking: Serving archive_manifest 200 OK (%u bytes)\n", impl->resp_len);
+        MESSAGE("windows.networking: Serving generic archive_manifest 200 OK (%u bytes)\n", impl->resp_len);
     }
     else
     {
         static const char default_ok[] =
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"default_etag\"\r\n"
             "Content-Length: 2\r\n"
-            "Connection: close\r\n"
+            "Connection: keep-alive\r\n"
             "\r\n"
             "{}";
         memcpy(impl->resp_buf, default_ok, sizeof(default_ok) - 1);
@@ -2151,12 +2290,22 @@ static HRESULT WINAPI stream_input_GetTrustLevel(void *This, TrustLevel *t) { if
 
 static void complete_pending_read(struct stream_socket_impl *impl)
 {
-    struct socket_async_op_read_buffer *read_op = impl->pending_read;
+    struct socket_async_op_read_buffer *read_op = NULL;
     UINT32 available, to_read;
 
-    if (!read_op) return;
+    EnterCriticalSection(&impl->cs);
+    read_op = impl->pending_read;
+    if (!read_op)
+    {
+        LeaveCriticalSection(&impl->cs);
+        return;
+    }
     available = (impl->resp_len > impl->resp_pos) ? (impl->resp_len - impl->resp_pos) : 0;
-    if (available == 0) return;
+    if (available == 0)
+    {
+        LeaveCriticalSection(&impl->cs);
+        return;
+    }
 
     impl->pending_read = NULL;
     to_read = min(read_op->requested_count, available);
@@ -2188,6 +2337,10 @@ static void complete_pending_read(struct stream_socket_impl *impl)
     MESSAGE("windows.networking: Fulfilling pending ReadAsync with %u bytes (pos %u/%u)\n",
             to_read, impl->resp_pos, impl->resp_len);
 
+    /* Keep a reference while calling handler outside critical section */
+    IUnknown_AddRef((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
+    LeaveCriticalSection(&impl->cs);
+
     if (read_op->completed_handler)
     {
         void **vtbl = *(void ***)read_op->completed_handler;
@@ -2195,6 +2348,26 @@ static void complete_pending_read(struct stream_socket_impl *impl)
         invoke_fn(read_op->completed_handler, &read_op->IAsyncOperationWithProgress_iface, Completed);
     }
     IUnknown_Release((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
+    IUnknown_Release((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
+}
+
+static DWORD WINAPI complete_pending_read_worker(void *param)
+{
+    struct stream_socket_impl *impl = (struct stream_socket_impl *)param;
+    complete_pending_read(impl);
+    stream_sock_Release(&impl->IStreamSocket_iface);
+    return 0;
+}
+
+static void schedule_complete_pending_read(struct stream_socket_impl *impl)
+{
+    stream_sock_AddRef(&impl->IStreamSocket_iface);
+    if (!QueueUserWorkItem(complete_pending_read_worker, impl, WT_EXECUTEDEFAULT))
+    {
+        WARN("QueueUserWorkItem failed, falling back to synchronous completion\n");
+        complete_pending_read(impl);
+        stream_sock_Release(&impl->IStreamSocket_iface);
+    }
 }
 
 static HRESULT WINAPI stream_input_ReadAsync(void *This, void *buffer, UINT32 count, int options, void **operation)
@@ -2205,6 +2378,7 @@ static HRESULT WINAPI stream_input_ReadAsync(void *This, void *buffer, UINT32 co
     if (!operation) return E_POINTER;
     *operation = NULL;
 
+    EnterCriticalSection(&impl->cs);
     available = (impl->resp_len > impl->resp_pos) ? (impl->resp_len - impl->resp_pos) : 0;
     if (available > 0)
     {
@@ -2230,26 +2404,23 @@ static HRESULT WINAPI stream_input_ReadAsync(void *This, void *buffer, UINT32 co
         put_len_fn(buffer, to_read);
         MESSAGE("windows.networking: ReadAsync immediate read %u bytes (pos %u/%u)\n",
                 to_read, impl->resp_pos, impl->resp_len);
+        LeaveCriticalSection(&impl->cs);
         return create_async_op_read_buffer(buffer, to_read, operation);
-    }
-    else if (impl->resp_len > 0)
-    {
-        void **buf_vtbl = *(void ***)buffer;
-        HRESULT (WINAPI *put_len_fn)(void *, UINT32) = (void *)buf_vtbl[8];
-
-        put_len_fn(buffer, 0);
-        MESSAGE("windows.networking: ReadAsync EOF (0 bytes) after serving %u bytes\n", impl->resp_len);
-        return create_async_op_read_buffer(buffer, 0, operation);
     }
     else
     {
-        /* No data ready yet; wait pending without returning EOF (which resets socket state) */
+        /* No data ready yet (or all current response bytes consumed); wait pending without returning EOF */
         struct socket_async_op_read_buffer *op_impl = NULL;
         HRESULT hr;
 
-        MESSAGE("windows.networking: ReadAsync requested %u bytes, waiting (no data ready yet)\n", count);
+        MESSAGE("windows.networking: ReadAsync requested %u bytes, waiting pending (resp_len %u, resp_pos %u)\n",
+                count, impl->resp_len, impl->resp_pos);
         hr = create_async_op_read_buffer_pending(buffer, count, impl, &op_impl);
-        if (FAILED(hr)) return hr;
+        if (FAILED(hr))
+        {
+            LeaveCriticalSection(&impl->cs);
+            return hr;
+        }
 
         if (impl->pending_read)
         {
@@ -2259,6 +2430,7 @@ static HRESULT WINAPI stream_input_ReadAsync(void *This, void *buffer, UINT32 co
         IUnknown_AddRef((IUnknown *)&op_impl->IAsyncOperationWithProgress_iface);
 
         *operation = &op_impl->IAsyncOperationWithProgress_iface;
+        LeaveCriticalSection(&impl->cs);
         return S_OK;
     }
 }
@@ -2345,7 +2517,9 @@ static HRESULT WINAPI stream_output_WriteAsync(void *This, void *buffer, void **
     HRESULT (WINAPI *get_len_fn)(void *, UINT32 *) = (void *)buf_vtbl[7];
     void *byte_access = NULL;
     HRESULT (WINAPI *qi_fn)(void *, REFIID, void **) = (void *)buf_vtbl[0];
+    BOOL has_full_req = FALSE;
 
+    EnterCriticalSection(&impl->cs);
     get_len_fn(buffer, &len);
     if (SUCCEEDED(qi_fn(buffer, &IID_IBufferByteAccess, &byte_access)))
     {
@@ -2374,7 +2548,13 @@ static HRESULT WINAPI stream_output_WriteAsync(void *This, void *buffer, void **
     if (strstr(impl->req_buf, "\r\n\r\n"))
     {
         stream_socket_synthesize_response(impl);
-        complete_pending_read(impl);
+        has_full_req = TRUE;
+    }
+    LeaveCriticalSection(&impl->cs);
+
+    if (has_full_req)
+    {
+        schedule_complete_pending_read(impl);
     }
     return create_async_op_write_uint32(len, operation);
 }
@@ -2383,11 +2563,13 @@ static HRESULT WINAPI stream_output_FlushAsync(void *This, void **operation)
 {
     struct stream_socket_impl *impl = impl_from_stream_output(This);
     MESSAGE("windows.networking: FlushAsync called\n");
+    EnterCriticalSection(&impl->cs);
     if (impl->resp_len == 0)
     {
         stream_socket_synthesize_response(impl);
     }
-    complete_pending_read(impl);
+    LeaveCriticalSection(&impl->cs);
+    schedule_complete_pending_read(impl);
     return create_async_op_flush_bool(TRUE, operation);
 }
 
@@ -2604,6 +2786,7 @@ static HRESULT create_stream_socket(void **out)
     impl->output_stream.IOutputStream_iface.lpVtbl = stream_output_vtbl;
     impl->output_stream.IClosable_iface.lpVtbl = stream_output_closable_vtbl;
     impl->ref = 1;
+    InitializeCriticalSection(&impl->cs);
     *out = &impl->IStreamSocket_iface;
     return S_OK;
 }
