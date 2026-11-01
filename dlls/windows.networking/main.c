@@ -1125,6 +1125,7 @@ static HRESULT WINAPI sock_action_put_Completed(void *This, void *handler)
         void **vtbl = *(void ***)handler;
         HRESULT (WINAPI *invoke_fn)(void *, void *, AsyncStatus) = (void *)vtbl[3];
         IUnknown_AddRef(impl->completed_handler);
+        MESSAGE("windows.networking: invoking connect completion handler %p synchronously, status %d\n", handler, impl->status);
         invoke_fn(handler, &impl->IAsyncAction_iface, impl->status);
     }
     return S_OK;
@@ -2144,28 +2145,39 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
         impl->resp_pos = 0;
         MESSAGE("windows.networking: Serving 200 OK (0 bytes) to telemetry host [%s]\n", impl->remote_host);
     }
-    else if (strstr(impl->req_buf, "contentmanifest.json") ||
-             strstr(impl->req_buf, "fwlink") ||
-             strstr(impl->req_buf, "2378018") ||
-             strstr(impl->remote_host, "go.microsoft.com") ||
-             (strstr(impl->remote_host, "msgamestudios.com") && strstr(impl->req_buf, "contentmanifest")))
+    else if (strstr(impl->req_buf, "2378018") || strstr(impl->remote_host, "go.microsoft.com"))
     {
-        const unsigned char *json_payload = solitaire_manifest_yffi + solitaire_manifest_json_offset;
-        unsigned int json_len = solitaire_manifest_json_len;
+        static const char redirect_302[] =
+            "HTTP/1.1 302 Moved Temporarily\r\n"
+            "Location: https://download-ssl.msgamestudios.com/content/mgs/ce/production/Solitaire/prod/contentmanifest/2026_09_17/contentmanifest.json\r\n"
+            "Content-Length: 0\r\n"
+            "Server: Kestrel\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n";
+        memcpy(impl->resp_buf, redirect_302, sizeof(redirect_302) - 1);
+        impl->resp_len = sizeof(redirect_302) - 1;
+        impl->resp_pos = 0;
+        MESSAGE("windows.networking: Serving 302 Redirect to [%s] (%u total bytes)\n",
+                impl->remote_host, impl->resp_len);
+    }
+    else if (strstr(impl->req_buf, "contentmanifest") && !strstr(impl->req_buf, "archive_manifest"))
+    {
+        const unsigned char *payload = solitaire_manifest_yffi;
+        unsigned int payload_len = solitaire_manifest_len;
         int hlen = snprintf(impl->resp_buf, sizeof(impl->resp_buf),
             "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json; charset=utf-8\r\n"
+            "Content-Type: application/octet-stream\r\n"
             "ETag: \"776c5c7cd1736290b28f562771bc2d80:1789661554.828492\"\r\n"
             "Server: AkamaiNetStorage\r\n"
             "Content-Length: %u\r\n"
-            "Connection: close\r\n"
-            "\r\n", json_len);
-        if (hlen > 0 && (size_t)hlen + json_len < sizeof(impl->resp_buf))
+            "Connection: keep-alive\r\n"
+            "\r\n", payload_len);
+        if (hlen > 0 && (size_t)hlen + payload_len < sizeof(impl->resp_buf))
         {
-            memcpy(impl->resp_buf + hlen, json_payload, json_len);
-            impl->resp_len = hlen + json_len;
+            memcpy(impl->resp_buf + hlen, payload, payload_len);
+            impl->resp_len = hlen + payload_len;
             impl->resp_pos = 0;
-            MESSAGE("windows.networking: Serving 200 OK with official JSON contentmanifest to [%s] (%u total bytes)\n",
+            MESSAGE("windows.networking: Serving 200 OK with official YFFI contentmanifest to [%s] (%u total bytes)\n",
                     impl->remote_host, impl->resp_len);
         }
     }
@@ -2356,6 +2368,21 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
         impl->resp_pos = 0;
         MESSAGE("windows.networking: Serving generic archive_manifest 200 OK (%u bytes)\n", impl->resp_len);
     }
+    else if (strstr(impl->req_buf, "fwlink") || strstr(impl->remote_host, "go.microsoft.com"))
+    {
+        static const char fwlink_ok[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            "ETag: \"fwlink_etag\"\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "{}";
+        memcpy(impl->resp_buf, fwlink_ok, sizeof(fwlink_ok) - 1);
+        impl->resp_len = sizeof(fwlink_ok) - 1;
+        impl->resp_pos = 0;
+        MESSAGE("windows.networking: Serving secondary fwlink 200 OK ({}) to [%s]\n", impl->remote_host);
+    }
     else
     {
         static const char default_ok[] =
@@ -2427,33 +2454,6 @@ static void complete_pending_read(struct stream_socket_impl *impl)
     available = (impl->resp_len > impl->resp_pos) ? (impl->resp_len - impl->resp_pos) : 0;
     if (available == 0)
     {
-        if (impl->resp_len > 0)
-        {
-            impl->pending_read = NULL;
-            if (read_op->buffer)
-            {
-                void **buf_vtbl = *(void ***)read_op->buffer;
-                HRESULT (WINAPI *put_len_fn)(void *, UINT32) = (void *)buf_vtbl[8];
-                put_len_fn(read_op->buffer, 0);
-            }
-            read_op->bytes_read = 0;
-            read_op->status = Completed;
-            MESSAGE("windows.networking: Fulfilling pending ReadAsync with EOF (0 bytes, pos %u/%u)\n",
-                    impl->resp_pos, impl->resp_len);
-
-            IUnknown_AddRef((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
-            LeaveCriticalSection(&impl->cs);
-
-            if (read_op->completed_handler)
-            {
-                vtbl = *(void ***)read_op->completed_handler;
-                invoke_fn = (void *)vtbl[3];
-                invoke_fn(read_op->completed_handler, &read_op->IAsyncOperationWithProgress_iface, Completed);
-            }
-            IUnknown_Release((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
-            IUnknown_Release((IUnknown *)&read_op->IAsyncOperationWithProgress_iface);
-            return;
-        }
         LeaveCriticalSection(&impl->cs);
         return;
     }
