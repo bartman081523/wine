@@ -1630,9 +1630,15 @@ static const void *redhawk_largs_vtbl[16] = {
     (void *)largs_generic_stub
 };
 
+static DWORD xaml_ui_thread_id = 0;
+
 static HRESULT WINAPI app_s_Start(void *This, void *callback)
 {
-    TRACE("Application::Start This %p, callback %p\n", This, callback);
+    MSG msg;
+
+    TRACE("Application::Start This %p, callback %p (UI thread %04lx)\n", This, callback, GetCurrentThreadId());
+    xaml_ui_thread_id = GetCurrentThreadId();
+    PeekMessageW(&msg, NULL, WM_USER, WM_USER, PM_NOREMOVE);
     if ((ULONG_PTR)callback > 0x10000)
     {
         void **vtbl = *(void ***)callback;
@@ -1703,10 +1709,14 @@ static HRESULT WINAPI app_s_Start(void *This, void *callback)
             if (msg.message == WM_APP + 10 && msg.wParam)
             {
                 void *cb = (void *)msg.wParam;
-                void **cb_vtbl = *(void ***)cb;
-                HRESULT (WINAPI *pInvoke)(void *) = (void *)cb_vtbl[3];
-                TRACE("Invoking queued CoreDispatcher callback %p\n", cb);
-                pInvoke(cb);
+                void **cb_vtbl = cb ? *(void ***)cb : NULL;
+                TRACE("Invoking queued CoreDispatcher callback %p (vtbl %p)\n", cb, cb_vtbl);
+                if (cb_vtbl && (uintptr_t)cb_vtbl[3] > 0x10000)
+                {
+                    HRESULT (WINAPI *pInvoke)(void *) = (void *)cb_vtbl[3];
+                    HRESULT hr = pInvoke(cb);
+                    TRACE("CoreDispatcher callback %p returned hr 0x%08lx\n", cb, hr);
+                }
                 IUnknown_Release((IUnknown *)cb);
                 continue;
             }
@@ -1715,6 +1725,7 @@ static HRESULT WINAPI app_s_Start(void *This, void *callback)
         }
         TRACE("Exiting Application::Start message loop\n");
     }
+    xaml_ui_thread_id = 0;
     return S_OK;
 }
 
@@ -2020,28 +2031,44 @@ static HRESULT WINAPI disp_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t 
 
 static HRESULT WINAPI disp_get_HasThreadAccess(void *This, boolean *value)
 {
-    if (value) *value = TRUE;
+    if (value)
+    {
+        DWORD tid = GetCurrentThreadId();
+        *value = (xaml_ui_thread_id != 0) ? (tid == xaml_ui_thread_id) : TRUE;
+    }
     return S_OK;
 }
 static HRESULT WINAPI disp_ProcessEvents(void *This, int options) { return S_OK; }
 static HRESULT WINAPI disp_RunAsync(void *This, int priority, void *callback, void **action)
 {
-    TRACE("CoreDispatcher::RunAsync priority %d, callback %p\n", priority, callback);
+    DWORD target_thread = xaml_ui_thread_id ? xaml_ui_thread_id : GetCurrentThreadId();
+    TRACE("CoreDispatcher::RunAsync priority %d, callback %p -> target_thread %04lx (current %04lx)\n",
+          priority, callback, target_thread, GetCurrentThreadId());
     if (callback)
     {
         IUnknown_AddRef((IUnknown *)callback);
-        PostThreadMessageW(GetCurrentThreadId(), WM_APP + 10, (WPARAM)callback, 0);
+        if (!PostThreadMessageW(target_thread, WM_APP + 10, (WPARAM)callback, 0))
+        {
+            WARN("PostThreadMessageW to thread %04lx failed with error %lu\n", target_thread, GetLastError());
+            IUnknown_Release((IUnknown *)callback);
+        }
     }
     if (action) create_async_action(action);
     return S_OK;
 }
 static HRESULT WINAPI disp_RunIdleAsync(void *This, void *callback, void **action)
 {
-    TRACE("CoreDispatcher::RunIdleAsync callback %p\n", callback);
+    DWORD target_thread = xaml_ui_thread_id ? xaml_ui_thread_id : GetCurrentThreadId();
+    TRACE("CoreDispatcher::RunIdleAsync callback %p -> target_thread %04lx (current %04lx)\n",
+          callback, target_thread, GetCurrentThreadId());
     if (callback)
     {
         IUnknown_AddRef((IUnknown *)callback);
-        PostThreadMessageW(GetCurrentThreadId(), WM_APP + 10, (WPARAM)callback, 0);
+        if (!PostThreadMessageW(target_thread, WM_APP + 10, (WPARAM)callback, 0))
+        {
+            WARN("PostThreadMessageW to thread %04lx failed with error %lu\n", target_thread, GetLastError());
+            IUnknown_Release((IUnknown *)callback);
+        }
     }
     if (action) create_async_action(action);
     return S_OK;
