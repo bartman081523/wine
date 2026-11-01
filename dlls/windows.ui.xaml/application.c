@@ -2190,143 +2190,289 @@ static void *global_core_window = NULL;
 /* Event args implementations */
 struct window_size_args
 {
-    struct { const void *lpVtbl; } iface;
+    struct { const void *lpVtbl; } IWindowSizeChangedEventArgs_iface;
+    struct { const void *lpVtbl; } ICoreWindowEventArgs_iface;
     LONG ref;
     FLOAT width;
     FLOAT height;
     boolean handled;
 };
 
+#define impl_from_IWindowSizeChangedEventArgs(ptr) ((struct window_size_args *)((char *)(ptr) - offsetof(struct window_size_args, IWindowSizeChangedEventArgs_iface)))
+#define impl_from_ICoreWindowEventArgs_size(ptr)   ((struct window_size_args *)((char *)(ptr) - offsetof(struct window_size_args, ICoreWindowEventArgs_iface)))
+
 static HRESULT WINAPI size_args_QI(void *This, REFIID riid, void **ppv)
 {
-    struct window_size_args *impl = (struct window_size_args *)This;
+    struct window_size_args *impl = impl_from_IWindowSizeChangedEventArgs(This);
     if (!ppv) return E_POINTER;
     *ppv = NULL;
     if (IsEqualGUID(riid, &IID_IUnknown) ||
         IsEqualGUID(riid, &IID_IInspectable) ||
         IsEqualGUID(riid, &IID_IAgileObject) ||
-        IsEqualGUID(riid, &IID_ICoreWindowEventArgs) ||
         IsEqualGUID(riid, &IID_IWindowSizeChangedEventArgs))
     {
-        *ppv = &impl->iface;
+        *ppv = &impl->IWindowSizeChangedEventArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ICoreWindowEventArgs))
+    {
+        *ppv = &impl->ICoreWindowEventArgs_iface;
         InterlockedIncrement(&impl->ref);
         return S_OK;
     }
     return E_NOINTERFACE;
 }
-static ULONG WINAPI size_args_AddRef(void *This) { return InterlockedIncrement(&((struct window_size_args *)This)->ref); }
+static ULONG WINAPI size_args_AddRef(void *This) { return InterlockedIncrement(&impl_from_IWindowSizeChangedEventArgs(This)->ref); }
 static ULONG WINAPI size_args_Release(void *This)
 {
-    ULONG ref = InterlockedDecrement(&((struct window_size_args *)This)->ref);
-    if (!ref) free(This);
+    struct window_size_args *impl = impl_from_IWindowSizeChangedEventArgs(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
     return ref;
 }
 static HRESULT WINAPI size_args_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
 static HRESULT WINAPI size_args_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.WindowSizeChangedEventArgs", 41, n); }
 static HRESULT WINAPI size_args_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
-static HRESULT WINAPI size_args_get_Handled(void *This, boolean *value) { if (value) *value = ((struct window_size_args *)This)->handled; return S_OK; }
-static HRESULT WINAPI size_args_put_Handled(void *This, boolean value) { ((struct window_size_args *)This)->handled = value; return S_OK; }
 static HRESULT WINAPI size_args_get_Size(void *This, void *value)
 {
+    struct window_size_args *impl = impl_from_IWindowSizeChangedEventArgs(This);
     struct { FLOAT Width; FLOAT Height; } *sz = value;
-    if (sz) { sz->Width = ((struct window_size_args *)This)->width; sz->Height = ((struct window_size_args *)This)->height; }
+    if (sz) { sz->Width = impl->width; sz->Height = impl->height; }
     return S_OK;
 }
 
-static const void *size_args_vtbl[9] = {
+static const void *size_args_vtbl[7] = {
     (void *)size_args_QI, (void *)size_args_AddRef, (void *)size_args_Release,
     (void *)size_args_GetIids, (void *)size_args_GetRuntimeClassName, (void *)size_args_GetTrustLevel,
-    (void *)size_args_get_Handled, (void *)size_args_put_Handled, (void *)size_args_get_Size
+    (void *)size_args_get_Size
+};
+
+static HRESULT WINAPI size_core_QI(void *This, REFIID riid, void **ppv)
+{
+    struct window_size_args *impl = impl_from_ICoreWindowEventArgs_size(This);
+    return size_args_QI(&impl->IWindowSizeChangedEventArgs_iface, riid, ppv);
+}
+static ULONG WINAPI size_core_AddRef(void *This)
+{
+    struct window_size_args *impl = impl_from_ICoreWindowEventArgs_size(This);
+    return size_args_AddRef(&impl->IWindowSizeChangedEventArgs_iface);
+}
+static ULONG WINAPI size_core_Release(void *This)
+{
+    struct window_size_args *impl = impl_from_ICoreWindowEventArgs_size(This);
+    return size_args_Release(&impl->IWindowSizeChangedEventArgs_iface);
+}
+static HRESULT WINAPI size_core_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI size_core_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.WindowSizeChangedEventArgs", 41, n); }
+static HRESULT WINAPI size_core_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI size_core_get_Handled(void *This, boolean *value)
+{
+    struct window_size_args *impl = impl_from_ICoreWindowEventArgs_size(This);
+    if (value) *value = impl->handled;
+    return S_OK;
+}
+static HRESULT WINAPI size_core_put_Handled(void *This, boolean value)
+{
+    struct window_size_args *impl = impl_from_ICoreWindowEventArgs_size(This);
+    impl->handled = value;
+    return S_OK;
+}
+
+static const void *size_core_args_vtbl[8] = {
+    (void *)size_core_QI, (void *)size_core_AddRef, (void *)size_core_Release,
+    (void *)size_core_GetIids, (void *)size_core_GetRuntimeClassName, (void *)size_core_GetTrustLevel,
+    (void *)size_core_get_Handled, (void *)size_core_put_Handled
 };
 
 struct window_activated_args
 {
-    struct { const void *lpVtbl; } iface;
+    struct { const void *lpVtbl; } IWindowActivatedEventArgs_iface;
+    struct { const void *lpVtbl; } ICoreWindowEventArgs_iface;
     LONG ref;
     int state;
     boolean handled;
 };
 
+#define impl_from_IWindowActivatedEventArgs(ptr) ((struct window_activated_args *)((char *)(ptr) - offsetof(struct window_activated_args, IWindowActivatedEventArgs_iface)))
+#define impl_from_ICoreWindowEventArgs_act(ptr)   ((struct window_activated_args *)((char *)(ptr) - offsetof(struct window_activated_args, ICoreWindowEventArgs_iface)))
+
 static HRESULT WINAPI act_args_QI(void *This, REFIID riid, void **ppv)
 {
-    struct window_activated_args *impl = (struct window_activated_args *)This;
+    struct window_activated_args *impl = impl_from_IWindowActivatedEventArgs(This);
     if (!ppv) return E_POINTER;
     *ppv = NULL;
     if (IsEqualGUID(riid, &IID_IUnknown) ||
         IsEqualGUID(riid, &IID_IInspectable) ||
         IsEqualGUID(riid, &IID_IAgileObject) ||
-        IsEqualGUID(riid, &IID_ICoreWindowEventArgs) ||
         IsEqualGUID(riid, &IID_IWindowActivatedEventArgs))
     {
-        *ppv = &impl->iface;
+        *ppv = &impl->IWindowActivatedEventArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ICoreWindowEventArgs))
+    {
+        *ppv = &impl->ICoreWindowEventArgs_iface;
         InterlockedIncrement(&impl->ref);
         return S_OK;
     }
     return E_NOINTERFACE;
 }
-static ULONG WINAPI act_args_AddRef(void *This) { return InterlockedIncrement(&((struct window_activated_args *)This)->ref); }
+static ULONG WINAPI act_args_AddRef(void *This) { return InterlockedIncrement(&impl_from_IWindowActivatedEventArgs(This)->ref); }
 static ULONG WINAPI act_args_Release(void *This)
 {
-    ULONG ref = InterlockedDecrement(&((struct window_activated_args *)This)->ref);
-    if (!ref) free(This);
+    struct window_activated_args *impl = impl_from_IWindowActivatedEventArgs(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
     return ref;
 }
 static HRESULT WINAPI act_args_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
 static HRESULT WINAPI act_args_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.WindowActivatedEventArgs", 39, n); }
 static HRESULT WINAPI act_args_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
-static HRESULT WINAPI act_args_get_Handled(void *This, boolean *value) { if (value) *value = ((struct window_activated_args *)This)->handled; return S_OK; }
-static HRESULT WINAPI act_args_put_Handled(void *This, boolean value) { ((struct window_activated_args *)This)->handled = value; return S_OK; }
-static HRESULT WINAPI act_args_get_WindowActivationState(void *This, int *value) { if (value) *value = ((struct window_activated_args *)This)->state; return S_OK; }
+static HRESULT WINAPI act_args_get_WindowActivationState(void *This, int *value)
+{
+    struct window_activated_args *impl = impl_from_IWindowActivatedEventArgs(This);
+    if (value) *value = impl->state;
+    return S_OK;
+}
 
-static const void *act_args_vtbl[9] = {
+static const void *act_args_vtbl[7] = {
     (void *)act_args_QI, (void *)act_args_AddRef, (void *)act_args_Release,
     (void *)act_args_GetIids, (void *)act_args_GetRuntimeClassName, (void *)act_args_GetTrustLevel,
-    (void *)act_args_get_Handled, (void *)act_args_put_Handled, (void *)act_args_get_WindowActivationState
+    (void *)act_args_get_WindowActivationState
+};
+
+static HRESULT WINAPI act_core_QI(void *This, REFIID riid, void **ppv)
+{
+    struct window_activated_args *impl = impl_from_ICoreWindowEventArgs_act(This);
+    return act_args_QI(&impl->IWindowActivatedEventArgs_iface, riid, ppv);
+}
+static ULONG WINAPI act_core_AddRef(void *This)
+{
+    struct window_activated_args *impl = impl_from_ICoreWindowEventArgs_act(This);
+    return act_args_AddRef(&impl->IWindowActivatedEventArgs_iface);
+}
+static ULONG WINAPI act_core_Release(void *This)
+{
+    struct window_activated_args *impl = impl_from_ICoreWindowEventArgs_act(This);
+    return act_args_Release(&impl->IWindowActivatedEventArgs_iface);
+}
+static HRESULT WINAPI act_core_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI act_core_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.WindowActivatedEventArgs", 39, n); }
+static HRESULT WINAPI act_core_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI act_core_get_Handled(void *This, boolean *value)
+{
+    struct window_activated_args *impl = impl_from_ICoreWindowEventArgs_act(This);
+    if (value) *value = impl->handled;
+    return S_OK;
+}
+static HRESULT WINAPI act_core_put_Handled(void *This, boolean value)
+{
+    struct window_activated_args *impl = impl_from_ICoreWindowEventArgs_act(This);
+    impl->handled = value;
+    return S_OK;
+}
+
+static const void *act_core_args_vtbl[8] = {
+    (void *)act_core_QI, (void *)act_core_AddRef, (void *)act_core_Release,
+    (void *)act_core_GetIids, (void *)act_core_GetRuntimeClassName, (void *)act_core_GetTrustLevel,
+    (void *)act_core_get_Handled, (void *)act_core_put_Handled
 };
 
 struct window_visibility_args
 {
-    struct { const void *lpVtbl; } iface;
+    struct { const void *lpVtbl; } IVisibilityChangedEventArgs_iface;
+    struct { const void *lpVtbl; } ICoreWindowEventArgs_iface;
     LONG ref;
     boolean visible;
     boolean handled;
 };
 
+#define impl_from_IVisibilityChangedEventArgs(ptr) ((struct window_visibility_args *)((char *)(ptr) - offsetof(struct window_visibility_args, IVisibilityChangedEventArgs_iface)))
+#define impl_from_ICoreWindowEventArgs_vis(ptr)   ((struct window_visibility_args *)((char *)(ptr) - offsetof(struct window_visibility_args, ICoreWindowEventArgs_iface)))
+
 static HRESULT WINAPI vis_args_QI(void *This, REFIID riid, void **ppv)
 {
-    struct window_visibility_args *impl = (struct window_visibility_args *)This;
+    struct window_visibility_args *impl = impl_from_IVisibilityChangedEventArgs(This);
     if (!ppv) return E_POINTER;
     *ppv = NULL;
     if (IsEqualGUID(riid, &IID_IUnknown) ||
         IsEqualGUID(riid, &IID_IInspectable) ||
         IsEqualGUID(riid, &IID_IAgileObject) ||
-        IsEqualGUID(riid, &IID_ICoreWindowEventArgs) ||
         IsEqualGUID(riid, &IID_IVisibilityChangedEventArgs))
     {
-        *ppv = &impl->iface;
+        *ppv = &impl->IVisibilityChangedEventArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ICoreWindowEventArgs))
+    {
+        *ppv = &impl->ICoreWindowEventArgs_iface;
         InterlockedIncrement(&impl->ref);
         return S_OK;
     }
     return E_NOINTERFACE;
 }
-static ULONG WINAPI vis_args_AddRef(void *This) { return InterlockedIncrement(&((struct window_visibility_args *)This)->ref); }
+static ULONG WINAPI vis_args_AddRef(void *This) { return InterlockedIncrement(&impl_from_IVisibilityChangedEventArgs(This)->ref); }
 static ULONG WINAPI vis_args_Release(void *This)
 {
-    ULONG ref = InterlockedDecrement(&((struct window_visibility_args *)This)->ref);
-    if (!ref) free(This);
+    struct window_visibility_args *impl = impl_from_IVisibilityChangedEventArgs(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
     return ref;
 }
 static HRESULT WINAPI vis_args_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
 static HRESULT WINAPI vis_args_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.VisibilityChangedEventArgs", 41, n); }
 static HRESULT WINAPI vis_args_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
-static HRESULT WINAPI vis_args_get_Handled(void *This, boolean *value) { if (value) *value = ((struct window_visibility_args *)This)->handled; return S_OK; }
-static HRESULT WINAPI vis_args_put_Handled(void *This, boolean value) { ((struct window_visibility_args *)This)->handled = value; return S_OK; }
-static HRESULT WINAPI vis_args_get_Visible(void *This, boolean *value) { if (value) *value = ((struct window_visibility_args *)This)->visible; return S_OK; }
+static HRESULT WINAPI vis_args_get_Visible(void *This, boolean *value)
+{
+    struct window_visibility_args *impl = impl_from_IVisibilityChangedEventArgs(This);
+    if (value) *value = impl->visible;
+    return S_OK;
+}
 
-static const void *vis_args_vtbl[9] = {
+static const void *vis_args_vtbl[7] = {
     (void *)vis_args_QI, (void *)vis_args_AddRef, (void *)vis_args_Release,
     (void *)vis_args_GetIids, (void *)vis_args_GetRuntimeClassName, (void *)vis_args_GetTrustLevel,
-    (void *)vis_args_get_Handled, (void *)vis_args_put_Handled, (void *)vis_args_get_Visible
+    (void *)vis_args_get_Visible
+};
+
+static HRESULT WINAPI vis_core_QI(void *This, REFIID riid, void **ppv)
+{
+    struct window_visibility_args *impl = impl_from_ICoreWindowEventArgs_vis(This);
+    return vis_args_QI(&impl->IVisibilityChangedEventArgs_iface, riid, ppv);
+}
+static ULONG WINAPI vis_core_AddRef(void *This)
+{
+    struct window_visibility_args *impl = impl_from_ICoreWindowEventArgs_vis(This);
+    return vis_args_AddRef(&impl->IVisibilityChangedEventArgs_iface);
+}
+static ULONG WINAPI vis_core_Release(void *This)
+{
+    struct window_visibility_args *impl = impl_from_ICoreWindowEventArgs_vis(This);
+    return vis_args_Release(&impl->IVisibilityChangedEventArgs_iface);
+}
+static HRESULT WINAPI vis_core_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI vis_core_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.VisibilityChangedEventArgs", 41, n); }
+static HRESULT WINAPI vis_core_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI vis_core_get_Handled(void *This, boolean *value)
+{
+    struct window_visibility_args *impl = impl_from_ICoreWindowEventArgs_vis(This);
+    if (value) *value = impl->handled;
+    return S_OK;
+}
+static HRESULT WINAPI vis_core_put_Handled(void *This, boolean value)
+{
+    struct window_visibility_args *impl = impl_from_ICoreWindowEventArgs_vis(This);
+    impl->handled = value;
+    return S_OK;
+}
+
+static const void *vis_core_args_vtbl[8] = {
+    (void *)vis_core_QI, (void *)vis_core_AddRef, (void *)vis_core_Release,
+    (void *)vis_core_GetIids, (void *)vis_core_GetRuntimeClassName, (void *)vis_core_GetTrustLevel,
+    (void *)vis_core_get_Handled, (void *)vis_core_put_Handled
 };
 
 struct typed_event_handler_vtbl
@@ -2355,7 +2501,8 @@ void core_window_fire_size_changed(FLOAT width, FLOAT height)
 
     args = calloc(1, sizeof(*args));
     if (!args) return;
-    args->iface.lpVtbl = size_args_vtbl;
+    args->IWindowSizeChangedEventArgs_iface.lpVtbl = size_args_vtbl;
+    args->ICoreWindowEventArgs_iface.lpVtbl = size_core_args_vtbl;
     args->ref = 1;
     args->width = width;
     args->height = height;
@@ -2366,10 +2513,10 @@ void core_window_fire_size_changed(FLOAT width, FLOAT height)
         if (handler && handler->lpVtbl && handler->lpVtbl->Invoke)
         {
             TRACE("Invoking size_changed_handler[%d] %p (invoke=%p)\n", i, handler, handler->lpVtbl->Invoke);
-            handler->lpVtbl->Invoke(handler, global_core_window, &args->iface);
+            handler->lpVtbl->Invoke(handler, global_core_window, &args->IWindowSizeChangedEventArgs_iface);
         }
     }
-    IUnknown_Release((IUnknown *)&args->iface);
+    IUnknown_Release((IUnknown *)&args->IWindowSizeChangedEventArgs_iface);
 }
 
 void core_window_fire_activated(int state)
@@ -2385,7 +2532,8 @@ void core_window_fire_activated(int state)
 
     args = calloc(1, sizeof(*args));
     if (!args) return;
-    args->iface.lpVtbl = act_args_vtbl;
+    args->IWindowActivatedEventArgs_iface.lpVtbl = act_args_vtbl;
+    args->ICoreWindowEventArgs_iface.lpVtbl = act_core_args_vtbl;
     args->ref = 1;
     args->state = state;
 
@@ -2395,10 +2543,10 @@ void core_window_fire_activated(int state)
         if (handler && handler->lpVtbl && handler->lpVtbl->Invoke)
         {
             TRACE("Invoking activated_handler[%d] %p (invoke=%p)\n", i, handler, handler->lpVtbl->Invoke);
-            handler->lpVtbl->Invoke(handler, global_core_window, &args->iface);
+            handler->lpVtbl->Invoke(handler, global_core_window, &args->IWindowActivatedEventArgs_iface);
         }
     }
-    IUnknown_Release((IUnknown *)&args->iface);
+    IUnknown_Release((IUnknown *)&args->IWindowActivatedEventArgs_iface);
 }
 
 void core_window_fire_visibility(boolean visible)
@@ -2414,7 +2562,8 @@ void core_window_fire_visibility(boolean visible)
 
     args = calloc(1, sizeof(*args));
     if (!args) return;
-    args->iface.lpVtbl = vis_args_vtbl;
+    args->IVisibilityChangedEventArgs_iface.lpVtbl = vis_args_vtbl;
+    args->ICoreWindowEventArgs_iface.lpVtbl = vis_core_args_vtbl;
     args->ref = 1;
     args->visible = visible;
 
@@ -2424,10 +2573,10 @@ void core_window_fire_visibility(boolean visible)
         if (handler && handler->lpVtbl && handler->lpVtbl->Invoke)
         {
             TRACE("Invoking visibility_changed_handler[%d] %p\n", i, handler);
-            handler->lpVtbl->Invoke(handler, global_core_window, &args->iface);
+            handler->lpVtbl->Invoke(handler, global_core_window, &args->IVisibilityChangedEventArgs_iface);
         }
     }
-    IUnknown_Release((IUnknown *)&args->iface);
+    IUnknown_Release((IUnknown *)&args->IVisibilityChangedEventArgs_iface);
 }
 
 static HRESULT core_win_QI_internal(struct core_window_impl *impl, REFIID riid, void **ppvObject)
