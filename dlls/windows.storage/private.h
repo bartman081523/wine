@@ -51,6 +51,7 @@ HRESULT async_operation_boolean_create( IUnknown *invoker, IUnknown *param, asyn
 extern IActivationFactory *random_access_stream_reference_factory;
 extern IActivationFactory *memory_stream_activation_factory;
 extern IActivationFactory *storage_file_factory;
+extern IActivationFactory *file_io_factory;
 
 HRESULT memory_stream_from_file( const WCHAR *path, const WCHAR *content_type, IRandomAccessStream **out );
 

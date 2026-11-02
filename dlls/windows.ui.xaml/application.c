@@ -2038,7 +2038,29 @@ static HRESULT WINAPI disp_get_HasThreadAccess(void *This, boolean *value)
     }
     return S_OK;
 }
-static HRESULT WINAPI disp_ProcessEvents(void *This, int options) { return S_OK; }
+static HRESULT WINAPI disp_ProcessEvents(void *This, int options)
+{
+    MSG msg;
+    while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
+    {
+        if (msg.message == WM_APP + 10 && msg.wParam)
+        {
+            void *cb = (void *)msg.wParam;
+            void **cb_vtbl = cb ? *(void ***)cb : NULL;
+            if (cb_vtbl && (uintptr_t)cb_vtbl[3] > 0x10000)
+            {
+                HRESULT (WINAPI *pInvoke)(void *) = (void *)cb_vtbl[3];
+                pInvoke(cb);
+            }
+            IUnknown_Release((IUnknown *)cb);
+            continue;
+        }
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+        if (options == 2 /* ProcessOneIfPresent */) break;
+    }
+    return S_OK;
+}
 static HRESULT WINAPI disp_RunAsync(void *This, int priority, void *callback, void **action)
 {
     DWORD target_thread = xaml_ui_thread_id ? xaml_ui_thread_id : GetCurrentThreadId();
@@ -2493,19 +2515,6 @@ static const void *vis_core_args_vtbl[8] = {
     (void *)vis_core_get_Handled, (void *)vis_core_put_Handled
 };
 
-struct typed_event_handler_vtbl
-{
-    HRESULT (WINAPI *QueryInterface)(void *This, REFIID riid, void **ppv);
-    ULONG (WINAPI *AddRef)(void *This);
-    ULONG (WINAPI *Release)(void *This);
-    HRESULT (WINAPI *Invoke)(void *This, void *sender, void *args);
-};
-
-struct typed_event_handler
-{
-    const struct typed_event_handler_vtbl *lpVtbl;
-};
-
 void core_window_fire_size_changed(FLOAT width, FLOAT height)
 {
     struct core_window_impl *impl;
@@ -2958,6 +2967,63 @@ static const void *pointer_properties_vtbl[30] = {
     (void *)props_HasUsage, (void *)props_GetUsageValue
 };
 
+static const GUID IID_IPointerDevice = {0x93c9bafc, 0xebcb, 0x467e, {0x82, 0xc6, 0x27, 0x6f, 0xea, 0xe3, 0x6b, 0x5a}};
+
+struct pointer_device_impl
+{
+    struct { const void *lpVtbl; } IPointerDevice_iface;
+    LONG ref;
+    UINT32 device_type; /* 2 = Mouse */
+};
+
+#define impl_from_IPointerDevice(ptr) ((struct pointer_device_impl *)((char *)(ptr) - offsetof(struct pointer_device_impl, IPointerDevice_iface)))
+
+static HRESULT WINAPI pdev_QI(void *This, REFIID riid, void **ppv)
+{
+    struct pointer_device_impl *impl = impl_from_IPointerDevice(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IPointerDevice))
+    {
+        *ppv = &impl->IPointerDevice_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI pdev_AddRef(void *This) { return InterlockedIncrement(&impl_from_IPointerDevice(This)->ref); }
+static ULONG WINAPI pdev_Release(void *This)
+{
+    struct pointer_device_impl *impl = impl_from_IPointerDevice(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+static HRESULT WINAPI pdev_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI pdev_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Devices.Input.PointerDevice", 35, n); }
+static HRESULT WINAPI pdev_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI pdev_get_PointerDeviceType(void *This, UINT32 *value)
+{
+    struct pointer_device_impl *impl = impl_from_IPointerDevice(This);
+    if (value) *value = impl->device_type;
+    return S_OK;
+}
+static HRESULT WINAPI pdev_get_IsIntegrated(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI pdev_get_MaxContacts(void *This, UINT32 *value) { if (value) *value = 1; return S_OK; }
+static HRESULT WINAPI pdev_get_PhysicalDeviceRect(void *This, void *value) { if (value) memset(value, 0, 16); return S_OK; }
+static HRESULT WINAPI pdev_get_ScreenRect(void *This, void *value) { if (value) memset(value, 0, 16); return S_OK; }
+static HRESULT WINAPI pdev_get_SupportedUsages(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+
+static const void *pointer_device_vtbl[12] = {
+    (void *)pdev_QI, (void *)pdev_AddRef, (void *)pdev_Release,
+    (void *)pdev_GetIids, (void *)pdev_GetRuntimeClassName, (void *)pdev_GetTrustLevel,
+    (void *)pdev_get_PointerDeviceType, (void *)pdev_get_IsIntegrated, (void *)pdev_get_MaxContacts,
+    (void *)pdev_get_PhysicalDeviceRect, (void *)pdev_get_ScreenRect, (void *)pdev_get_SupportedUsages
+};
+
 /* IPointerPoint implementation */
 struct pointer_point_impl
 {
@@ -2966,6 +3032,7 @@ struct pointer_point_impl
     FLOAT x, y;
     boolean in_contact;
     struct pointer_properties_impl *props;
+    struct pointer_device_impl *device;
 };
 
 #define impl_from_IPointerPoint(ptr) ((struct pointer_point_impl *)((char *)(ptr) - offsetof(struct pointer_point_impl, IPointerPoint_iface)))
@@ -2994,6 +3061,7 @@ static ULONG WINAPI pt_Release(void *This)
     if (!ref)
     {
         if (impl->props) props_Release(&impl->props->IPointerPointProperties_iface);
+        if (impl->device) pdev_Release(&impl->device->IPointerDevice_iface);
         free(impl);
     }
     return ref;
@@ -3001,7 +3069,18 @@ static ULONG WINAPI pt_Release(void *This)
 static HRESULT WINAPI pt_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
 static HRESULT WINAPI pt_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Input.PointerPoint", 30, n); }
 static HRESULT WINAPI pt_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
-static HRESULT WINAPI pt_get_PointerDevice(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI pt_get_PointerDevice(void *This, void **value)
+{
+    struct pointer_point_impl *impl = impl_from_IPointerPoint(This);
+    if (!value) return E_POINTER;
+    *value = NULL;
+    if (impl->device)
+    {
+        *value = &impl->device->IPointerDevice_iface;
+        pdev_AddRef(&impl->device->IPointerDevice_iface);
+    }
+    return S_OK;
+}
 static HRESULT WINAPI pt_get_Position(void *This, struct winrt_Point *value)
 {
     struct pointer_point_impl *impl = impl_from_IPointerPoint(This);
@@ -3145,6 +3224,7 @@ void core_window_fire_pointer(UINT msg, WPARAM wparam, LPARAM lparam)
     struct pointer_event_args_impl *args;
     struct pointer_point_impl *point;
     struct pointer_properties_impl *props;
+    struct pointer_device_impl *device;
     struct core_window_handler *handlers = NULL;
     int count = 0, i;
     FLOAT x = (FLOAT)(short)LOWORD(lparam);
@@ -3198,16 +3278,21 @@ void core_window_fire_pointer(UINT msg, WPARAM wparam, LPARAM lparam)
             return;
     }
 
-    if (count <= 0 || !handlers) return;
+    if ((count <= 0 || !handlers) && !core_independent_input_source_has_handlers(msg)) return;
 
     props = calloc(1, sizeof(*props));
     point = calloc(1, sizeof(*point));
     args = calloc(1, sizeof(*args));
-    if (!props || !point || !args)
+    device = calloc(1, sizeof(*device));
+    if (!props || !point || !args || !device)
     {
-        free(props); free(point); free(args);
+        free(props); free(point); free(args); free(device);
         return;
     }
+
+    device->IPointerDevice_iface.lpVtbl = pointer_device_vtbl;
+    device->ref = 1;
+    device->device_type = 2; /* PointerDeviceType::Mouse */
 
     props->IPointerPointProperties_iface.lpVtbl = pointer_properties_vtbl;
     props->ref = 1;
@@ -3220,22 +3305,28 @@ void core_window_fire_pointer(UINT msg, WPARAM wparam, LPARAM lparam)
     point->x = x; point->y = y;
     point->in_contact = in_contact;
     point->props = props;
+    point->device = device;
 
     args->IPointerEventArgs_iface.lpVtbl = pointer_args_vtbl;
     args->ICoreWindowEventArgs_iface.lpVtbl = pointer_core_args_vtbl;
     args->ref = 1;
     args->point = point;
 
-    for (i = 0; i < count; i++)
+    if (handlers && count > 0)
     {
-        struct typed_event_handler *h = (struct typed_event_handler *)handlers[i].handler;
-        if (h && h->lpVtbl && h->lpVtbl->Invoke)
+        for (i = 0; i < count; i++)
         {
-            TRACE("Invoking pointer handler[%d] %p (msg=0x%x, pt=%.0f,%.0f, kind=%u)\n",
-                  i, h, msg, x, y, update_kind);
-            h->lpVtbl->Invoke(h, global_core_window, &args->IPointerEventArgs_iface);
+            struct typed_event_handler *h = (struct typed_event_handler *)handlers[i].handler;
+            if (h && h->lpVtbl && h->lpVtbl->Invoke)
+            {
+                TRACE("Invoking pointer handler[%d] %p (msg=0x%x, pt=%.0f,%.0f, kind=%u)\n",
+                      i, h, msg, x, y, update_kind);
+                h->lpVtbl->Invoke(h, global_core_window, &args->IPointerEventArgs_iface);
+            }
         }
     }
+
+    core_independent_input_source_fire_pointer(msg, wparam, lparam, &args->IPointerEventArgs_iface);
 
     ptr_args_Release(&args->IPointerEventArgs_iface);
 }

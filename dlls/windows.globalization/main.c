@@ -2077,6 +2077,250 @@ static struct calendar_identifiers_statics calendar_identifiers_factory = {
     { cal_s3_vtbl }
 };
 
+/*
+ *
+ * Windows.Globalization.DateTimeFormatting.DateTimeFormatter
+ *
+ */
+
+static const GUID IID_IDateTimeFormatterFactory = {0xec8d8a53, 0x1a2e, 0x412d, {0x88, 0x15, 0x3b, 0x74, 0x5f, 0xb1, 0xa2, 0xa0}};
+
+struct date_time_formatter
+{
+    struct { const void *lpVtbl; } IDateTimeFormatter_iface;
+    LONG ref;
+    WCHAR template[128];
+};
+
+#define impl_from_IDateTimeFormatter(ptr) ((struct date_time_formatter *)((char *)(ptr) - offsetof(struct date_time_formatter, IDateTimeFormatter_iface)))
+
+static HRESULT WINAPI dtf_QI(void *iface, REFIID riid, void **out)
+{
+    struct date_time_formatter *impl = impl_from_IDateTimeFormatter(iface);
+    TRACE("iface %p, riid %s, out %p.\n", iface, debugstr_guid(riid), out);
+
+    if (!out) return E_POINTER;
+    *out = &impl->IDateTimeFormatter_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
+}
+
+static ULONG WINAPI dtf_AddRef(void *iface)
+{
+    struct date_time_formatter *impl = impl_from_IDateTimeFormatter(iface);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI dtf_Release(void *iface)
+{
+    struct date_time_formatter *impl = impl_from_IDateTimeFormatter(iface);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI dtf_GetIids(void *iface, ULONG *iid_count, IID **iids)
+{
+    if (iid_count) *iid_count = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI dtf_GetRuntimeClassName(void *iface, HSTRING *class_name)
+{
+    return WindowsCreateString(L"Windows.Globalization.DateTimeFormatting.DateTimeFormatter", 58, class_name);
+}
+
+static HRESULT WINAPI dtf_GetTrustLevel(void *iface, TrustLevel *trust_level)
+{
+    if (!trust_level) return E_INVALIDARG;
+    *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI dtf_get_Template(void *iface, HSTRING *val)
+{
+    struct date_time_formatter *impl = impl_from_IDateTimeFormatter(iface);
+    if (!val) return E_POINTER;
+    return WindowsCreateString(impl->template, wcslen(impl->template), val);
+}
+
+static HRESULT WINAPI dtf_Format(void *iface, INT64 datetime, HSTRING *result)
+{
+    struct date_time_formatter *impl = impl_from_IDateTimeFormatter(iface);
+    FILETIME ft;
+    SYSTEMTIME st;
+    WCHAR buf[64];
+
+    TRACE("iface %p, datetime %lld, result %p.\n", iface, datetime, result);
+
+    if (!result) return E_POINTER;
+    *result = NULL;
+
+    ft.dwLowDateTime = (DWORD)(datetime & 0xffffffff);
+    ft.dwHighDateTime = (DWORD)(datetime >> 32);
+
+    if (!FileTimeToSystemTime(&ft, &st))
+        GetSystemTime(&st);
+
+    if (wcsstr(impl->template, L"month") && wcsstr(impl->template, L"day") && wcsstr(impl->template, L"year"))
+        swprintf(buf, ARRAY_SIZE(buf), L"%u/%u/%04u", st.wMonth, st.wDay, st.wYear);
+    else
+        swprintf(buf, ARRAY_SIZE(buf), L"%02u/%02u/%04u", st.wMonth, st.wDay, st.wYear);
+
+    return WindowsCreateString(buf, wcslen(buf), result);
+}
+
+static HRESULT WINAPI dtf_stub(void *iface)
+{
+    return S_OK;
+}
+
+static const void *dtf_vtbl[] = {
+    (void *)dtf_QI,
+    (void *)dtf_AddRef,
+    (void *)dtf_Release,
+    (void *)dtf_GetIids,
+    (void *)dtf_GetRuntimeClassName,
+    (void *)dtf_GetTrustLevel,
+    (void *)dtf_stub,               /* slot 6: get_Languages */
+    (void *)dtf_stub,               /* slot 7: get_GeographicRegion */
+    (void *)dtf_stub,               /* slot 8: get_Calendar */
+    (void *)dtf_stub,               /* slot 9: get_Clock */
+    (void *)dtf_get_Template,       /* slot 10: get_Template */
+    (void *)dtf_Format,             /* slot 11: Format (fallback) */
+    (void *)dtf_Format,             /* slot 12: Format (fallback) */
+    (void *)dtf_stub,               /* slot 13: get_Patterns */
+    (void *)dtf_Format,             /* slot 14: Format (0x70 in Solitaire.exe) */
+    (void *)dtf_Format              /* slot 15: FormatUsingSettings */
+};
+
+struct date_time_formatter_factory_impl
+{
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } IDateTimeFormatterFactory_iface;
+    LONG ref;
+};
+
+#define impl_from_dtf_fac(ptr) ((struct date_time_formatter_factory_impl *)((char *)(ptr) - offsetof(struct date_time_formatter_factory_impl, IActivationFactory_iface)))
+#define impl_from_dtf_fact_iface(ptr) ((struct date_time_formatter_factory_impl *)((char *)(ptr) - offsetof(struct date_time_formatter_factory_impl, IDateTimeFormatterFactory_iface)))
+
+static HRESULT dtf_fac_QI_internal(struct date_time_formatter_factory_impl *impl, REFIID riid, void **ppvObject)
+{
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppvObject = &impl->IActivationFactory_iface;
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IDateTimeFormatterFactory))
+    {
+        *ppvObject = &impl->IDateTimeFormatterFactory_iface;
+        return S_OK;
+    }
+
+    /* Fallback: return factory interface */
+    *ppvObject = &impl->IDateTimeFormatterFactory_iface;
+    return S_OK;
+}
+
+static HRESULT WINAPI dtf_activation_factory_QI(IActivationFactory *iface, REFIID riid, void **ppvObject)
+{
+    struct date_time_formatter_factory_impl *impl = impl_from_dtf_fac(iface);
+    HRESULT hr = dtf_fac_QI_internal(impl, riid, ppvObject);
+    if (SUCCEEDED(hr)) IUnknown_AddRef((IUnknown *)*ppvObject);
+    return hr;
+}
+
+static ULONG WINAPI dtf_fac_AddRef(IActivationFactory *iface)
+{
+    struct date_time_formatter_factory_impl *impl = impl_from_dtf_fac(iface);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI dtf_fac_Release(IActivationFactory *iface)
+{
+    struct date_time_formatter_factory_impl *impl = impl_from_dtf_fac(iface);
+    return InterlockedDecrement(&impl->ref);
+}
+
+static ULONG WINAPI dtf_fact_AddRef(void *iface)
+{
+    struct date_time_formatter_factory_impl *impl = impl_from_dtf_fact_iface(iface);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI dtf_fact_Release(void *iface)
+{
+    struct date_time_formatter_factory_impl *impl = impl_from_dtf_fact_iface(iface);
+    return InterlockedDecrement(&impl->ref);
+}
+
+static HRESULT WINAPI dtf_fact_QI(void *iface, REFIID riid, void **ppvObject)
+{
+    struct date_time_formatter_factory_impl *impl = impl_from_dtf_fact_iface(iface);
+    HRESULT hr = dtf_fac_QI_internal(impl, riid, ppvObject);
+    if (SUCCEEDED(hr)) IUnknown_AddRef((IUnknown *)*ppvObject);
+    return hr;
+}
+
+static HRESULT WINAPI dtf_fac_ActivateInstance(IActivationFactory *iface, IInspectable **instance)
+{
+    if (instance) *instance = NULL;
+    return E_NOTIMPL;
+}
+
+static const struct IActivationFactoryVtbl dtf_activation_factory_vtbl = {
+    dtf_activation_factory_QI,
+    dtf_fac_AddRef,
+    dtf_fac_Release,
+    (void *)dtf_GetIids,
+    (void *)dtf_GetRuntimeClassName,
+    (void *)dtf_GetTrustLevel,
+    dtf_fac_ActivateInstance
+};
+
+static HRESULT WINAPI dtf_fact_CreateDateTimeFormatter(void *This, HSTRING formatTemplate, void **result)
+{
+    const WCHAR *tmpl = WindowsGetStringRawBuffer(formatTemplate, NULL);
+    struct date_time_formatter *impl;
+
+    TRACE("This %p, formatTemplate %s, result %p.\n", This, debugstr_w(tmpl), result);
+
+    if (!result) return E_POINTER;
+    *result = NULL;
+
+    if (!(impl = calloc(1, sizeof(*impl)))) return E_OUTOFMEMORY;
+    impl->IDateTimeFormatter_iface.lpVtbl = dtf_vtbl;
+    impl->ref = 1;
+    if (tmpl) lstrcpynW(impl->template, tmpl, ARRAY_SIZE(impl->template));
+
+    *result = &impl->IDateTimeFormatter_iface;
+    return S_OK;
+}
+
+static const void *dtf_factory_vtbl[] = {
+    (void *)dtf_fact_QI,
+    (void *)dtf_fact_AddRef,
+    (void *)dtf_fact_Release,
+    (void *)dtf_GetIids,
+    (void *)dtf_GetRuntimeClassName,
+    (void *)dtf_GetTrustLevel,
+    (void *)dtf_fact_CreateDateTimeFormatter,
+    (void *)dtf_stub,
+    (void *)dtf_stub
+};
+
+static struct date_time_formatter_factory_impl date_time_formatter_factory = {
+    { &dtf_activation_factory_vtbl },
+    { dtf_factory_vtbl },
+    1
+};
+
 HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out)
 {
     FIXME("clsid %s, riid %s, out %p stub!\n", debugstr_guid(clsid), debugstr_guid(riid), out);
@@ -2124,6 +2368,11 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, IActivationFactory **fac
     else if (!wcscmp(name, L"Windows.Globalization.CalendarIdentifiers"))
     {
         *factory = &calendar_identifiers_factory.IActivationFactory_iface;
+        IUnknown_AddRef(*factory);
+    }
+    else if (!wcscmp(name, L"Windows.Globalization.DateTimeFormatting.DateTimeFormatter"))
+    {
+        *factory = &date_time_formatter_factory.IActivationFactory_iface;
         IUnknown_AddRef(*factory);
     }
 

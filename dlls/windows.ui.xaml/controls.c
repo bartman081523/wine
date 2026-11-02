@@ -2113,7 +2113,428 @@ static HRESULT WINAPI elem_scp_get_CompositionScaleX(void *This, float *val) { i
 static HRESULT WINAPI elem_scp_get_CompositionScaleY(void *This, float *val) { if (val) *val = 1.0f; return S_OK; }
 static HRESULT WINAPI elem_scp_add_CompositionScaleChanged(void *This, void *handler, EventRegistrationToken *token) { if (token) token->value = 1; return S_OK; }
 static HRESULT WINAPI elem_scp_remove_CompositionScaleChanged(void *This, EventRegistrationToken token) { return S_OK; }
-static HRESULT WINAPI elem_scp_CreateCoreIndependentInputSource(void *This, int deviceTypes, void **ret) { if (ret) *ret = NULL; return E_NOTIMPL; }
+/* -------------------------------------------------------------------------
+ * CoreIndependentInputSource Implementation
+ * ------------------------------------------------------------------------- */
+static const GUID IID_ICoreInputSourceBase        = {0x9f488807, 0x4580, 0x4be8, {0xbe, 0x68, 0x92, 0xa9, 0x31, 0x17, 0x13, 0xbb}};
+static const GUID IID_ICorePointerInputSource     = {0xbbf1bb18, 0xe47a, 0x48eb, {0x88, 0x07, 0xf8, 0xf8, 0xd3, 0xea, 0x45, 0x51}};
+static const GUID IID_ICorePointerInputSource_Alt = {0xbcf7b858, 0xe4b2, 0x48fb, {0x88, 0x07, 0xf8, 0xf8, 0xd3, 0xea, 0x45, 0x51}};
+
+struct input_handler_entry
+{
+    void *handler;
+    INT64 token;
+};
+
+struct core_independent_input_source
+{
+    struct { const void *lpVtbl; } ICoreInputSourceBase_iface;
+    struct { const void *lpVtbl; } ICorePointerInputSource_iface;
+    LONG ref;
+    struct input_handler_entry pointer_pressed[16];
+    int pointer_pressed_count;
+    struct input_handler_entry pointer_released[16];
+    int pointer_released_count;
+    struct input_handler_entry pointer_moved[16];
+    int pointer_moved_count;
+    struct input_handler_entry pointer_wheel[16];
+    int pointer_wheel_count;
+    INT64 next_token;
+};
+
+#define impl_from_ICoreInputSourceBase(ptr) \
+    ((struct core_independent_input_source *)((char *)(ptr) - offsetof(struct core_independent_input_source, ICoreInputSourceBase_iface)))
+#define impl_from_ICorePointerInputSource(ptr) \
+    ((struct core_independent_input_source *)((char *)(ptr) - offsetof(struct core_independent_input_source, ICorePointerInputSource_iface)))
+
+static struct core_independent_input_source *global_independent_input_source = NULL;
+
+static HRESULT WINAPI input_source_QI(void *This, REFIID riid, void **ppv)
+{
+    struct core_independent_input_source *impl = impl_from_ICoreInputSourceBase(This);
+    if (!ppv) return E_POINTER;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_ICoreInputSourceBase))
+    {
+        *ppv = &impl->ICoreInputSourceBase_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ICorePointerInputSource) ||
+        IsEqualGUID(riid, &IID_ICorePointerInputSource_Alt))
+    {
+        *ppv = &impl->ICorePointerInputSource_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    TRACE("input_source %p unhandled QI %s\n", impl, debugstr_guid(riid));
+    *ppv = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI input_source_AddRef(void *This)
+{
+    return InterlockedIncrement(&impl_from_ICoreInputSourceBase(This)->ref);
+}
+
+static ULONG WINAPI input_source_Release(void *This)
+{
+    return InterlockedDecrement(&impl_from_ICoreInputSourceBase(This)->ref);
+}
+
+static HRESULT WINAPI input_source_GetIids(void *This, ULONG *count, IID **iids)
+{
+    if (count) *count = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI input_source_GetRuntimeClassName(void *This, HSTRING *className)
+{
+    return WindowsCreateString(L"Windows.UI.Core.CoreIndependentInputSource", 42, className);
+}
+
+static HRESULT WINAPI input_source_GetTrustLevel(void *This, TrustLevel *trustLevel)
+{
+    if (trustLevel) *trustLevel = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI input_source_get_Dispatcher(void *This, void **value)
+{
+    TRACE("CoreIndependentInputSource get_Dispatcher\n");
+    return get_global_dispatcher(value);
+}
+
+static HRESULT WINAPI input_source_get_IsInputEnabled(void *This, boolean *value)
+{
+    if (value) *value = TRUE;
+    return S_OK;
+}
+
+static HRESULT WINAPI input_source_put_IsInputEnabled(void *This, boolean value)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI input_source_add_InputEnabled(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI input_source_remove_InputEnabled(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static const void *core_input_source_base_vtbl[] = {
+    (void *)input_source_QI,
+    (void *)input_source_AddRef,
+    (void *)input_source_Release,
+    (void *)input_source_GetIids,
+    (void *)input_source_GetRuntimeClassName,
+    (void *)input_source_GetTrustLevel,
+    (void *)input_source_get_Dispatcher,
+    (void *)input_source_get_IsInputEnabled,
+    (void *)input_source_put_IsInputEnabled,
+    (void *)input_source_add_InputEnabled,
+    (void *)input_source_remove_InputEnabled
+};
+
+/* ICorePointerInputSource implementation */
+static HRESULT WINAPI ptr_input_QI(void *This, REFIID riid, void **ppv)
+{
+    return input_source_QI(&impl_from_ICorePointerInputSource(This)->ICoreInputSourceBase_iface, riid, ppv);
+}
+
+static ULONG WINAPI ptr_input_AddRef(void *This)
+{
+    return input_source_AddRef(&impl_from_ICorePointerInputSource(This)->ICoreInputSourceBase_iface);
+}
+
+static ULONG WINAPI ptr_input_Release(void *This)
+{
+    return input_source_Release(&impl_from_ICorePointerInputSource(This)->ICoreInputSourceBase_iface);
+}
+
+static HRESULT WINAPI ptr_input_get_HasCapture(void *This, boolean *value)
+{
+    if (value) *value = FALSE;
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_get_PointerPosition(void *This, void *value)
+{
+    FLOAT *coords = (FLOAT *)value;
+    if (coords) { coords[0] = 0.0f; coords[1] = 0.0f; }
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_get_PointerCursor(void *This, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_put_PointerCursor(void *This, void *value)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_ReleasePointerCapture(void *This)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_SetPointerCapture(void *This)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_add_PointerCaptureLost(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_remove_PointerCaptureLost(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_add_PointerEntered(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_remove_PointerEntered(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_add_PointerExited(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_remove_PointerExited(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_add_PointerMoved(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct core_independent_input_source *impl = impl_from_ICorePointerInputSource(This);
+    TRACE("ICorePointerInputSource add_PointerMoved handler=%p\n", handler);
+    if (!handler) return E_POINTER;
+    if (impl->pointer_moved_count < 16)
+    {
+        INT64 tok = ++impl->next_token;
+        impl->pointer_moved[impl->pointer_moved_count].handler = handler;
+        impl->pointer_moved[impl->pointer_moved_count].token = tok;
+        impl->pointer_moved_count++;
+        IUnknown_AddRef((IUnknown *)handler);
+        if (token) token->value = tok;
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_remove_PointerMoved(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_add_PointerPressed(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct core_independent_input_source *impl = impl_from_ICorePointerInputSource(This);
+    TRACE("ICorePointerInputSource add_PointerPressed handler=%p\n", handler);
+    if (!handler) return E_POINTER;
+    if (impl->pointer_pressed_count < 16)
+    {
+        INT64 tok = ++impl->next_token;
+        impl->pointer_pressed[impl->pointer_pressed_count].handler = handler;
+        impl->pointer_pressed[impl->pointer_pressed_count].token = tok;
+        impl->pointer_pressed_count++;
+        IUnknown_AddRef((IUnknown *)handler);
+        if (token) token->value = tok;
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_remove_PointerPressed(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_add_PointerReleased(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct core_independent_input_source *impl = impl_from_ICorePointerInputSource(This);
+    TRACE("ICorePointerInputSource add_PointerReleased handler=%p\n", handler);
+    if (!handler) return E_POINTER;
+    if (impl->pointer_released_count < 16)
+    {
+        INT64 tok = ++impl->next_token;
+        impl->pointer_released[impl->pointer_released_count].handler = handler;
+        impl->pointer_released[impl->pointer_released_count].token = tok;
+        impl->pointer_released_count++;
+        IUnknown_AddRef((IUnknown *)handler);
+        if (token) token->value = tok;
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_remove_PointerReleased(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_add_PointerWheelChanged(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct core_independent_input_source *impl = impl_from_ICorePointerInputSource(This);
+    TRACE("ICorePointerInputSource add_PointerWheelChanged handler=%p\n", handler);
+    if (!handler) return E_POINTER;
+    if (impl->pointer_wheel_count < 16)
+    {
+        INT64 tok = ++impl->next_token;
+        impl->pointer_wheel[impl->pointer_wheel_count].handler = handler;
+        impl->pointer_wheel[impl->pointer_wheel_count].token = tok;
+        impl->pointer_wheel_count++;
+        IUnknown_AddRef((IUnknown *)handler);
+        if (token) token->value = tok;
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI ptr_input_remove_PointerWheelChanged(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static const void *core_pointer_input_source_vtbl[] = {
+    (void *)ptr_input_QI,                         /* 0 */
+    (void *)ptr_input_AddRef,                     /* 1 */
+    (void *)ptr_input_Release,                    /* 2 */
+    (void *)input_source_GetIids,                 /* 3 */
+    (void *)input_source_GetRuntimeClassName,     /* 4 */
+    (void *)input_source_GetTrustLevel,           /* 5 */
+    (void *)ptr_input_get_HasCapture,             /* 6 */
+    (void *)ptr_input_get_PointerPosition,        /* 7 */
+    (void *)ptr_input_get_PointerCursor,          /* 8 */
+    (void *)ptr_input_put_PointerCursor,          /* 9 */
+    (void *)ptr_input_ReleasePointerCapture,      /* 10 */
+    (void *)ptr_input_SetPointerCapture,          /* 11 */
+    (void *)ptr_input_add_PointerCaptureLost,     /* 12 */
+    (void *)ptr_input_remove_PointerCaptureLost,  /* 13 */
+    (void *)ptr_input_add_PointerEntered,         /* 14 */
+    (void *)ptr_input_remove_PointerEntered,      /* 15 */
+    (void *)ptr_input_add_PointerExited,          /* 16 */
+    (void *)ptr_input_remove_PointerExited,       /* 17 */
+    (void *)ptr_input_add_PointerMoved,           /* 18 */
+    (void *)ptr_input_remove_PointerMoved,        /* 19 */
+    (void *)ptr_input_add_PointerPressed,         /* 20 */
+    (void *)ptr_input_remove_PointerPressed,      /* 21 */
+    (void *)ptr_input_add_PointerReleased,        /* 22 */
+    (void *)ptr_input_remove_PointerReleased,     /* 23 */
+    (void *)ptr_input_add_PointerWheelChanged,    /* 24 */
+    (void *)ptr_input_remove_PointerWheelChanged  /* 25 */
+};
+
+int core_independent_input_source_has_handlers(UINT msg)
+{
+    struct core_independent_input_source *impl = global_independent_input_source;
+    if (!impl) return 0;
+    switch (msg)
+    {
+        case WM_LBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN:
+            return impl->pointer_pressed_count > 0;
+        case WM_LBUTTONUP:
+        case WM_RBUTTONUP:
+        case WM_MBUTTONUP:
+            return impl->pointer_released_count > 0;
+        case WM_MOUSEMOVE:
+            return impl->pointer_moved_count > 0;
+        case WM_MOUSEWHEEL:
+            return impl->pointer_wheel_count > 0;
+        default:
+            return 0;
+    }
+}
+
+void core_independent_input_source_fire_pointer(UINT msg, WPARAM wparam, LPARAM lparam, void *args)
+{
+    struct core_independent_input_source *impl = global_independent_input_source;
+    struct input_handler_entry *handlers = NULL;
+    int count = 0, i;
+
+    if (!impl || !args) return;
+
+    switch (msg)
+    {
+        case WM_LBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN:
+            handlers = impl->pointer_pressed;
+            count = impl->pointer_pressed_count;
+            break;
+        case WM_LBUTTONUP:
+        case WM_RBUTTONUP:
+        case WM_MBUTTONUP:
+            handlers = impl->pointer_released;
+            count = impl->pointer_released_count;
+            break;
+        case WM_MOUSEMOVE:
+            handlers = impl->pointer_moved;
+            count = impl->pointer_moved_count;
+            break;
+        case WM_MOUSEWHEEL:
+            handlers = impl->pointer_wheel;
+            count = impl->pointer_wheel_count;
+            break;
+        default:
+            return;
+    }
+
+    for (i = 0; i < count; i++)
+    {
+        struct typed_event_handler *h = (struct typed_event_handler *)handlers[i].handler;
+        if (h && h->lpVtbl && h->lpVtbl->Invoke)
+        {
+            TRACE("Invoking independent input handler[%d] %p (msg=0x%x)\n", i, h, msg);
+            h->lpVtbl->Invoke(h, &impl->ICorePointerInputSource_iface, args);
+        }
+    }
+}
+
+static HRESULT create_core_independent_input_source(void **ret)
+{
+    struct core_independent_input_source *impl;
+    if (!ret) return E_POINTER;
+    if (global_independent_input_source)
+    {
+        InterlockedIncrement(&global_independent_input_source->ref);
+        *ret = &global_independent_input_source->ICoreInputSourceBase_iface;
+        return S_OK;
+    }
+    impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->ICoreInputSourceBase_iface.lpVtbl = core_input_source_base_vtbl;
+    impl->ICorePointerInputSource_iface.lpVtbl = core_pointer_input_source_vtbl;
+    impl->ref = 10000; /* Persistent singleton */
+    global_independent_input_source = impl;
+    *ret = &impl->ICoreInputSourceBase_iface;
+    return S_OK;
+}
+
+static HRESULT WINAPI elem_scp_CreateCoreIndependentInputSource(void *This, int deviceTypes, void **ret)
+{
+    TRACE("SwapChainPanel %p CreateCoreIndependentInputSource deviceTypes=0x%x, ret=%p\n", This, deviceTypes, ret);
+    return create_core_independent_input_source(ret);
+}
 
 static HRESULT WINAPI elem_scp_native_QI(void *This, REFIID riid, void **ppv) { return elem_QI_internal(impl_from_ISwapChainPanelNative(This), riid, ppv); }
 static ULONG WINAPI elem_scp_native_AddRef(void *This) { return elem_AddRef_internal(impl_from_ISwapChainPanelNative(This)); }

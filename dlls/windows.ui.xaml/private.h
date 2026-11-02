@@ -90,6 +90,22 @@ HRESULT create_menu_flyout_item_instance(const WCHAR *name, void **value);
 void xaml_fire_swapchain_size_changed(FLOAT width, FLOAT height);
 LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
+struct typed_event_handler_vtbl
+{
+    HRESULT (WINAPI *QueryInterface)(void *This, REFIID riid, void **ppv);
+    ULONG (WINAPI *AddRef)(void *This);
+    ULONG (WINAPI *Release)(void *This);
+    HRESULT (WINAPI *Invoke)(void *This, void *sender, void *args);
+};
+
+struct typed_event_handler
+{
+    const struct typed_event_handler_vtbl *lpVtbl;
+};
+
+void core_independent_input_source_fire_pointer(UINT msg, WPARAM wparam, LPARAM lparam, void *args);
+int core_independent_input_source_has_handlers(UINT msg);
+
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \
     {                                                                                              \

@@ -377,12 +377,18 @@ static const struct IStorageItemVtbl storage_item_vtbl =
 struct package
 {
     IPackage IPackage_iface;
+    IPackage3 IPackage3_iface;
     LONG ref;
 };
 
 static inline struct package *impl_from_IPackage( IPackage *iface )
 {
     return CONTAINING_RECORD( iface, struct package, IPackage_iface );
+}
+
+static inline struct package *impl_from_IPackage3( IPackage3 *iface )
+{
+    return CONTAINING_RECORD( iface, struct package, IPackage3_iface );
 }
 
 static HRESULT WINAPI package_QueryInterface( IPackage *iface, REFIID iid, void **out )
@@ -397,6 +403,13 @@ static HRESULT WINAPI package_QueryInterface( IPackage *iface, REFIID iid, void 
         IsEqualGUID( iid, &IID_IPackage ))
     {
         *out = &impl->IPackage_iface;
+        IInspectable_AddRef( *out );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( iid, &IID_IPackage3 ))
+    {
+        *out = &impl->IPackage3_iface;
         IInspectable_AddRef( *out );
         return S_OK;
     }
@@ -688,6 +701,79 @@ static const struct IPackageVtbl package_vtbl =
     package_get_Dependencies,
 };
 
+static HRESULT WINAPI package3_QueryInterface( IPackage3 *iface, REFIID iid, void **out )
+{
+    struct package *impl = impl_from_IPackage3( iface );
+    return package_QueryInterface( &impl->IPackage_iface, iid, out );
+}
+
+static ULONG WINAPI package3_AddRef( IPackage3 *iface )
+{
+    struct package *impl = impl_from_IPackage3( iface );
+    return package_AddRef( &impl->IPackage_iface );
+}
+
+static ULONG WINAPI package3_Release( IPackage3 *iface )
+{
+    struct package *impl = impl_from_IPackage3( iface );
+    return package_Release( &impl->IPackage_iface );
+}
+
+static HRESULT WINAPI package3_GetIids( IPackage3 *iface, ULONG *iid_count, IID **iids )
+{
+    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI package3_GetRuntimeClassName( IPackage3 *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.ApplicationModel.Package", 32, class_name );
+}
+
+static HRESULT WINAPI package3_GetTrustLevel( IPackage3 *iface, TrustLevel *trust_level )
+{
+    if (trust_level) *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI package3_get_Status( IPackage3 *iface, IPackageStatus **value )
+{
+    FIXME( "iface %p, value %p stub!\n", iface, value );
+    if (value) *value = NULL;
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI package3_get_InstalledDate( IPackage3 *iface, DateTime *value )
+{
+    FILETIME ft;
+    TRACE( "iface %p, value %p.\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    GetSystemTimeAsFileTime( &ft );
+    value->UniversalTime = ((INT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    return S_OK;
+}
+
+static HRESULT WINAPI package3_GetAppListEntriesAsync( IPackage3 *iface,
+    __FIAsyncOperation_1___FIVectorView_1_Windows__CApplicationModel__CCore__CAppListEntry **operation )
+{
+    FIXME( "iface %p, operation %p stub!\n", iface, operation );
+    if (operation) *operation = NULL;
+    return E_NOTIMPL;
+}
+
+static const struct IPackage3Vtbl package3_vtbl =
+{
+    package3_QueryInterface,
+    package3_AddRef,
+    package3_Release,
+    package3_GetIids,
+    package3_GetRuntimeClassName,
+    package3_GetTrustLevel,
+    package3_get_Status,
+    package3_get_InstalledDate,
+    package3_GetAppListEntriesAsync,
+};
+
 DEFINE_IINSPECTABLE( package_statics, IPackageStatics, struct package_statics, IActivationFactory_iface )
 
 HRESULT create_package( IPackage **value )
@@ -698,6 +784,7 @@ HRESULT create_package( IPackage **value )
     if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
 
     impl->IPackage_iface.lpVtbl = &package_vtbl;
+    impl->IPackage3_iface.lpVtbl = &package3_vtbl;
     impl->ref = 1;
 
     *value = &impl->IPackage_iface;

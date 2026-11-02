@@ -160,6 +160,16 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
             *out = wcsdup(L"windows.storage.applicationdata.dll");
             return S_OK;
         }
+        if (!wcsncmp(classid, L"Windows.Storage.ApplicationData", 30))
+        {
+            *out = wcsdup(L"windows.storage.applicationdata.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.Storage.", 16))
+        {
+            *out = wcsdup(L"windows.storage.dll");
+            return S_OK;
+        }
         if (!wcsncmp(classid, L"Windows.Globalization.", 22))
         {
             *out = wcsdup(L"windows.globalization.dll");

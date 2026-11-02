@@ -1335,6 +1335,507 @@ static HRESULT async_storage_file_create( IStorageFile *file, HRESULT hr, AsyncS
     return S_OK;
 }
 
+static const struct IStorageFolderVtbl storage_folder_vtbl;
+static const struct IStorageItemVtbl storage_item_vtbl;
+
+struct async_storage_folder
+{
+    IAsyncOperation_StorageFolder IAsyncOperation_StorageFolder_iface;
+    IAsyncInfo IAsyncInfo_iface;
+    LONG ref;
+    IStorageFolder *result;
+    IAsyncOperationCompletedHandler_StorageFolder *handler;
+    HRESULT hr;
+    AsyncStatus status;
+};
+
+static inline struct async_storage_folder *impl_from_IAsyncOperation_StorageFolder( IAsyncOperation_StorageFolder *iface )
+{
+    return CONTAINING_RECORD( iface, struct async_storage_folder, IAsyncOperation_StorageFolder_iface );
+}
+
+static inline struct async_storage_folder *impl_from_async_storage_folder_IAsyncInfo( IAsyncInfo *iface )
+{
+    return CONTAINING_RECORD( iface, struct async_storage_folder, IAsyncInfo_iface );
+}
+
+static HRESULT WINAPI async_storage_folder_QueryInterface( IAsyncOperation_StorageFolder *iface, REFIID iid, void **out )
+{
+    struct async_storage_folder *impl = impl_from_IAsyncOperation_StorageFolder( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+    if (!out) return E_POINTER;
+    *out = NULL;
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) ||
+        IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
+        IsEqualGUID( iid, &IID_IAsyncOperation_StorageFolder ))
+    {
+        *out = &impl->IAsyncOperation_StorageFolder_iface;
+        IAsyncOperation_StorageFolder_AddRef( iface );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( iid, &IID_IAsyncInfo ))
+    {
+        *out = &impl->IAsyncInfo_iface;
+        IAsyncOperation_StorageFolder_AddRef( iface );
+        return S_OK;
+    }
+
+    TRACE( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI async_storage_folder_AddRef( IAsyncOperation_StorageFolder *iface )
+{
+    struct async_storage_folder *impl = impl_from_IAsyncOperation_StorageFolder( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p increasing refcount to %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI async_storage_folder_Release( IAsyncOperation_StorageFolder *iface )
+{
+    struct async_storage_folder *impl = impl_from_IAsyncOperation_StorageFolder( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+    TRACE( "iface %p decreasing refcount to %lu.\n", iface, ref );
+    if (!ref)
+    {
+        if (impl->result) IStorageFolder_Release( impl->result );
+        if (impl->handler) IAsyncOperationCompletedHandler_StorageFolder_Release( impl->handler );
+        free( impl );
+    }
+    return ref;
+}
+
+static HRESULT WINAPI async_storage_folder_GetIids( IAsyncOperation_StorageFolder *iface, ULONG *iid_count, IID **iids )
+{
+    if (iid_count) *iid_count = 0;
+    if (iids) *iids = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_GetRuntimeClassName( IAsyncOperation_StorageFolder *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.Foundation.IAsyncOperation`1<Windows.Storage.StorageFolder>",
+                                ARRAY_SIZE(L"Windows.Foundation.IAsyncOperation`1<Windows.Storage.StorageFolder>") - 1,
+                                class_name );
+}
+
+static HRESULT WINAPI async_storage_folder_GetTrustLevel( IAsyncOperation_StorageFolder *iface, TrustLevel *trust_level )
+{
+    if (trust_level) *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_put_Completed( IAsyncOperation_StorageFolder *iface,
+    IAsyncOperationCompletedHandler_StorageFolder *handler )
+{
+    struct async_storage_folder *impl = impl_from_IAsyncOperation_StorageFolder( iface );
+    TRACE( "iface %p, handler %p.\n", iface, handler );
+    if (impl->handler) IAsyncOperationCompletedHandler_StorageFolder_Release( impl->handler );
+    if ((impl->handler = handler))
+    {
+        IAsyncOperationCompletedHandler_StorageFolder_AddRef( handler );
+        IAsyncOperationCompletedHandler_StorageFolder_Invoke( handler, iface, impl->status );
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_get_Completed( IAsyncOperation_StorageFolder *iface,
+    IAsyncOperationCompletedHandler_StorageFolder **handler )
+{
+    struct async_storage_folder *impl = impl_from_IAsyncOperation_StorageFolder( iface );
+    if (!handler) return E_INVALIDARG;
+    *handler = impl->handler;
+    if (*handler) IAsyncOperationCompletedHandler_StorageFolder_AddRef( *handler );
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_GetResults( IAsyncOperation_StorageFolder *iface,
+    IStorageFolder **results )
+{
+    struct async_storage_folder *impl = impl_from_IAsyncOperation_StorageFolder( iface );
+    TRACE( "iface %p, results %p, hr %#lx, status %d.\n", iface, results, impl->hr, impl->status );
+    if (FAILED(impl->hr))
+    {
+        if (results) *results = NULL;
+        return impl->hr;
+    }
+    if (!results) return E_INVALIDARG;
+    *results = impl->result;
+    if (*results) IStorageFolder_AddRef( *results );
+    return S_OK;
+}
+
+static const struct IAsyncOperation_StorageFolderVtbl async_storage_folder_vtbl =
+{
+    async_storage_folder_QueryInterface,
+    async_storage_folder_AddRef,
+    async_storage_folder_Release,
+    async_storage_folder_GetIids,
+    async_storage_folder_GetRuntimeClassName,
+    async_storage_folder_GetTrustLevel,
+    async_storage_folder_put_Completed,
+    async_storage_folder_get_Completed,
+    async_storage_folder_GetResults,
+};
+
+static HRESULT WINAPI async_storage_folder_info_QueryInterface( IAsyncInfo *iface, REFIID iid, void **out )
+{
+    struct async_storage_folder *impl = impl_from_async_storage_folder_IAsyncInfo( iface );
+    return async_storage_folder_QueryInterface( &impl->IAsyncOperation_StorageFolder_iface, iid, out );
+}
+
+static ULONG WINAPI async_storage_folder_info_AddRef( IAsyncInfo *iface )
+{
+    struct async_storage_folder *impl = impl_from_async_storage_folder_IAsyncInfo( iface );
+    return async_storage_folder_AddRef( &impl->IAsyncOperation_StorageFolder_iface );
+}
+
+static ULONG WINAPI async_storage_folder_info_Release( IAsyncInfo *iface )
+{
+    struct async_storage_folder *impl = impl_from_async_storage_folder_IAsyncInfo( iface );
+    return async_storage_folder_Release( &impl->IAsyncOperation_StorageFolder_iface );
+}
+
+static HRESULT WINAPI async_storage_folder_info_GetIids( IAsyncInfo *iface, ULONG *iid_count, IID **iids )
+{
+    return async_storage_folder_GetIids( NULL, iid_count, iids );
+}
+
+static HRESULT WINAPI async_storage_folder_info_GetRuntimeClassName( IAsyncInfo *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.Foundation.IAsyncInfo", ARRAY_SIZE(L"Windows.Foundation.IAsyncInfo") - 1, class_name );
+}
+
+static HRESULT WINAPI async_storage_folder_info_GetTrustLevel( IAsyncInfo *iface, TrustLevel *trust_level )
+{
+    if (trust_level) *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_info_get_Id( IAsyncInfo *iface, UINT32 *id )
+{
+    if (!id) return E_INVALIDARG;
+    *id = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_info_get_Status( IAsyncInfo *iface, AsyncStatus *status )
+{
+    struct async_storage_folder *impl = impl_from_async_storage_folder_IAsyncInfo( iface );
+    if (!status) return E_INVALIDARG;
+    *status = impl->status;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_info_get_ErrorCode( IAsyncInfo *iface, HRESULT *error_code )
+{
+    struct async_storage_folder *impl = impl_from_async_storage_folder_IAsyncInfo( iface );
+    if (!error_code) return E_INVALIDARG;
+    *error_code = impl->hr;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_info_Cancel( IAsyncInfo *iface )
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_folder_info_Close( IAsyncInfo *iface )
+{
+    return S_OK;
+}
+
+static const struct IAsyncInfoVtbl async_storage_folder_info_vtbl =
+{
+    async_storage_folder_info_QueryInterface,
+    async_storage_folder_info_AddRef,
+    async_storage_folder_info_Release,
+    async_storage_folder_info_GetIids,
+    async_storage_folder_info_GetRuntimeClassName,
+    async_storage_folder_info_GetTrustLevel,
+    async_storage_folder_info_get_Id,
+    async_storage_folder_info_get_Status,
+    async_storage_folder_info_get_ErrorCode,
+    async_storage_folder_info_Cancel,
+    async_storage_folder_info_Close,
+};
+
+static HRESULT async_storage_folder_create( IStorageFolder *folder, HRESULT hr, AsyncStatus status, IAsyncOperation_StorageFolder **out )
+{
+    struct async_storage_folder *impl;
+
+    if (!out) return E_INVALIDARG;
+    *out = NULL;
+
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+
+    impl->IAsyncOperation_StorageFolder_iface.lpVtbl = &async_storage_folder_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = &async_storage_folder_info_vtbl;
+    impl->ref = 1;
+    impl->result = folder;
+    if (folder) IStorageFolder_AddRef( folder );
+    impl->hr = hr;
+    impl->status = status;
+
+    *out = &impl->IAsyncOperation_StorageFolder_iface;
+    TRACE( "created async_storage_folder %p: folder %p, hr %#lx, status %d\n", *out, folder, hr, status );
+    return S_OK;
+}
+
+struct async_storage_item
+{
+    IAsyncOperation_IStorageItem IAsyncOperation_IStorageItem_iface;
+    IAsyncInfo IAsyncInfo_iface;
+    LONG ref;
+    IStorageItem *result;
+    IAsyncOperationCompletedHandler_IStorageItem *handler;
+    HRESULT hr;
+    AsyncStatus status;
+};
+
+static inline struct async_storage_item *impl_from_IAsyncOperation_IStorageItem( IAsyncOperation_IStorageItem *iface )
+{
+    return CONTAINING_RECORD( iface, struct async_storage_item, IAsyncOperation_IStorageItem_iface );
+}
+
+static inline struct async_storage_item *impl_from_async_storage_item_IAsyncInfo( IAsyncInfo *iface )
+{
+    return CONTAINING_RECORD( iface, struct async_storage_item, IAsyncInfo_iface );
+}
+
+static HRESULT WINAPI async_storage_item_QueryInterface( IAsyncOperation_IStorageItem *iface, REFIID iid, void **out )
+{
+    struct async_storage_item *impl = impl_from_IAsyncOperation_IStorageItem( iface );
+
+    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid( iid ), out );
+    if (!out) return E_POINTER;
+    *out = NULL;
+
+    if (IsEqualGUID( iid, &IID_IUnknown ) ||
+        IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
+        IsEqualGUID( iid, &IID_IAsyncOperation_IStorageItem ))
+    {
+        *out = &impl->IAsyncOperation_IStorageItem_iface;
+        IAsyncOperation_IStorageItem_AddRef( iface );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( iid, &IID_IAsyncInfo ))
+    {
+        *out = &impl->IAsyncInfo_iface;
+        IAsyncOperation_IStorageItem_AddRef( iface );
+        return S_OK;
+    }
+
+    TRACE( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI async_storage_item_AddRef( IAsyncOperation_IStorageItem *iface )
+{
+    struct async_storage_item *impl = impl_from_IAsyncOperation_IStorageItem( iface );
+    ULONG ref = InterlockedIncrement( &impl->ref );
+    TRACE( "iface %p increasing refcount to %lu.\n", iface, ref );
+    return ref;
+}
+
+static ULONG WINAPI async_storage_item_Release( IAsyncOperation_IStorageItem *iface )
+{
+    struct async_storage_item *impl = impl_from_IAsyncOperation_IStorageItem( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+    TRACE( "iface %p decreasing refcount to %lu.\n", iface, ref );
+    if (!ref)
+    {
+        if (impl->result) IStorageItem_Release( impl->result );
+        if (impl->handler) IAsyncOperationCompletedHandler_IStorageItem_Release( impl->handler );
+        free( impl );
+    }
+    return ref;
+}
+
+static HRESULT WINAPI async_storage_item_GetIids( IAsyncOperation_IStorageItem *iface, ULONG *iid_count, IID **iids )
+{
+    if (iid_count) *iid_count = 0;
+    if (iids) *iids = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_GetRuntimeClassName( IAsyncOperation_IStorageItem *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.Foundation.IAsyncOperation`1<Windows.Storage.IStorageItem>",
+                                ARRAY_SIZE(L"Windows.Foundation.IAsyncOperation`1<Windows.Storage.IStorageItem>") - 1,
+                                class_name );
+}
+
+static HRESULT WINAPI async_storage_item_GetTrustLevel( IAsyncOperation_IStorageItem *iface, TrustLevel *trust_level )
+{
+    if (trust_level) *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_put_Completed( IAsyncOperation_IStorageItem *iface,
+    IAsyncOperationCompletedHandler_IStorageItem *handler )
+{
+    struct async_storage_item *impl = impl_from_IAsyncOperation_IStorageItem( iface );
+    TRACE( "iface %p, handler %p.\n", iface, handler );
+    if (impl->handler) IAsyncOperationCompletedHandler_IStorageItem_Release( impl->handler );
+    if ((impl->handler = handler))
+    {
+        IAsyncOperationCompletedHandler_IStorageItem_AddRef( handler );
+        IAsyncOperationCompletedHandler_IStorageItem_Invoke( handler, iface, impl->status );
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_get_Completed( IAsyncOperation_IStorageItem *iface,
+    IAsyncOperationCompletedHandler_IStorageItem **handler )
+{
+    struct async_storage_item *impl = impl_from_IAsyncOperation_IStorageItem( iface );
+    if (!handler) return E_INVALIDARG;
+    *handler = impl->handler;
+    if (*handler) IAsyncOperationCompletedHandler_IStorageItem_AddRef( *handler );
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_GetResults( IAsyncOperation_IStorageItem *iface,
+    IStorageItem **results )
+{
+    struct async_storage_item *impl = impl_from_IAsyncOperation_IStorageItem( iface );
+    TRACE( "iface %p, results %p, hr %#lx, status %d.\n", iface, results, impl->hr, impl->status );
+    if (FAILED(impl->hr))
+    {
+        if (results) *results = NULL;
+        return impl->hr;
+    }
+    if (!results) return E_INVALIDARG;
+    *results = impl->result;
+    if (*results) IStorageItem_AddRef( *results );
+    return S_OK;
+}
+
+static const struct IAsyncOperation_IStorageItemVtbl async_storage_item_vtbl =
+{
+    async_storage_item_QueryInterface,
+    async_storage_item_AddRef,
+    async_storage_item_Release,
+    async_storage_item_GetIids,
+    async_storage_item_GetRuntimeClassName,
+    async_storage_item_GetTrustLevel,
+    async_storage_item_put_Completed,
+    async_storage_item_get_Completed,
+    async_storage_item_GetResults,
+};
+
+static HRESULT WINAPI async_storage_item_info_QueryInterface( IAsyncInfo *iface, REFIID iid, void **out )
+{
+    struct async_storage_item *impl = impl_from_async_storage_item_IAsyncInfo( iface );
+    return async_storage_item_QueryInterface( &impl->IAsyncOperation_IStorageItem_iface, iid, out );
+}
+
+static ULONG WINAPI async_storage_item_info_AddRef( IAsyncInfo *iface )
+{
+    struct async_storage_item *impl = impl_from_async_storage_item_IAsyncInfo( iface );
+    return async_storage_item_AddRef( &impl->IAsyncOperation_IStorageItem_iface );
+}
+
+static ULONG WINAPI async_storage_item_info_Release( IAsyncInfo *iface )
+{
+    struct async_storage_item *impl = impl_from_async_storage_item_IAsyncInfo( iface );
+    return async_storage_item_Release( &impl->IAsyncOperation_IStorageItem_iface );
+}
+
+static HRESULT WINAPI async_storage_item_info_GetIids( IAsyncInfo *iface, ULONG *iid_count, IID **iids )
+{
+    return async_storage_item_GetIids( NULL, iid_count, iids );
+}
+
+static HRESULT WINAPI async_storage_item_info_GetRuntimeClassName( IAsyncInfo *iface, HSTRING *class_name )
+{
+    return WindowsCreateString( L"Windows.Foundation.IAsyncInfo", ARRAY_SIZE(L"Windows.Foundation.IAsyncInfo") - 1, class_name );
+}
+
+static HRESULT WINAPI async_storage_item_info_GetTrustLevel( IAsyncInfo *iface, TrustLevel *trust_level )
+{
+    if (trust_level) *trust_level = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_info_get_Id( IAsyncInfo *iface, UINT32 *id )
+{
+    if (!id) return E_INVALIDARG;
+    *id = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_info_get_Status( IAsyncInfo *iface, AsyncStatus *status )
+{
+    struct async_storage_item *impl = impl_from_async_storage_item_IAsyncInfo( iface );
+    if (!status) return E_INVALIDARG;
+    *status = impl->status;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_info_get_ErrorCode( IAsyncInfo *iface, HRESULT *error_code )
+{
+    struct async_storage_item *impl = impl_from_async_storage_item_IAsyncInfo( iface );
+    if (!error_code) return E_INVALIDARG;
+    *error_code = impl->hr;
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_info_Cancel( IAsyncInfo *iface )
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI async_storage_item_info_Close( IAsyncInfo *iface )
+{
+    return S_OK;
+}
+
+static const struct IAsyncInfoVtbl async_storage_item_info_vtbl =
+{
+    async_storage_item_info_QueryInterface,
+    async_storage_item_info_AddRef,
+    async_storage_item_info_Release,
+    async_storage_item_info_GetIids,
+    async_storage_item_info_GetRuntimeClassName,
+    async_storage_item_info_GetTrustLevel,
+    async_storage_item_info_get_Id,
+    async_storage_item_info_get_Status,
+    async_storage_item_info_get_ErrorCode,
+    async_storage_item_info_Cancel,
+    async_storage_item_info_Close,
+};
+
+static HRESULT async_storage_item_create( IStorageItem *item, HRESULT hr, AsyncStatus status, IAsyncOperation_IStorageItem **out )
+{
+    struct async_storage_item *impl;
+
+    if (!out) return E_INVALIDARG;
+    *out = NULL;
+
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+
+    impl->IAsyncOperation_IStorageItem_iface.lpVtbl = &async_storage_item_vtbl;
+    impl->IAsyncInfo_iface.lpVtbl = &async_storage_item_info_vtbl;
+    impl->ref = 1;
+    impl->result = item;
+    if (item) IStorageItem_AddRef( item );
+    impl->hr = hr;
+    impl->status = status;
+
+    *out = &impl->IAsyncOperation_IStorageItem_iface;
+    TRACE( "created async_storage_item %p: item %p, hr %#lx, status %d\n", *out, item, hr, status );
+    return S_OK;
+}
+
 struct storage_folder
 {
     IStorageFolder IStorageFolder_iface;
@@ -1475,19 +1976,99 @@ static HRESULT WINAPI storage_folder_CreateFileAsyncOverloadDefaultOptions(
     return storage_folder_CreateFileAsync( iface, name, CreationCollisionOption_FailIfExists, operation );
 }
 
-static HRESULT WINAPI storage_folder_CreateFolderAsyncOverloadDefaultOptions(
-        IStorageFolder *iface, HSTRING name, IAsyncOperation_StorageFolder **operation )
+static void create_directory_chain( const WCHAR *path )
 {
-    FIXME( "iface %p, name %s, operation %p stub!\n", iface, debugstr_hstring( name ), operation );
-    return E_NOTIMPL;
+    WCHAR *backslash;
+    WCHAR buffer[MAX_PATH];
+
+    lstrcpynW( buffer, path, MAX_PATH );
+    if (CreateDirectoryW( buffer, NULL ) || GetLastError() == ERROR_ALREADY_EXISTS) return;
+    /* Create the chain one level at a time; exists-always wins. */
+    for (backslash = wcschr( buffer + 3, '\\' ); backslash; backslash = wcschr( backslash + 1, '\\' ))
+    {
+        *backslash = 0;
+        CreateDirectoryW( buffer, NULL );
+        *backslash = '\\';
+    }
+    CreateDirectoryW( buffer, NULL );
+}
+
+static HRESULT storage_folder_create_from_path( const WCHAR *path, const WCHAR *name, IStorageFolder **value )
+{
+    struct storage_folder *impl;
+
+    if (!value) return E_INVALIDARG;
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+
+    lstrcpynW( impl->path, path, MAX_PATH );
+    create_directory_chain( impl->path );
+
+    if (name && *name)
+    {
+        lstrcpynW( impl->name, name, ARRAY_SIZE( impl->name ) );
+    }
+    else
+    {
+        const WCHAR *p = wcsrchr( path, '\\' );
+        lstrcpynW( impl->name, p ? p + 1 : path, ARRAY_SIZE( impl->name ) );
+    }
+
+    impl->IStorageFolder_iface.lpVtbl = &storage_folder_vtbl;
+    impl->IStorageItem_iface.lpVtbl = &storage_item_vtbl;
+    impl->ref = 1;
+
+    TRACE( "created IStorageFolder %p for %s at %s.\n", &impl->IStorageFolder_iface,
+           debugstr_w( impl->name ), debugstr_w( impl->path ) );
+    *value = &impl->IStorageFolder_iface;
+    return S_OK;
 }
 
 static HRESULT WINAPI storage_folder_CreateFolderAsync(
         IStorageFolder *iface, HSTRING name, CreationCollisionOption options,
         IAsyncOperation_StorageFolder **operation )
 {
-    FIXME( "iface %p, name %s, options %d, operation %p stub!\n", iface, debugstr_hstring( name ), options, operation );
-    return E_NOTIMPL;
+    struct storage_folder *impl = impl_from_IStorageFolder( iface );
+    const WCHAR *folder_name = WindowsGetStringRawBuffer( name, NULL );
+    WCHAR full_path[MAX_PATH];
+    IStorageFolder *subfolder = NULL;
+    DWORD attr;
+    HRESULT hr;
+
+    TRACE( "iface %p, name %s, options %d, operation %p.\n", iface, debugstr_hstring( name ), options, operation );
+    if (!operation) return E_INVALIDARG;
+    *operation = NULL;
+
+    if (!folder_name || !*folder_name) return E_INVALIDARG;
+
+    lstrcpynW( full_path, impl->path, ARRAY_SIZE(full_path) );
+    append_path_component( full_path, folder_name, ARRAY_SIZE(full_path) );
+
+    attr = GetFileAttributesW( full_path );
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+    {
+        if (options == CreationCollisionOption_FailIfExists)
+        {
+            TRACE( "folder %s already exists, returning ERROR_ALREADY_EXISTS\n", debugstr_w(full_path) );
+            return async_storage_folder_create( NULL, HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS), Error, operation );
+        }
+    }
+    else
+    {
+        create_directory_chain( full_path );
+    }
+
+    hr = storage_folder_create_from_path( full_path, folder_name, &subfolder );
+    if (FAILED(hr)) return hr;
+
+    hr = async_storage_folder_create( subfolder, S_OK, Completed, operation );
+    IStorageFolder_Release( subfolder );
+    return hr;
+}
+
+static HRESULT WINAPI storage_folder_CreateFolderAsyncOverloadDefaultOptions(
+        IStorageFolder *iface, HSTRING name, IAsyncOperation_StorageFolder **operation )
+{
+    return storage_folder_CreateFolderAsync( iface, name, CreationCollisionOption_FailIfExists, operation );
 }
 
 static HRESULT WINAPI storage_folder_GetFileAsync( IStorageFolder *iface, HSTRING name,
@@ -1525,15 +2106,85 @@ static HRESULT WINAPI storage_folder_GetFileAsync( IStorageFolder *iface, HSTRIN
 static HRESULT WINAPI storage_folder_GetFolderAsync( IStorageFolder *iface, HSTRING name,
         IAsyncOperation_StorageFolder **operation )
 {
-    FIXME( "iface %p, name %s, operation %p stub!\n", iface, debugstr_hstring( name ), operation );
-    return async_storage_file_create( NULL, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), Error, (IAsyncOperation_StorageFile **)operation );
+    struct storage_folder *impl = impl_from_IStorageFolder( iface );
+    const WCHAR *folder_name = WindowsGetStringRawBuffer( name, NULL );
+    WCHAR full_path[MAX_PATH];
+    DWORD attr;
+    IStorageFolder *subfolder = NULL;
+    HRESULT hr;
+
+    TRACE( "iface %p, name %s, operation %p.\n", iface, debugstr_hstring( name ), operation );
+    if (!operation) return E_INVALIDARG;
+    *operation = NULL;
+
+    if (!folder_name || !*folder_name) return E_INVALIDARG;
+
+    lstrcpynW( full_path, impl->path, ARRAY_SIZE(full_path) );
+    append_path_component( full_path, folder_name, ARRAY_SIZE(full_path) );
+
+    attr = GetFileAttributesW( full_path );
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+    {
+        hr = storage_folder_create_from_path( full_path, folder_name, &subfolder );
+        if (FAILED(hr)) return hr;
+        hr = async_storage_folder_create( subfolder, S_OK, Completed, operation );
+        IStorageFolder_Release( subfolder );
+        return hr;
+    }
+
+    TRACE( "folder %s not found at %s, returning async error 0x80070002.\n", debugstr_w(folder_name), debugstr_w(full_path) );
+    return async_storage_folder_create( NULL, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), Error, operation );
 }
 
 static HRESULT WINAPI storage_folder_GetItemAsync( IStorageFolder *iface, HSTRING name,
         IAsyncOperation_IStorageItem **operation )
 {
-    FIXME( "iface %p, name %s, operation %p stub!\n", iface, debugstr_hstring( name ), operation );
-    return async_storage_file_create( NULL, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), Error, (IAsyncOperation_StorageFile **)operation );
+    struct storage_folder *impl = impl_from_IStorageFolder( iface );
+    const WCHAR *item_name = WindowsGetStringRawBuffer( name, NULL );
+    WCHAR full_path[MAX_PATH];
+    DWORD attr;
+
+    TRACE( "iface %p, name %s, operation %p.\n", iface, debugstr_hstring( name ), operation );
+    if (!operation) return E_INVALIDARG;
+    *operation = NULL;
+
+    if (!item_name || !*item_name) return E_INVALIDARG;
+
+    lstrcpynW( full_path, impl->path, ARRAY_SIZE(full_path) );
+    append_path_component( full_path, item_name, ARRAY_SIZE(full_path) );
+
+    attr = GetFileAttributesW( full_path );
+    if (attr != INVALID_FILE_ATTRIBUTES)
+    {
+        if (attr & FILE_ATTRIBUTE_DIRECTORY)
+        {
+            IStorageFolder *folder = NULL;
+            IStorageItem *item = NULL;
+            HRESULT hr = storage_folder_create_from_path( full_path, item_name, &folder );
+            if (FAILED(hr)) return hr;
+            hr = IStorageFolder_QueryInterface( folder, &IID_IStorageItem, (void **)&item );
+            IStorageFolder_Release( folder );
+            if (FAILED(hr)) return hr;
+            hr = async_storage_item_create( item, S_OK, Completed, operation );
+            IStorageItem_Release( item );
+            return hr;
+        }
+        else
+        {
+            IStorageFile *file = NULL;
+            IStorageItem *item = NULL;
+            HRESULT hr = storage_file_create( full_path, &file );
+            if (FAILED(hr)) return hr;
+            hr = IStorageFile_QueryInterface( file, &IID_IStorageItem, (void **)&item );
+            IStorageFile_Release( file );
+            if (FAILED(hr)) return hr;
+            hr = async_storage_item_create( item, S_OK, Completed, operation );
+            IStorageItem_Release( item );
+            return hr;
+        }
+    }
+
+    return async_storage_item_create( NULL, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), Error, operation );
 }
 
 struct empty_vector_view
@@ -2248,60 +2899,35 @@ static const struct IStorageItemVtbl storage_item_vtbl =
     storage_item_IsOfType,
 };
 
-static void create_directory_chain( const WCHAR *path )
-{
-    WCHAR *backslash;
-
-    if (CreateDirectoryW( path, NULL ) || GetLastError() == ERROR_ALREADY_EXISTS) return;
-    /* Create the chain one level at a time; exists-always wins. */
-    for (backslash = wcschr( path + 3, '\\' ); backslash; backslash = wcschr( backslash + 1, '\\' ))
-    {
-        *backslash = 0;
-        CreateDirectoryW( path, NULL );
-        *backslash = '\\';
-    }
-    CreateDirectoryW( path, NULL );
-}
-
 static HRESULT storage_folder_create( const WCHAR *kind_name, IStorageFolder **value )
 {
-    struct storage_folder *impl;
+    WCHAR path[MAX_PATH] = {0};
     WCHAR family[128];
     UINT32 family_len = ARRAY_SIZE( family );
     LONG family_ret;
 
     if (!value) return E_INVALIDARG;
-    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
 
     family_ret = GetCurrentPackageFamilyName( &family_len, family );
-    if (GetEnvironmentVariableW( L"LOCALAPPDATA", impl->path, MAX_PATH ) && *impl->path)
+    if (GetEnvironmentVariableW( L"LOCALAPPDATA", path, MAX_PATH ) && *path)
     {
         if (family_ret == ERROR_SUCCESS)
         {
-            append_path_component( impl->path, L"Packages", MAX_PATH );
-            append_path_component( impl->path, family, MAX_PATH );
+            append_path_component( path, L"Packages", MAX_PATH );
+            append_path_component( path, family, MAX_PATH );
         }
         else
         {
             WARN( "no package identity (hr %#x); using bare %s directory.\n", (UINT32)family_ret, debugstr_w( kind_name ) );
         }
-        append_path_component( impl->path, kind_name, MAX_PATH );
-        create_directory_chain( impl->path );
+        append_path_component( path, kind_name, MAX_PATH );
     }
     else
     {
         ERR( "LOCALAPPDATA not set; %s has no path (folder object stays name-only).\n", debugstr_w( kind_name ) );
     }
 
-    lstrcpynW( impl->name, kind_name, ARRAY_SIZE( impl->name ) );
-    impl->IStorageFolder_iface.lpVtbl = &storage_folder_vtbl;
-    impl->IStorageItem_iface.lpVtbl = &storage_item_vtbl;
-    impl->ref = 1;
-
-    TRACE( "created IStorageFolder %p for %s at %s.\n", &impl->IStorageFolder_iface,
-           debugstr_w( kind_name ), debugstr_w( impl->path ) );
-    *value = &impl->IStorageFolder_iface;
-    return S_OK;
+    return storage_folder_create_from_path( path, kind_name, value );
 }
 
 static HRESULT WINAPI application_data_folder_get( IApplicationData *iface, const WCHAR *kind_name,
