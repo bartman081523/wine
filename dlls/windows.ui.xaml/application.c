@@ -2180,6 +2180,24 @@ struct core_window_impl
     int size_changed_count;
     struct core_window_handler visibility_changed_handlers[MAX_CW_HANDLERS];
     int visibility_changed_count;
+    struct core_window_handler pointer_pressed_handlers[MAX_CW_HANDLERS];
+    int pointer_pressed_count;
+    struct core_window_handler pointer_released_handlers[MAX_CW_HANDLERS];
+    int pointer_released_count;
+    struct core_window_handler pointer_moved_handlers[MAX_CW_HANDLERS];
+    int pointer_moved_count;
+    struct core_window_handler pointer_wheel_handlers[MAX_CW_HANDLERS];
+    int pointer_wheel_count;
+    struct core_window_handler pointer_entered_handlers[MAX_CW_HANDLERS];
+    int pointer_entered_count;
+    struct core_window_handler pointer_exited_handlers[MAX_CW_HANDLERS];
+    int pointer_exited_count;
+    struct core_window_handler key_down_handlers[MAX_CW_HANDLERS];
+    int key_down_count;
+    struct core_window_handler key_up_handlers[MAX_CW_HANDLERS];
+    int key_up_count;
+    struct core_window_handler character_received_handlers[MAX_CW_HANDLERS];
+    int character_received_count;
     INT64 next_token;
 };
 
@@ -2643,9 +2661,26 @@ static HRESULT WINAPI cw_get_IsInputEnabled(void *This, boolean *value) { if (va
 static HRESULT WINAPI cw_put_IsInputEnabled(void *This, boolean value) { return S_OK; }
 static HRESULT WINAPI cw_get_PointerCursor(void *This, void **value) { if (value) *value = NULL; return S_OK; }
 static HRESULT WINAPI cw_put_PointerCursor(void *This, void *value) { return S_OK; }
+extern HWND global_xaml_hwnd;
+
 static HRESULT WINAPI cw_get_PointerPosition(void *This, void *value)
 {
-    if (value) { float *f = (float *)value; f[0]=0; f[1]=0; }
+    if (value)
+    {
+        float *f = (float *)value;
+        POINT pt;
+        if (GetCursorPos(&pt) && global_xaml_hwnd)
+        {
+            ScreenToClient(global_xaml_hwnd, &pt);
+            f[0] = (float)pt.x;
+            f[1] = (float)pt.y;
+        }
+        else
+        {
+            f[0] = 0.0f;
+            f[1] = 0.0f;
+        }
+    }
     return S_OK;
 }
 static HRESULT WINAPI cw_get_Visible(void *This, boolean *value) { if (value) *value = TRUE; return S_OK; }
@@ -2691,8 +2726,6 @@ static HRESULT WINAPI cw_add_Activated(void *This, void *handler, INT64 *cookie)
         impl->activated_handlers[impl->activated_count].token = *cookie;
         impl->activated_handlers[impl->activated_count].handler = (IUnknown *)handler;
         impl->activated_count++;
-
-        core_window_fire_activated(0 /* CodeActivated */);
     }
     return S_OK;
 }
@@ -2775,8 +2808,6 @@ static HRESULT WINAPI cw_add_VisibilityChanged(void *This, void *handler, INT64 
         impl->visibility_changed_handlers[impl->visibility_changed_count].token = *cookie;
         impl->visibility_changed_handlers[impl->visibility_changed_count].handler = (IUnknown *)handler;
         impl->visibility_changed_count++;
-
-        core_window_fire_visibility(TRUE);
     }
     return S_OK;
 }
@@ -2792,6 +2823,711 @@ static HRESULT WINAPI cw_remove_VisibilityChanged(void *This, INT64 cookie)
             if (impl->visibility_changed_handlers[i].handler)
                 IUnknown_Release(impl->visibility_changed_handlers[i].handler);
             impl->visibility_changed_handlers[i] = impl->visibility_changed_handlers[--impl->visibility_changed_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static const GUID IID_IPointerEventArgs = {0x920d9cb1, 0xa5fc, 0x4a21, {0x8c, 0x09, 0x49, 0xdf, 0xe6, 0xff, 0xe2, 0x5f}};
+static const GUID IID_IPointerPoint = {0xe995317d, 0x7296, 0x42d9, {0x82, 0x33, 0xc5, 0xbe, 0x73, 0xb7, 0x4a, 0x4a}};
+static const GUID IID_IPointerPointProperties = {0xc79d8a4b, 0xc163, 0x4ee7, {0x80, 0x3f, 0x67, 0xce, 0x79, 0xf9, 0x97, 0x2d}};
+
+struct winrt_Point
+{
+    FLOAT X;
+    FLOAT Y;
+};
+
+struct winrt_Rect
+{
+    FLOAT X;
+    FLOAT Y;
+    FLOAT Width;
+    FLOAT Height;
+};
+
+/* IPointerPointProperties implementation */
+struct pointer_properties_impl
+{
+    struct { const void *lpVtbl; } IPointerPointProperties_iface;
+    LONG ref;
+    FLOAT x, y;
+    boolean left_pressed, right_pressed, middle_pressed;
+    boolean in_contact;
+    UINT32 update_kind;
+    INT32 wheel_delta;
+};
+
+#define impl_from_IPointerPointProperties(ptr) ((struct pointer_properties_impl *)((char *)(ptr) - offsetof(struct pointer_properties_impl, IPointerPointProperties_iface)))
+
+static HRESULT WINAPI props_QI(void *This, REFIID riid, void **ppv)
+{
+    struct pointer_properties_impl *impl = impl_from_IPointerPointProperties(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IPointerPointProperties))
+    {
+        *ppv = &impl->IPointerPointProperties_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI props_AddRef(void *This) { return InterlockedIncrement(&impl_from_IPointerPointProperties(This)->ref); }
+static ULONG WINAPI props_Release(void *This)
+{
+    struct pointer_properties_impl *impl = impl_from_IPointerPointProperties(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+static HRESULT WINAPI props_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI props_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Input.PointerPointProperties", 39, n); }
+static HRESULT WINAPI props_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI props_get_Pressure(void *This, FLOAT *value) { if (value) *value = 0.5f; return S_OK; }
+static HRESULT WINAPI props_get_IsInverted(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI props_get_IsEraser(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI props_get_Orientation(void *This, FLOAT *value) { if (value) *value = 0.0f; return S_OK; }
+static HRESULT WINAPI props_get_XTilt(void *This, FLOAT *value) { if (value) *value = 0.0f; return S_OK; }
+static HRESULT WINAPI props_get_YTilt(void *This, FLOAT *value) { if (value) *value = 0.0f; return S_OK; }
+static HRESULT WINAPI props_get_Twist(void *This, FLOAT *value) { if (value) *value = 0.0f; return S_OK; }
+static HRESULT WINAPI props_get_ContactRect(void *This, struct winrt_Rect *value)
+{
+    struct pointer_properties_impl *impl = impl_from_IPointerPointProperties(This);
+    if (value) { value->X = impl->x; value->Y = impl->y; value->Width = 1.0f; value->Height = 1.0f; }
+    return S_OK;
+}
+static HRESULT WINAPI props_get_ContactRectRaw(void *This, struct winrt_Rect *value) { return props_get_ContactRect(This, value); }
+static HRESULT WINAPI props_get_TouchConfidence(void *This, boolean *value) { if (value) *value = TRUE; return S_OK; }
+static HRESULT WINAPI props_get_IsLeftButtonPressed(void *This, boolean *value)
+{
+    struct pointer_properties_impl *impl = impl_from_IPointerPointProperties(This);
+    if (value) *value = impl->left_pressed;
+    return S_OK;
+}
+static HRESULT WINAPI props_get_IsRightButtonPressed(void *This, boolean *value)
+{
+    struct pointer_properties_impl *impl = impl_from_IPointerPointProperties(This);
+    if (value) *value = impl->right_pressed;
+    return S_OK;
+}
+static HRESULT WINAPI props_get_IsMiddleButtonPressed(void *This, boolean *value)
+{
+    struct pointer_properties_impl *impl = impl_from_IPointerPointProperties(This);
+    if (value) *value = impl->middle_pressed;
+    return S_OK;
+}
+static HRESULT WINAPI props_get_MouseWheelDelta(void *This, INT32 *value)
+{
+    struct pointer_properties_impl *impl = impl_from_IPointerPointProperties(This);
+    if (value) *value = impl->wheel_delta;
+    return S_OK;
+}
+static HRESULT WINAPI props_get_IsHorizontalMouseWheel(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI props_get_IsPrimary(void *This, boolean *value) { if (value) *value = TRUE; return S_OK; }
+static HRESULT WINAPI props_get_IsInRange(void *This, boolean *value) { if (value) *value = TRUE; return S_OK; }
+static HRESULT WINAPI props_get_IsCanceled(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI props_get_IsBarrelButtonPressed(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI props_get_IsXButton1Pressed(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI props_get_IsXButton2Pressed(void *This, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI props_get_PointerUpdateKind(void *This, UINT32 *value)
+{
+    struct pointer_properties_impl *impl = impl_from_IPointerPointProperties(This);
+    if (value) *value = impl->update_kind;
+    return S_OK;
+}
+static HRESULT WINAPI props_HasUsage(void *This, UINT32 p, UINT32 id, boolean *value) { if (value) *value = FALSE; return S_OK; }
+static HRESULT WINAPI props_GetUsageValue(void *This, UINT32 p, UINT32 id, INT32 *value) { if (value) *value = 0; return S_OK; }
+
+static const void *pointer_properties_vtbl[30] = {
+    (void *)props_QI, (void *)props_AddRef, (void *)props_Release,
+    (void *)props_GetIids, (void *)props_GetRuntimeClassName, (void *)props_GetTrustLevel,
+    (void *)props_get_Pressure, (void *)props_get_IsInverted, (void *)props_get_IsEraser,
+    (void *)props_get_Orientation, (void *)props_get_XTilt, (void *)props_get_YTilt,
+    (void *)props_get_Twist, (void *)props_get_ContactRect, (void *)props_get_ContactRectRaw,
+    (void *)props_get_TouchConfidence, (void *)props_get_IsLeftButtonPressed,
+    (void *)props_get_IsRightButtonPressed, (void *)props_get_IsMiddleButtonPressed,
+    (void *)props_get_MouseWheelDelta, (void *)props_get_IsHorizontalMouseWheel,
+    (void *)props_get_IsPrimary, (void *)props_get_IsInRange, (void *)props_get_IsCanceled,
+    (void *)props_get_IsBarrelButtonPressed, (void *)props_get_IsXButton1Pressed,
+    (void *)props_get_IsXButton2Pressed, (void *)props_get_PointerUpdateKind,
+    (void *)props_HasUsage, (void *)props_GetUsageValue
+};
+
+/* IPointerPoint implementation */
+struct pointer_point_impl
+{
+    struct { const void *lpVtbl; } IPointerPoint_iface;
+    LONG ref;
+    FLOAT x, y;
+    boolean in_contact;
+    struct pointer_properties_impl *props;
+};
+
+#define impl_from_IPointerPoint(ptr) ((struct pointer_point_impl *)((char *)(ptr) - offsetof(struct pointer_point_impl, IPointerPoint_iface)))
+
+static HRESULT WINAPI pt_QI(void *This, REFIID riid, void **ppv)
+{
+    struct pointer_point_impl *impl = impl_from_IPointerPoint(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IPointerPoint))
+    {
+        *ppv = &impl->IPointerPoint_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI pt_AddRef(void *This) { return InterlockedIncrement(&impl_from_IPointerPoint(This)->ref); }
+static ULONG WINAPI pt_Release(void *This)
+{
+    struct pointer_point_impl *impl = impl_from_IPointerPoint(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->props) props_Release(&impl->props->IPointerPointProperties_iface);
+        free(impl);
+    }
+    return ref;
+}
+static HRESULT WINAPI pt_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI pt_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Input.PointerPoint", 30, n); }
+static HRESULT WINAPI pt_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI pt_get_PointerDevice(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI pt_get_Position(void *This, struct winrt_Point *value)
+{
+    struct pointer_point_impl *impl = impl_from_IPointerPoint(This);
+    if (value) { value->X = impl->x; value->Y = impl->y; }
+    return S_OK;
+}
+static HRESULT WINAPI pt_get_RawPosition(void *This, struct winrt_Point *value) { return pt_get_Position(This, value); }
+static HRESULT WINAPI pt_get_PointerId(void *This, UINT32 *value) { if (value) *value = 1; return S_OK; }
+static HRESULT WINAPI pt_get_FrameId(void *This, UINT32 *value) { if (value) *value = 1; return S_OK; }
+static HRESULT WINAPI pt_get_Timestamp(void *This, UINT64 *value) { if (value) *value = (UINT64)GetTickCount64() * 1000; return S_OK; }
+static HRESULT WINAPI pt_get_IsInContact(void *This, boolean *value)
+{
+    struct pointer_point_impl *impl = impl_from_IPointerPoint(This);
+    if (value) *value = impl->in_contact;
+    return S_OK;
+}
+static HRESULT WINAPI pt_get_Properties(void *This, void **value)
+{
+    struct pointer_point_impl *impl = impl_from_IPointerPoint(This);
+    if (!value) return E_POINTER;
+    *value = &impl->props->IPointerPointProperties_iface;
+    props_AddRef(&impl->props->IPointerPointProperties_iface);
+    return S_OK;
+}
+
+static const void *pointer_point_vtbl[14] = {
+    (void *)pt_QI, (void *)pt_AddRef, (void *)pt_Release,
+    (void *)pt_GetIids, (void *)pt_GetRuntimeClassName, (void *)pt_GetTrustLevel,
+    (void *)pt_get_PointerDevice, (void *)pt_get_Position, (void *)pt_get_RawPosition,
+    (void *)pt_get_PointerId, (void *)pt_get_FrameId, (void *)pt_get_Timestamp,
+    (void *)pt_get_IsInContact, (void *)pt_get_Properties
+};
+
+/* IPointerEventArgs implementation */
+struct pointer_event_args_impl
+{
+    struct { const void *lpVtbl; } IPointerEventArgs_iface;
+    struct { const void *lpVtbl; } ICoreWindowEventArgs_iface;
+    LONG ref;
+    struct pointer_point_impl *point;
+    boolean handled;
+    UINT32 key_modifiers;
+};
+
+#define impl_from_IPointerEventArgs(ptr) ((struct pointer_event_args_impl *)((char *)(ptr) - offsetof(struct pointer_event_args_impl, IPointerEventArgs_iface)))
+#define impl_from_ICoreWindowEventArgs_ptr(ptr) ((struct pointer_event_args_impl *)((char *)(ptr) - offsetof(struct pointer_event_args_impl, ICoreWindowEventArgs_iface)))
+
+static HRESULT WINAPI ptr_args_QI(void *This, REFIID riid, void **ppv)
+{
+    struct pointer_event_args_impl *impl = impl_from_IPointerEventArgs(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IPointerEventArgs))
+    {
+        *ppv = &impl->IPointerEventArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_ICoreWindowEventArgs))
+    {
+        *ppv = &impl->ICoreWindowEventArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI ptr_args_AddRef(void *This) { return InterlockedIncrement(&impl_from_IPointerEventArgs(This)->ref); }
+static ULONG WINAPI ptr_args_Release(void *This)
+{
+    struct pointer_event_args_impl *impl = impl_from_IPointerEventArgs(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->point) pt_Release(&impl->point->IPointerPoint_iface);
+        free(impl);
+    }
+    return ref;
+}
+static HRESULT WINAPI ptr_args_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI ptr_args_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.PointerEventArgs", 33, n); }
+static HRESULT WINAPI ptr_args_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI ptr_args_get_CurrentPoint(void *This, void **value)
+{
+    struct pointer_event_args_impl *impl = impl_from_IPointerEventArgs(This);
+    if (!value) return E_POINTER;
+    *value = &impl->point->IPointerPoint_iface;
+    pt_AddRef(&impl->point->IPointerPoint_iface);
+    return S_OK;
+}
+static HRESULT WINAPI ptr_args_get_KeyModifiers(void *This, UINT32 *value)
+{
+    struct pointer_event_args_impl *impl = impl_from_IPointerEventArgs(This);
+    if (value) *value = impl->key_modifiers;
+    return S_OK;
+}
+static HRESULT WINAPI ptr_args_GetIntermediatePoints(void *This, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+
+static const void *pointer_args_vtbl[10] = {
+    (void *)ptr_args_QI, (void *)ptr_args_AddRef, (void *)ptr_args_Release,
+    (void *)ptr_args_GetIids, (void *)ptr_args_GetRuntimeClassName, (void *)ptr_args_GetTrustLevel,
+    (void *)ptr_args_get_CurrentPoint, (void *)ptr_args_get_KeyModifiers,
+    (void *)ptr_args_GetIntermediatePoints
+};
+
+static HRESULT WINAPI ptr_core_QI(void *This, REFIID riid, void **ppv) { return ptr_args_QI(&impl_from_ICoreWindowEventArgs_ptr(This)->IPointerEventArgs_iface, riid, ppv); }
+static ULONG WINAPI ptr_core_AddRef(void *This) { return ptr_args_AddRef(&impl_from_ICoreWindowEventArgs_ptr(This)->IPointerEventArgs_iface); }
+static ULONG WINAPI ptr_core_Release(void *This) { return ptr_args_Release(&impl_from_ICoreWindowEventArgs_ptr(This)->IPointerEventArgs_iface); }
+static HRESULT WINAPI ptr_core_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI ptr_core_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Core.PointerEventArgs", 33, n); }
+static HRESULT WINAPI ptr_core_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI ptr_core_get_Handled(void *This, boolean *value)
+{
+    struct pointer_event_args_impl *impl = impl_from_ICoreWindowEventArgs_ptr(This);
+    if (value) *value = impl->handled;
+    return S_OK;
+}
+static HRESULT WINAPI ptr_core_put_Handled(void *This, boolean value)
+{
+    struct pointer_event_args_impl *impl = impl_from_ICoreWindowEventArgs_ptr(This);
+    impl->handled = value;
+    return S_OK;
+}
+
+static const void *pointer_core_args_vtbl[8] = {
+    (void *)ptr_core_QI, (void *)ptr_core_AddRef, (void *)ptr_core_Release,
+    (void *)ptr_core_GetIids, (void *)ptr_core_GetRuntimeClassName, (void *)ptr_core_GetTrustLevel,
+    (void *)ptr_core_get_Handled, (void *)ptr_core_put_Handled
+};
+
+/* Dispatch pointer events */
+void core_window_fire_pointer(UINT msg, WPARAM wparam, LPARAM lparam)
+{
+    struct core_window_impl *impl;
+    struct pointer_event_args_impl *args;
+    struct pointer_point_impl *point;
+    struct pointer_properties_impl *props;
+    struct core_window_handler *handlers = NULL;
+    int count = 0, i;
+    FLOAT x = (FLOAT)(short)LOWORD(lparam);
+    FLOAT y = (FLOAT)(short)HIWORD(lparam);
+    boolean left_pressed = (wparam & MK_LBUTTON) != 0;
+    boolean right_pressed = (wparam & MK_RBUTTON) != 0;
+    boolean middle_pressed = (wparam & MK_MBUTTON) != 0;
+    boolean in_contact = FALSE;
+    UINT32 update_kind = 0;
+    INT32 wheel_delta = 0;
+
+    if (!global_core_window) return;
+    impl = impl_from_ICoreWindow(global_core_window);
+
+    switch (msg)
+    {
+        case WM_LBUTTONDOWN:
+            in_contact = TRUE; left_pressed = TRUE; update_kind = 1;
+            handlers = impl->pointer_pressed_handlers; count = impl->pointer_pressed_count;
+            break;
+        case WM_LBUTTONUP:
+            in_contact = FALSE; left_pressed = FALSE; update_kind = 2;
+            handlers = impl->pointer_released_handlers; count = impl->pointer_released_count;
+            break;
+        case WM_RBUTTONDOWN:
+            in_contact = TRUE; right_pressed = TRUE; update_kind = 3;
+            handlers = impl->pointer_pressed_handlers; count = impl->pointer_pressed_count;
+            break;
+        case WM_RBUTTONUP:
+            in_contact = FALSE; right_pressed = FALSE; update_kind = 4;
+            handlers = impl->pointer_released_handlers; count = impl->pointer_released_count;
+            break;
+        case WM_MBUTTONDOWN:
+            in_contact = TRUE; middle_pressed = TRUE; update_kind = 5;
+            handlers = impl->pointer_pressed_handlers; count = impl->pointer_pressed_count;
+            break;
+        case WM_MBUTTONUP:
+            in_contact = FALSE; middle_pressed = FALSE; update_kind = 6;
+            handlers = impl->pointer_released_handlers; count = impl->pointer_released_count;
+            break;
+        case WM_MOUSEMOVE:
+            in_contact = left_pressed || right_pressed || middle_pressed;
+            update_kind = 0;
+            handlers = impl->pointer_moved_handlers; count = impl->pointer_moved_count;
+            break;
+        case WM_MOUSEWHEEL:
+            wheel_delta = GET_WHEEL_DELTA_WPARAM(wparam);
+            handlers = impl->pointer_wheel_handlers; count = impl->pointer_wheel_count;
+            break;
+        default:
+            return;
+    }
+
+    if (count <= 0 || !handlers) return;
+
+    props = calloc(1, sizeof(*props));
+    point = calloc(1, sizeof(*point));
+    args = calloc(1, sizeof(*args));
+    if (!props || !point || !args)
+    {
+        free(props); free(point); free(args);
+        return;
+    }
+
+    props->IPointerPointProperties_iface.lpVtbl = pointer_properties_vtbl;
+    props->ref = 1;
+    props->x = x; props->y = y;
+    props->left_pressed = left_pressed; props->right_pressed = right_pressed; props->middle_pressed = middle_pressed;
+    props->in_contact = in_contact; props->update_kind = update_kind; props->wheel_delta = wheel_delta;
+
+    point->IPointerPoint_iface.lpVtbl = pointer_point_vtbl;
+    point->ref = 1;
+    point->x = x; point->y = y;
+    point->in_contact = in_contact;
+    point->props = props;
+
+    args->IPointerEventArgs_iface.lpVtbl = pointer_args_vtbl;
+    args->ICoreWindowEventArgs_iface.lpVtbl = pointer_core_args_vtbl;
+    args->ref = 1;
+    args->point = point;
+
+    for (i = 0; i < count; i++)
+    {
+        struct typed_event_handler *h = (struct typed_event_handler *)handlers[i].handler;
+        if (h && h->lpVtbl && h->lpVtbl->Invoke)
+        {
+            TRACE("Invoking pointer handler[%d] %p (msg=0x%x, pt=%.0f,%.0f, kind=%u)\n",
+                  i, h, msg, x, y, update_kind);
+            h->lpVtbl->Invoke(h, global_core_window, &args->IPointerEventArgs_iface);
+        }
+    }
+
+    ptr_args_Release(&args->IPointerEventArgs_iface);
+}
+
+void core_window_fire_key(UINT msg, WPARAM wparam, LPARAM lparam)
+{
+    /* Keyboard event stub */
+}
+
+void core_window_fire_char(WPARAM wparam, LPARAM lparam)
+{
+    /* Char event stub */
+}
+
+/* Event registration methods */
+static HRESULT WINAPI cw_add_PointerPressed(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    TRACE("CoreWindow::add_PointerPressed handler %p\n", handler);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->pointer_pressed_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->pointer_pressed_handlers[impl->pointer_pressed_count].token = *cookie;
+        impl->pointer_pressed_handlers[impl->pointer_pressed_count].handler = (IUnknown *)handler;
+        impl->pointer_pressed_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_PointerPressed(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->pointer_pressed_count; i++)
+    {
+        if (impl->pointer_pressed_handlers[i].token == cookie)
+        {
+            if (impl->pointer_pressed_handlers[i].handler)
+                IUnknown_Release(impl->pointer_pressed_handlers[i].handler);
+            impl->pointer_pressed_handlers[i] = impl->pointer_pressed_handlers[--impl->pointer_pressed_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_PointerReleased(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    TRACE("CoreWindow::add_PointerReleased handler %p\n", handler);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->pointer_released_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->pointer_released_handlers[impl->pointer_released_count].token = *cookie;
+        impl->pointer_released_handlers[impl->pointer_released_count].handler = (IUnknown *)handler;
+        impl->pointer_released_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_PointerReleased(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->pointer_released_count; i++)
+    {
+        if (impl->pointer_released_handlers[i].token == cookie)
+        {
+            if (impl->pointer_released_handlers[i].handler)
+                IUnknown_Release(impl->pointer_released_handlers[i].handler);
+            impl->pointer_released_handlers[i] = impl->pointer_released_handlers[--impl->pointer_released_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_PointerMoved(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    TRACE("CoreWindow::add_PointerMoved handler %p\n", handler);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->pointer_moved_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->pointer_moved_handlers[impl->pointer_moved_count].token = *cookie;
+        impl->pointer_moved_handlers[impl->pointer_moved_count].handler = (IUnknown *)handler;
+        impl->pointer_moved_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_PointerMoved(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->pointer_moved_count; i++)
+    {
+        if (impl->pointer_moved_handlers[i].token == cookie)
+        {
+            if (impl->pointer_moved_handlers[i].handler)
+                IUnknown_Release(impl->pointer_moved_handlers[i].handler);
+            impl->pointer_moved_handlers[i] = impl->pointer_moved_handlers[--impl->pointer_moved_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_PointerWheelChanged(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    TRACE("CoreWindow::add_PointerWheelChanged handler %p\n", handler);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->pointer_wheel_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->pointer_wheel_handlers[impl->pointer_wheel_count].token = *cookie;
+        impl->pointer_wheel_handlers[impl->pointer_wheel_count].handler = (IUnknown *)handler;
+        impl->pointer_wheel_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_PointerWheelChanged(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->pointer_wheel_count; i++)
+    {
+        if (impl->pointer_wheel_handlers[i].token == cookie)
+        {
+            if (impl->pointer_wheel_handlers[i].handler)
+                IUnknown_Release(impl->pointer_wheel_handlers[i].handler);
+            impl->pointer_wheel_handlers[i] = impl->pointer_wheel_handlers[--impl->pointer_wheel_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_PointerEntered(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->pointer_entered_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->pointer_entered_handlers[impl->pointer_entered_count].token = *cookie;
+        impl->pointer_entered_handlers[impl->pointer_entered_count].handler = (IUnknown *)handler;
+        impl->pointer_entered_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_PointerEntered(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->pointer_entered_count; i++)
+    {
+        if (impl->pointer_entered_handlers[i].token == cookie)
+        {
+            if (impl->pointer_entered_handlers[i].handler)
+                IUnknown_Release(impl->pointer_entered_handlers[i].handler);
+            impl->pointer_entered_handlers[i] = impl->pointer_entered_handlers[--impl->pointer_entered_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_PointerExited(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->pointer_exited_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->pointer_exited_handlers[impl->pointer_exited_count].token = *cookie;
+        impl->pointer_exited_handlers[impl->pointer_exited_count].handler = (IUnknown *)handler;
+        impl->pointer_exited_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_PointerExited(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->pointer_exited_count; i++)
+    {
+        if (impl->pointer_exited_handlers[i].token == cookie)
+        {
+            if (impl->pointer_exited_handlers[i].handler)
+                IUnknown_Release(impl->pointer_exited_handlers[i].handler);
+            impl->pointer_exited_handlers[i] = impl->pointer_exited_handlers[--impl->pointer_exited_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_KeyDown(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->key_down_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->key_down_handlers[impl->key_down_count].token = *cookie;
+        impl->key_down_handlers[impl->key_down_count].handler = (IUnknown *)handler;
+        impl->key_down_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_KeyDown(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->key_down_count; i++)
+    {
+        if (impl->key_down_handlers[i].token == cookie)
+        {
+            if (impl->key_down_handlers[i].handler)
+                IUnknown_Release(impl->key_down_handlers[i].handler);
+            impl->key_down_handlers[i] = impl->key_down_handlers[--impl->key_down_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_KeyUp(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->key_up_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->key_up_handlers[impl->key_up_count].token = *cookie;
+        impl->key_up_handlers[impl->key_up_count].handler = (IUnknown *)handler;
+        impl->key_up_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_KeyUp(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->key_up_count; i++)
+    {
+        if (impl->key_up_handlers[i].token == cookie)
+        {
+            if (impl->key_up_handlers[i].handler)
+                IUnknown_Release(impl->key_up_handlers[i].handler);
+            impl->key_up_handlers[i] = impl->key_up_handlers[--impl->key_up_count];
+            break;
+        }
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI cw_add_CharacterReceived(void *This, void *handler, INT64 *cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    if (!cookie) return E_POINTER;
+    *cookie = ++impl->next_token;
+    if (handler && impl->character_received_count < MAX_CW_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        impl->character_received_handlers[impl->character_received_count].token = *cookie;
+        impl->character_received_handlers[impl->character_received_count].handler = (IUnknown *)handler;
+        impl->character_received_count++;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI cw_remove_CharacterReceived(void *This, INT64 cookie)
+{
+    struct core_window_impl *impl = impl_from_ICoreWindow(This);
+    int i;
+    for (i = 0; i < impl->character_received_count; i++)
+    {
+        if (impl->character_received_handlers[i].token == cookie)
+        {
+            if (impl->character_received_handlers[i].handler)
+                IUnknown_Release(impl->character_received_handlers[i].handler);
+            impl->character_received_handlers[i] = impl->character_received_handlers[--impl->character_received_count];
             break;
         }
     }
@@ -2829,20 +3565,20 @@ static const void *core_window_vtbl[64] = {
     (void *)cw_SetPointerCapture,           /* 23 */
     (void *)cw_add_Activated,               /* 24: Activated */
     (void *)cw_remove_Activated,            /* 25 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 26, 27 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 28, 29 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 30, 31 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 32, 33 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 34, 35 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 36, 37 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 38, 39 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 40, 41 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 42, 43 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 44, 45 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 46, 47 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 48, 49 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 50, 51 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 52, 53 */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 26, 27: AutomationProviderRequested */
+    (void *)cw_add_CharacterReceived, (void *)cw_remove_CharacterReceived, /* 28, 29: CharacterReceived */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 30, 31: Closed */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 32, 33: InputEnabled */
+    (void *)cw_add_KeyDown, (void *)cw_remove_KeyDown, /* 34, 35: KeyDown */
+    (void *)cw_add_KeyUp, (void *)cw_remove_KeyUp, /* 36, 37: KeyUp */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 38, 39: PointerCaptureLost */
+    (void *)cw_add_PointerEntered, (void *)cw_remove_PointerEntered, /* 40, 41: PointerEntered */
+    (void *)cw_add_PointerExited, (void *)cw_remove_PointerExited, /* 42, 43: PointerExited */
+    (void *)cw_add_PointerMoved, (void *)cw_remove_PointerMoved, /* 44, 45: PointerMoved */
+    (void *)cw_add_PointerPressed, (void *)cw_remove_PointerPressed, /* 46, 47: PointerPressed */
+    (void *)cw_add_PointerReleased, (void *)cw_remove_PointerReleased, /* 48, 49: PointerReleased */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 50, 51: TouchHitTesting */
+    (void *)cw_add_PointerWheelChanged, (void *)cw_remove_PointerWheelChanged, /* 52, 53: PointerWheelChanged */
     (void *)cw_add_SizeChanged,             /* 54: SizeChanged */
     (void *)cw_remove_SizeChanged,          /* 55 */
     (void *)cw_add_VisibilityChanged,       /* 56: VisibilityChanged */
@@ -2872,20 +3608,20 @@ static const void *redhawk_core_window_vtbl[64] = {
     (void *)cw_SetPointerCapture,           /* 23 */
     (void *)cw_add_Activated,               /* 24: Activated */
     (void *)cw_remove_Activated,            /* 25 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 26, 27 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 28, 29 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 30, 31 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 32, 33 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 34, 35 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 36, 37 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 38, 39 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 40, 41 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 42, 43 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 44, 45 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 46, 47 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 48, 49 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 50, 51 */
-    (void *)cw_event_add, (void *)cw_event_remove, /* 52, 53 */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 26, 27: AutomationProviderRequested */
+    (void *)cw_add_CharacterReceived, (void *)cw_remove_CharacterReceived, /* 28, 29: CharacterReceived */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 30, 31: Closed */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 32, 33: InputEnabled */
+    (void *)cw_add_KeyDown, (void *)cw_remove_KeyDown, /* 34, 35: KeyDown */
+    (void *)cw_add_KeyUp, (void *)cw_remove_KeyUp, /* 36, 37: KeyUp */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 38, 39: PointerCaptureLost */
+    (void *)cw_add_PointerEntered, (void *)cw_remove_PointerEntered, /* 40, 41: PointerEntered */
+    (void *)cw_add_PointerExited, (void *)cw_remove_PointerExited, /* 42, 43: PointerExited */
+    (void *)cw_add_PointerMoved, (void *)cw_remove_PointerMoved, /* 44, 45: PointerMoved */
+    (void *)cw_add_PointerPressed, (void *)cw_remove_PointerPressed, /* 46, 47: PointerPressed */
+    (void *)cw_add_PointerReleased, (void *)cw_remove_PointerReleased, /* 48, 49: PointerReleased */
+    (void *)cw_event_add, (void *)cw_event_remove, /* 50, 51: TouchHitTesting */
+    (void *)cw_add_PointerWheelChanged, (void *)cw_remove_PointerWheelChanged, /* 52, 53: PointerWheelChanged */
     (void *)cw_add_SizeChanged,             /* 54: SizeChanged */
     (void *)cw_remove_SizeChanged,          /* 55 */
     (void *)cw_add_VisibilityChanged,       /* 56: VisibilityChanged */
@@ -3105,7 +3841,6 @@ static HRESULT WINAPI win_Activate(void *This)
     core_window_fire_visibility(TRUE);
     core_window_fire_size_changed(w, h);
     xaml_fire_swapchain_size_changed(w, h);
-    core_window_fire_activated(0 /* CodeActivated */);
     return S_OK;
 }
 static HRESULT WINAPI win_Close(void *This) { return S_OK; }

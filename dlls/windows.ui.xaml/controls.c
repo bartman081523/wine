@@ -26,6 +26,10 @@ static const GUID IID_IUIElement5            = {0x8eed9bc2, 0xa58c, 0x4453, {0xa
 static const GUID IID_IUIElement7            = {0xcafc4968, 0x6369, 0x4249, {0x80, 0xf9, 0x3d, 0x65, 0x63, 0x19, 0xe8, 0x11}};
 static const GUID IID_IUIElementOverrides    = {0x608d2f1d, 0x7858, 0x4aeb, {0x89, 0xe4, 0xb5, 0x4e, 0x2c, 0x7e, 0xd3, 0xd3}};
 static const GUID IID_IUIElementOverrides7   = {0xb97f7f68, 0xc29b, 0x4c99, {0xa1, 0xc3, 0x95, 0x26, 0x19, 0xd6, 0xe7, 0x20}};
+static const GUID IID_IPointer               = {0x5ee8f39f, 0x747d, 0x4171, {0x90, 0xe6, 0xcd, 0x37, 0xa9, 0xdf, 0xfb, 0x11}};
+static const GUID IID_IPointerRoutedEventArgs = {0xda628f0a, 0x9752, 0x49e2, {0xbd, 0xe2, 0x49, 0xec, 0xca, 0xb9, 0x19, 0x4d}};
+static const GUID IID_IPointerPoint          = {0xe995317d, 0x7296, 0x42d9, {0x82, 0x33, 0xc5, 0xbe, 0x73, 0xb7, 0x4a, 0x4a}};
+static const GUID IID_IPointerPointProperties = {0xc79d8a4b, 0xc163, 0x4ee7, {0x80, 0x3f, 0x67, 0xce, 0x79, 0xf9, 0x97, 0x2d}};
 static const GUID IID_IFrameworkElement      = {0xa391d09b, 0x4a99, 0x4b7c, {0x9d, 0x8d, 0x6f, 0xa5, 0xd0, 0x1f, 0x6f, 0xbf}};
 static const GUID IID_IFrameworkElement2     = {0xf19104be, 0x422a, 0x4904, {0xa5, 0x2f, 0xee, 0x72, 0x01, 0x04, 0x29, 0xe5}};
 static const GUID IID_IFrameworkElement3     = {0xc81c2720, 0x5c52, 0x4bbe, {0xa1, 0x99, 0x2b, 0x1e, 0x34, 0xf0, 0x0f, 0x70}};
@@ -247,6 +251,41 @@ struct xaml_element
     void *command;
     void *command_param;
 
+#define MAX_ELEM_HANDLERS 4
+    /* Pointer & Input Events */
+    void *pointer_pressed_handlers[MAX_ELEM_HANDLERS];
+    UINT pointer_pressed_count;
+    void *pointer_released_handlers[MAX_ELEM_HANDLERS];
+    UINT pointer_released_count;
+    void *pointer_moved_handlers[MAX_ELEM_HANDLERS];
+    UINT pointer_moved_count;
+    void *pointer_wheel_handlers[MAX_ELEM_HANDLERS];
+    UINT pointer_wheel_count;
+    void *pointer_entered_handlers[MAX_ELEM_HANDLERS];
+    UINT pointer_entered_count;
+    void *pointer_exited_handlers[MAX_ELEM_HANDLERS];
+    UINT pointer_exited_count;
+    void *pointer_capture_lost_handlers[MAX_ELEM_HANDLERS];
+    UINT pointer_capture_lost_count;
+    void *pointer_canceled_handlers[MAX_ELEM_HANDLERS];
+    UINT pointer_canceled_count;
+    void *tapped_handlers[MAX_ELEM_HANDLERS];
+    UINT tapped_count;
+    void *double_tapped_handlers[MAX_ELEM_HANDLERS];
+    UINT double_tapped_count;
+    void *holding_handlers[MAX_ELEM_HANDLERS];
+    UINT holding_count;
+    void *right_tapped_handlers[MAX_ELEM_HANDLERS];
+    UINT right_tapped_count;
+    void *keydown_handlers[MAX_ELEM_HANDLERS];
+    UINT keydown_count;
+    void *keyup_handlers[MAX_ELEM_HANDLERS];
+    UINT keyup_count;
+    void *got_focus_handlers[MAX_ELEM_HANDLERS];
+    UINT got_focus_count;
+    void *lost_focus_handlers[MAX_ELEM_HANDLERS];
+    UINT lost_focus_count;
+
     void *resources;
     void *data_context;
     struct xaml_element *parent;
@@ -336,7 +375,7 @@ static struct xaml_element *global_root_element = NULL;
 static struct xaml_element *global_swapchain_panel = NULL;
 static struct xaml_element *global_page_element = NULL;
 static void *global_page_component = NULL;
-static HWND global_xaml_hwnd = NULL;
+HWND global_xaml_hwnd = NULL;
 static BOOL global_swapchain_active = FALSE;
 
 static BOOL is_calculator_app(void)
@@ -907,6 +946,653 @@ static HRESULT WINAPI elem_ui_put_Visibility(void *This, INT32 value)
     impl->visibility = value;
     if (global_xaml_hwnd) InvalidateRect(global_xaml_hwnd, NULL, FALSE);
     return S_OK;
+}
+
+static INT64 next_event_token = 1;
+
+/* IPointerPointProperties implementation */
+struct elem_pointer_props_impl
+{
+    IInspectable IInspectable_iface;
+    LONG ref;
+    FLOAT x, y;
+    boolean left_pressed;
+    boolean right_pressed;
+    boolean middle_pressed;
+    boolean in_contact;
+    UINT32 update_kind;
+    INT32 wheel_delta;
+};
+
+static inline struct elem_pointer_props_impl *impl_from_elem_IPointerPointProperties(void *iface)
+{
+    return (struct elem_pointer_props_impl *)iface;
+}
+
+static HRESULT WINAPI eprops_QI(void *This, REFIID riid, void **ppv)
+{
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IPointerPointProperties) ||
+        IsEqualGUID(riid, &IID_IAgileObject))
+    {
+        *ppv = This;
+        InterlockedIncrement(&impl_from_elem_IPointerPointProperties(This)->ref);
+        return S_OK;
+    }
+    *ppv = NULL;
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI eprops_AddRef(void *This) { return InterlockedIncrement(&impl_from_elem_IPointerPointProperties(This)->ref); }
+static ULONG WINAPI eprops_Release(void *This)
+{
+    struct elem_pointer_props_impl *impl = impl_from_elem_IPointerPointProperties(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+static HRESULT WINAPI eprops_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI eprops_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Input.PointerPointProperties", 39, n); }
+static HRESULT WINAPI eprops_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI eprops_get_Pressure(void *This, FLOAT *val) { if (val) *val = 0.5f; return S_OK; }
+static HRESULT WINAPI eprops_get_IsInverted(void *This, boolean *val) { if (val) *val = FALSE; return S_OK; }
+static HRESULT WINAPI eprops_get_IsEraser(void *This, boolean *val) { if (val) *val = FALSE; return S_OK; }
+static HRESULT WINAPI eprops_get_Orientation(void *This, FLOAT *val) { if (val) *val = 0.0f; return S_OK; }
+static HRESULT WINAPI eprops_get_XTilt(void *This, FLOAT *val) { if (val) *val = 0.0f; return S_OK; }
+static HRESULT WINAPI eprops_get_YTilt(void *This, FLOAT *val) { if (val) *val = 0.0f; return S_OK; }
+static HRESULT WINAPI eprops_get_Twist(void *This, FLOAT *val) { if (val) *val = 0.0f; return S_OK; }
+static HRESULT WINAPI eprops_get_ContactRect(void *This, void *val) { return S_OK; }
+static HRESULT WINAPI eprops_get_ContactRectRaw(void *This, void *val) { return S_OK; }
+static HRESULT WINAPI eprops_get_TouchConfidence(void *This, boolean *val) { if (val) *val = TRUE; return S_OK; }
+static HRESULT WINAPI eprops_get_IsLeftButtonPressed(void *This, boolean *val)
+{
+    if (val) *val = impl_from_elem_IPointerPointProperties(This)->left_pressed;
+    return S_OK;
+}
+static HRESULT WINAPI eprops_get_IsRightButtonPressed(void *This, boolean *val)
+{
+    if (val) *val = impl_from_elem_IPointerPointProperties(This)->right_pressed;
+    return S_OK;
+}
+static HRESULT WINAPI eprops_get_IsMiddleButtonPressed(void *This, boolean *val)
+{
+    if (val) *val = impl_from_elem_IPointerPointProperties(This)->middle_pressed;
+    return S_OK;
+}
+static HRESULT WINAPI eprops_get_MouseWheelDelta(void *This, INT32 *val)
+{
+    if (val) *val = impl_from_elem_IPointerPointProperties(This)->wheel_delta;
+    return S_OK;
+}
+static HRESULT WINAPI eprops_get_IsHorizontalMouseWheel(void *This, boolean *val) { if (val) *val = FALSE; return S_OK; }
+static HRESULT WINAPI eprops_get_IsPrimary(void *This, boolean *val) { if (val) *val = TRUE; return S_OK; }
+static HRESULT WINAPI eprops_get_IsInRange(void *This, boolean *val) { if (val) *val = TRUE; return S_OK; }
+static HRESULT WINAPI eprops_get_IsCanceled(void *This, boolean *val) { if (val) *val = FALSE; return S_OK; }
+static HRESULT WINAPI eprops_get_IsBarrelButtonPressed(void *This, boolean *val) { if (val) *val = FALSE; return S_OK; }
+static HRESULT WINAPI eprops_get_IsXButton1Pressed(void *This, boolean *val) { if (val) *val = FALSE; return S_OK; }
+static HRESULT WINAPI eprops_get_IsXButton2Pressed(void *This, boolean *val) { if (val) *val = FALSE; return S_OK; }
+static HRESULT WINAPI eprops_get_PointerUpdateKind(void *This, UINT32 *val)
+{
+    if (val) *val = impl_from_elem_IPointerPointProperties(This)->update_kind;
+    return S_OK;
+}
+static HRESULT WINAPI eprops_HasUsage(void *This, UINT32 uPage, UINT32 uId, boolean *val) { if (val) *val = FALSE; return S_OK; }
+static HRESULT WINAPI eprops_GetUsageValue(void *This, UINT32 uPage, UINT32 uId, INT32 *val) { if (val) *val = 0; return S_OK; }
+
+static const void *elem_pointer_props_vtbl[] = {
+    (void *)eprops_QI, (void *)eprops_AddRef, (void *)eprops_Release,
+    (void *)eprops_GetIids, (void *)eprops_GetRuntimeClassName, (void *)eprops_GetTrustLevel,
+    (void *)eprops_get_Pressure, (void *)eprops_get_IsInverted, (void *)eprops_get_IsEraser,
+    (void *)eprops_get_Orientation, (void *)eprops_get_XTilt, (void *)eprops_get_YTilt,
+    (void *)eprops_get_Twist, (void *)eprops_get_ContactRect, (void *)eprops_get_ContactRectRaw,
+    (void *)eprops_get_TouchConfidence, (void *)eprops_get_IsLeftButtonPressed,
+    (void *)eprops_get_IsRightButtonPressed, (void *)eprops_get_IsMiddleButtonPressed,
+    (void *)eprops_get_MouseWheelDelta, (void *)eprops_get_IsHorizontalMouseWheel,
+    (void *)eprops_get_IsPrimary, (void *)eprops_get_IsInRange, (void *)eprops_get_IsCanceled,
+    (void *)eprops_get_IsBarrelButtonPressed, (void *)eprops_get_IsXButton1Pressed,
+    (void *)eprops_get_IsXButton2Pressed, (void *)eprops_get_PointerUpdateKind,
+    (void *)eprops_HasUsage, (void *)eprops_GetUsageValue
+};
+
+/* IPointerPoint implementation */
+struct elem_pointer_point_impl
+{
+    IInspectable IInspectable_iface;
+    LONG ref;
+    FLOAT x, y;
+    boolean in_contact;
+    struct elem_pointer_props_impl *props;
+};
+
+static inline struct elem_pointer_point_impl *impl_from_elem_IPointerPoint(void *iface)
+{
+    return (struct elem_pointer_point_impl *)iface;
+}
+
+static HRESULT WINAPI ept_QI(void *This, REFIID riid, void **ppv)
+{
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IPointerPoint) ||
+        IsEqualGUID(riid, &IID_IAgileObject))
+    {
+        *ppv = This;
+        InterlockedIncrement(&impl_from_elem_IPointerPoint(This)->ref);
+        return S_OK;
+    }
+    *ppv = NULL;
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI ept_AddRef(void *This) { return InterlockedIncrement(&impl_from_elem_IPointerPoint(This)->ref); }
+static ULONG WINAPI ept_Release(void *This)
+{
+    struct elem_pointer_point_impl *impl = impl_from_elem_IPointerPoint(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->props) eprops_Release(&impl->props->IInspectable_iface);
+        free(impl);
+    }
+    return ref;
+}
+static HRESULT WINAPI ept_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI ept_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Input.PointerPoint", 30, n); }
+static HRESULT WINAPI ept_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI ept_get_PointerDevice(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI ept_get_Position(void *This, void *value)
+{
+    struct elem_pointer_point_impl *impl = impl_from_elem_IPointerPoint(This);
+    struct { FLOAT X; FLOAT Y; } *pt = value;
+    if (pt) { pt->X = impl->x; pt->Y = impl->y; }
+    return S_OK;
+}
+static HRESULT WINAPI ept_get_RawPosition(void *This, void *value) { return ept_get_Position(This, value); }
+static HRESULT WINAPI ept_get_PointerId(void *This, UINT32 *value) { if (value) *value = 1; return S_OK; }
+static HRESULT WINAPI ept_get_FrameId(void *This, UINT32 *value) { if (value) *value = 1; return S_OK; }
+static HRESULT WINAPI ept_get_Timestamp(void *This, UINT64 *value) { if (value) *value = (UINT64)GetTickCount64() * 1000; return S_OK; }
+static HRESULT WINAPI ept_get_IsInContact(void *This, boolean *value)
+{
+    struct elem_pointer_point_impl *impl = impl_from_elem_IPointerPoint(This);
+    if (value) *value = impl->in_contact;
+    return S_OK;
+}
+static HRESULT WINAPI ept_get_Properties(void *This, void **value)
+{
+    struct elem_pointer_point_impl *impl = impl_from_elem_IPointerPoint(This);
+    if (!value) return E_POINTER;
+    *value = &impl->props->IInspectable_iface;
+    eprops_AddRef(&impl->props->IInspectable_iface);
+    return S_OK;
+}
+
+static const void *elem_pointer_point_vtbl[] = {
+    (void *)ept_QI, (void *)ept_AddRef, (void *)ept_Release,
+    (void *)ept_GetIids, (void *)ept_GetRuntimeClassName, (void *)ept_GetTrustLevel,
+    (void *)ept_get_PointerDevice, (void *)ept_get_Position, (void *)ept_get_RawPosition,
+    (void *)ept_get_PointerId, (void *)ept_get_FrameId, (void *)ept_get_Timestamp,
+    (void *)ept_get_IsInContact, (void *)ept_get_Properties
+};
+
+/* IPointer implementation */
+struct elem_pointer_impl
+{
+    IInspectable IInspectable_iface;
+    LONG ref;
+    UINT32 id;
+    UINT32 device_type; /* 0=touch, 1=pen, 2=mouse */
+    boolean in_contact;
+    boolean in_range;
+};
+
+static inline struct elem_pointer_impl *impl_from_elem_IPointer(void *iface)
+{
+    return (struct elem_pointer_impl *)iface;
+}
+
+static HRESULT WINAPI eptr_QI(void *This, REFIID riid, void **ppv)
+{
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IPointer) ||
+        IsEqualGUID(riid, &IID_IAgileObject))
+    {
+        *ppv = This;
+        InterlockedIncrement(&impl_from_elem_IPointer(This)->ref);
+        return S_OK;
+    }
+    *ppv = NULL;
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI eptr_AddRef(void *This) { return InterlockedIncrement(&impl_from_elem_IPointer(This)->ref); }
+static ULONG WINAPI eptr_Release(void *This)
+{
+    struct elem_pointer_impl *impl = impl_from_elem_IPointer(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+static HRESULT WINAPI eptr_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI eptr_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Input.Pointer", 29, n); }
+static HRESULT WINAPI eptr_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI eptr_get_PointerId(void *This, UINT32 *val)
+{
+    if (val) *val = impl_from_elem_IPointer(This)->id;
+    return S_OK;
+}
+static HRESULT WINAPI eptr_get_PointerDeviceType(void *This, UINT32 *val)
+{
+    if (val) *val = impl_from_elem_IPointer(This)->device_type;
+    return S_OK;
+}
+static HRESULT WINAPI eptr_get_IsInContact(void *This, boolean *val)
+{
+    if (val) *val = impl_from_elem_IPointer(This)->in_contact;
+    return S_OK;
+}
+static HRESULT WINAPI eptr_get_IsInRange(void *This, boolean *val)
+{
+    if (val) *val = impl_from_elem_IPointer(This)->in_range;
+    return S_OK;
+}
+
+static const void *elem_pointer_vtbl[] = {
+    (void *)eptr_QI, (void *)eptr_AddRef, (void *)eptr_Release,
+    (void *)eptr_GetIids, (void *)eptr_GetRuntimeClassName, (void *)eptr_GetTrustLevel,
+    (void *)eptr_get_PointerId, (void *)eptr_get_PointerDeviceType,
+    (void *)eptr_get_IsInContact, (void *)eptr_get_IsInRange
+};
+
+/* IPointerRoutedEventArgs implementation */
+struct elem_pointer_routed_args_impl
+{
+    IInspectable IInspectable_iface;
+    LONG ref;
+    struct elem_pointer_point_impl *point;
+    struct elem_pointer_impl *pointer;
+    boolean handled;
+    UINT32 key_modifiers;
+};
+
+static inline struct elem_pointer_routed_args_impl *impl_from_elem_IPointerRoutedEventArgs(void *iface)
+{
+    return (struct elem_pointer_routed_args_impl *)iface;
+}
+
+static HRESULT WINAPI epra_QI(void *This, REFIID riid, void **ppv)
+{
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IPointerRoutedEventArgs) ||
+        IsEqualGUID(riid, &IID_IAgileObject))
+    {
+        *ppv = This;
+        InterlockedIncrement(&impl_from_elem_IPointerRoutedEventArgs(This)->ref);
+        return S_OK;
+    }
+    *ppv = NULL;
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI epra_AddRef(void *This) { return InterlockedIncrement(&impl_from_elem_IPointerRoutedEventArgs(This)->ref); }
+static ULONG WINAPI epra_Release(void *This)
+{
+    struct elem_pointer_routed_args_impl *impl = impl_from_elem_IPointerRoutedEventArgs(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->point) ept_Release(&impl->point->IInspectable_iface);
+        if (impl->pointer) eptr_Release(&impl->pointer->IInspectable_iface);
+        free(impl);
+    }
+    return ref;
+}
+static HRESULT WINAPI epra_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI epra_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.UI.Xaml.Input.PointerRoutedEventArgs", 44, n); }
+static HRESULT WINAPI epra_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI epra_get_Pointer(void *This, void **val)
+{
+    struct elem_pointer_routed_args_impl *impl = impl_from_elem_IPointerRoutedEventArgs(This);
+    if (!val) return E_POINTER;
+    *val = &impl->pointer->IInspectable_iface;
+    eptr_AddRef(&impl->pointer->IInspectable_iface);
+    return S_OK;
+}
+static HRESULT WINAPI epra_get_KeyModifiers(void *This, UINT32 *val)
+{
+    if (val) *val = impl_from_elem_IPointerRoutedEventArgs(This)->key_modifiers;
+    return S_OK;
+}
+static HRESULT WINAPI epra_get_Handled(void *This, boolean *val)
+{
+    if (val) *val = impl_from_elem_IPointerRoutedEventArgs(This)->handled;
+    return S_OK;
+}
+static HRESULT WINAPI epra_put_Handled(void *This, boolean val)
+{
+    impl_from_elem_IPointerRoutedEventArgs(This)->handled = val;
+    return S_OK;
+}
+static HRESULT WINAPI epra_GetCurrentPoint(void *This, void *relativeTo, void **val)
+{
+    struct elem_pointer_routed_args_impl *impl = impl_from_elem_IPointerRoutedEventArgs(This);
+    if (!val) return E_POINTER;
+    *val = &impl->point->IInspectable_iface;
+    ept_AddRef(&impl->point->IInspectable_iface);
+    return S_OK;
+}
+static HRESULT WINAPI epra_GetIntermediatePoints(void *This, void *relativeTo, void **val)
+{
+    if (val) *val = NULL;
+    return S_OK;
+}
+
+static const void *elem_pointer_routed_args_vtbl[] = {
+    (void *)epra_QI, (void *)epra_AddRef, (void *)epra_Release,
+    (void *)epra_GetIids, (void *)epra_GetRuntimeClassName, (void *)epra_GetTrustLevel,
+    (void *)epra_get_Pointer, (void *)epra_get_KeyModifiers,
+    (void *)epra_get_Handled, (void *)epra_put_Handled,
+    (void *)epra_GetCurrentPoint, (void *)epra_GetIntermediatePoints
+};
+
+static HRESULT WINAPI elem_ui_add_PointerPressed(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    TRACE("elem %p (%s) add_PointerPressed handler %p\n", elem, debugstr_w(elem->name), handler);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->pointer_pressed_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->pointer_pressed_handlers[elem->pointer_pressed_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_PointerPressed(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_PointerMoved(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    TRACE("elem %p (%s) add_PointerMoved handler %p\n", elem, debugstr_w(elem->name), handler);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->pointer_moved_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->pointer_moved_handlers[elem->pointer_moved_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_PointerMoved(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_PointerReleased(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    TRACE("elem %p (%s) add_PointerReleased handler %p\n", elem, debugstr_w(elem->name), handler);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->pointer_released_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->pointer_released_handlers[elem->pointer_released_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_PointerReleased(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_PointerEntered(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    TRACE("elem %p (%s) add_PointerEntered handler %p\n", elem, debugstr_w(elem->name), handler);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->pointer_entered_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->pointer_entered_handlers[elem->pointer_entered_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_PointerEntered(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_PointerExited(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    TRACE("elem %p (%s) add_PointerExited handler %p\n", elem, debugstr_w(elem->name), handler);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->pointer_exited_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->pointer_exited_handlers[elem->pointer_exited_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_PointerExited(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_PointerCaptureLost(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = ++next_event_token;
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_PointerCaptureLost(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_PointerCanceled(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = ++next_event_token;
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_PointerCanceled(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_PointerWheelChanged(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    TRACE("elem %p (%s) add_PointerWheelChanged handler %p\n", elem, debugstr_w(elem->name), handler);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->pointer_wheel_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->pointer_wheel_handlers[elem->pointer_wheel_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_PointerWheelChanged(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_Tapped(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    TRACE("elem %p (%s) add_Tapped handler %p\n", elem, debugstr_w(elem->name), handler);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->tapped_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->tapped_handlers[elem->tapped_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_Tapped(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_DoubleTapped(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = ++next_event_token;
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_DoubleTapped(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_Holding(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = ++next_event_token;
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_Holding(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_RightTapped(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = ++next_event_token;
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_RightTapped(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_KeyDown(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->keydown_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->keydown_handlers[elem->keydown_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_KeyDown(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_KeyUp(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct xaml_element *elem = impl_from_IUIElement(This);
+    if (!token) return E_POINTER;
+    token->value = ++next_event_token;
+    if (handler && elem->keyup_count < MAX_ELEM_HANDLERS)
+    {
+        IUnknown_AddRef((IUnknown *)handler);
+        elem->keyup_handlers[elem->keyup_count++] = handler;
+    }
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_KeyUp(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_GotFocus(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = ++next_event_token;
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_GotFocus(void *This, EventRegistrationToken token) { return S_OK; }
+
+static HRESULT WINAPI elem_ui_add_LostFocus(void *This, void *handler, EventRegistrationToken *token)
+{
+    if (token) token->value = ++next_event_token;
+    return S_OK;
+}
+static HRESULT WINAPI elem_ui_remove_LostFocus(void *This, EventRegistrationToken token) { return S_OK; }
+
+static void elem_fire_pointer(struct xaml_element *elem, UINT msg, WPARAM wparam, LPARAM lparam)
+{
+    struct elem_pointer_routed_args_impl *args;
+    struct elem_pointer_point_impl *point;
+    struct elem_pointer_props_impl *props;
+    struct elem_pointer_impl *ptr;
+    void **handlers = NULL;
+    UINT count = 0, i;
+    FLOAT x = (FLOAT)(short)LOWORD(lparam);
+    FLOAT y = (FLOAT)(short)HIWORD(lparam);
+    boolean left_pressed = (wparam & MK_LBUTTON) != 0;
+    boolean right_pressed = (wparam & MK_RBUTTON) != 0;
+    boolean middle_pressed = (wparam & MK_MBUTTON) != 0;
+    boolean in_contact = FALSE;
+    UINT32 update_kind = 0;
+    INT32 wheel_delta = 0;
+
+    if (!elem) return;
+
+    switch (msg)
+    {
+        case WM_LBUTTONDOWN:
+            in_contact = TRUE; left_pressed = TRUE; update_kind = 1;
+            handlers = elem->pointer_pressed_handlers; count = elem->pointer_pressed_count;
+            break;
+        case WM_LBUTTONUP:
+            in_contact = FALSE; left_pressed = FALSE; update_kind = 2;
+            handlers = elem->pointer_released_handlers; count = elem->pointer_released_count;
+            break;
+        case WM_RBUTTONDOWN:
+            in_contact = TRUE; right_pressed = TRUE; update_kind = 3;
+            handlers = elem->pointer_pressed_handlers; count = elem->pointer_pressed_count;
+            break;
+        case WM_RBUTTONUP:
+            in_contact = FALSE; right_pressed = FALSE; update_kind = 4;
+            handlers = elem->pointer_released_handlers; count = elem->pointer_released_count;
+            break;
+        case WM_MBUTTONDOWN:
+            in_contact = TRUE; middle_pressed = TRUE; update_kind = 5;
+            handlers = elem->pointer_pressed_handlers; count = elem->pointer_pressed_count;
+            break;
+        case WM_MBUTTONUP:
+            in_contact = FALSE; middle_pressed = FALSE; update_kind = 6;
+            handlers = elem->pointer_released_handlers; count = elem->pointer_released_count;
+            break;
+        case WM_MOUSEMOVE:
+            in_contact = left_pressed || right_pressed || middle_pressed;
+            update_kind = 0;
+            handlers = elem->pointer_moved_handlers; count = elem->pointer_moved_count;
+            break;
+        case WM_MOUSEWHEEL:
+            wheel_delta = GET_WHEEL_DELTA_WPARAM(wparam);
+            handlers = elem->pointer_wheel_handlers; count = elem->pointer_wheel_count;
+            break;
+        default:
+            return;
+    }
+
+    if (count == 0) return;
+
+    props = calloc(1, sizeof(*props));
+    point = calloc(1, sizeof(*point));
+    ptr = calloc(1, sizeof(*ptr));
+    args = calloc(1, sizeof(*args));
+    if (!props || !point || !ptr || !args)
+    {
+        free(props); free(point); free(ptr); free(args);
+        return;
+    }
+
+    props->IInspectable_iface.lpVtbl = (void *)elem_pointer_props_vtbl;
+    props->ref = 1;
+    props->x = x; props->y = y;
+    props->left_pressed = left_pressed; props->right_pressed = right_pressed; props->middle_pressed = middle_pressed;
+    props->in_contact = in_contact; props->update_kind = update_kind; props->wheel_delta = wheel_delta;
+
+    point->IInspectable_iface.lpVtbl = (void *)elem_pointer_point_vtbl;
+    point->ref = 1;
+    point->x = x; point->y = y;
+    point->in_contact = in_contact;
+    point->props = props;
+
+    ptr->IInspectable_iface.lpVtbl = (void *)elem_pointer_vtbl;
+    ptr->ref = 1;
+    ptr->id = 1;
+    ptr->device_type = 2; /* PointerDeviceType_Mouse */
+    ptr->in_contact = in_contact;
+    ptr->in_range = TRUE;
+
+    args->IInspectable_iface.lpVtbl = (void *)elem_pointer_routed_args_vtbl;
+    args->ref = 1;
+    args->point = point;
+    args->pointer = ptr;
+
+    for (i = 0; i < count; i++)
+    {
+        void *h = handlers[i];
+        void **vtbl = h ? *(void ***)h : NULL;
+        if (vtbl && (uintptr_t)vtbl[3] > 0x10000)
+        {
+            HRESULT (STDMETHODCALLTYPE *invoke_fn)(void *, void *, void *) = (void *)vtbl[3];
+            TRACE("Invoking UIElement pointer handler[%d] on %p (%s) msg=0x%x (%.0f,%.0f)\n",
+                  i, elem, debugstr_w(elem->name), msg, x, y);
+            invoke_fn(h, (void *)&elem->IUIElement_iface, (void *)args);
+        }
+    }
+
+    epra_Release(&args->IInspectable_iface);
+}
+
+static void elem_fire_pointer_all(UINT msg, WPARAM wparam, LPARAM lparam)
+{
+    if (global_swapchain_panel)
+        elem_fire_pointer(global_swapchain_panel, msg, wparam, lparam);
+    if (global_page_element && global_page_element != global_swapchain_panel)
+        elem_fire_pointer(global_page_element, msg, wparam, lparam);
+    if (global_root_element && global_root_element != global_swapchain_panel && global_root_element != global_page_element)
+        elem_fire_pointer(global_root_element, msg, wparam, lparam);
 }
 
 /* -------------------------------------------------------------------------
@@ -2368,6 +3054,43 @@ static void init_elem_vtables(void)
     elem_ui_vtbl[5]  = (void *)elem_ui_GetTrustLevel;
     elem_ui_vtbl[14] = (void *)elem_ui_get_Visibility;
     elem_ui_vtbl[15] = (void *)elem_ui_put_Visibility;
+    elem_ui_vtbl[21] = (void *)elem_ui_get_Visibility;
+    elem_ui_vtbl[22] = (void *)elem_ui_put_Visibility;
+
+    elem_ui_vtbl[41] = (void *)elem_ui_add_KeyUp;
+    elem_ui_vtbl[42] = (void *)elem_ui_remove_KeyUp;
+    elem_ui_vtbl[43] = (void *)elem_ui_add_KeyDown;
+    elem_ui_vtbl[44] = (void *)elem_ui_remove_KeyDown;
+    elem_ui_vtbl[45] = (void *)elem_ui_add_GotFocus;
+    elem_ui_vtbl[46] = (void *)elem_ui_remove_GotFocus;
+    elem_ui_vtbl[47] = (void *)elem_ui_add_LostFocus;
+    elem_ui_vtbl[48] = (void *)elem_ui_remove_LostFocus;
+
+    elem_ui_vtbl[57] = (void *)elem_ui_add_PointerPressed;
+    elem_ui_vtbl[58] = (void *)elem_ui_remove_PointerPressed;
+    elem_ui_vtbl[59] = (void *)elem_ui_add_PointerMoved;
+    elem_ui_vtbl[60] = (void *)elem_ui_remove_PointerMoved;
+    elem_ui_vtbl[61] = (void *)elem_ui_add_PointerReleased;
+    elem_ui_vtbl[62] = (void *)elem_ui_remove_PointerReleased;
+    elem_ui_vtbl[63] = (void *)elem_ui_add_PointerEntered;
+    elem_ui_vtbl[64] = (void *)elem_ui_remove_PointerEntered;
+    elem_ui_vtbl[65] = (void *)elem_ui_add_PointerExited;
+    elem_ui_vtbl[66] = (void *)elem_ui_remove_PointerExited;
+    elem_ui_vtbl[67] = (void *)elem_ui_add_PointerCaptureLost;
+    elem_ui_vtbl[68] = (void *)elem_ui_remove_PointerCaptureLost;
+    elem_ui_vtbl[69] = (void *)elem_ui_add_PointerCanceled;
+    elem_ui_vtbl[70] = (void *)elem_ui_remove_PointerCanceled;
+    elem_ui_vtbl[71] = (void *)elem_ui_add_PointerWheelChanged;
+    elem_ui_vtbl[72] = (void *)elem_ui_remove_PointerWheelChanged;
+
+    elem_ui_vtbl[73] = (void *)elem_ui_add_Tapped;
+    elem_ui_vtbl[74] = (void *)elem_ui_remove_Tapped;
+    elem_ui_vtbl[75] = (void *)elem_ui_add_DoubleTapped;
+    elem_ui_vtbl[76] = (void *)elem_ui_remove_DoubleTapped;
+    elem_ui_vtbl[77] = (void *)elem_ui_add_Holding;
+    elem_ui_vtbl[78] = (void *)elem_ui_remove_Holding;
+    elem_ui_vtbl[79] = (void *)elem_ui_add_RightTapped;
+    elem_ui_vtbl[80] = (void *)elem_ui_remove_RightTapped;
 
     for (i = 0; i < 64; i++) elem_fe_vtbl[i] = (void *)elem_stub_ret_ok;
     elem_fe_vtbl[0]  = (void *)elem_fe_QI;
@@ -7543,6 +8266,9 @@ static struct xaml_element *active_pressed_button = NULL;
 
 extern void core_window_fire_size_changed(FLOAT width, FLOAT height);
 extern void core_window_fire_activated(int state);
+extern void core_window_fire_pointer(UINT msg, WPARAM wparam, LPARAM lparam);
+extern void core_window_fire_key(UINT msg, WPARAM wparam, LPARAM lparam);
+extern void core_window_fire_char(WPARAM wparam, LPARAM lparam);
 
 LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -7563,11 +8289,31 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
         case WM_ERASEBKGND:
             return 1;
         case WM_LBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN:
         {
             POINT pt;
             RECT client;
+            core_window_fire_pointer(msg, wparam, lparam);
+            elem_fire_pointer_all(msg, wparam, lparam);
             if (!is_calculator_app())
+            {
+                pt.x = (short)LOWORD(lparam);
+                pt.y = (short)HIWORD(lparam);
+                if (global_root_element && msg == WM_LBUTTONDOWN)
+                {
+                    struct xaml_element *hit = xaml_hittest(global_root_element, pt);
+                    if (hit)
+                    {
+                        active_pressed_button = hit;
+                        hit->is_pressed = TRUE;
+                        SetCapture(hwnd);
+                        InvalidateRect(hwnd, NULL, FALSE);
+                        return 0;
+                    }
+                }
                 return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
             pt.x = (short)LOWORD(lparam);
             pt.y = (short)HIWORD(lparam);
             GetClientRect(hwnd, &client);
@@ -7745,9 +8491,32 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
             return 0;
         }
         case WM_LBUTTONUP:
+        case WM_RBUTTONUP:
+        case WM_MBUTTONUP:
         {
+            core_window_fire_pointer(msg, wparam, lparam);
+            elem_fire_pointer_all(msg, wparam, lparam);
             if (!is_calculator_app())
+            {
+                if (active_pressed_button)
+                {
+                    POINT pt;
+                    struct xaml_element *hit;
+                    pt.x = (short)LOWORD(lparam);
+                    pt.y = (short)HIWORD(lparam);
+                    hit = xaml_hittest(global_root_element, pt);
+                    active_pressed_button->is_pressed = FALSE;
+                    ReleaseCapture();
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    if (hit == active_pressed_button)
+                    {
+                        xaml_fire_click(active_pressed_button);
+                    }
+                    active_pressed_button = NULL;
+                    return 0;
+                }
                 return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
             if (active_pressed_button)
             {
                 POINT pt;
@@ -7766,12 +8535,32 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
             }
             return 0;
         }
+        case WM_MOUSEMOVE:
+        {
+            core_window_fire_pointer(msg, wparam, lparam);
+            elem_fire_pointer_all(msg, wparam, lparam);
+            break;
+        }
+        case WM_MOUSEWHEEL:
+        {
+            core_window_fire_pointer(msg, wparam, lparam);
+            elem_fire_pointer_all(msg, wparam, lparam);
+            return DefWindowProcW(hwnd, msg, wparam, lparam);
+        }
         case WM_KEYDOWN:
+            core_window_fire_key(msg, wparam, lparam);
             if (is_calculator_app())
             {
                 xaml_handle_keydown(wparam);
                 return 0;
             }
+            return 0;
+        case WM_KEYUP:
+            core_window_fire_key(msg, wparam, lparam);
+            return 0;
+        case WM_CHAR:
+            core_window_fire_char(wparam, lparam);
+            return 0;
             return DefWindowProcW(hwnd, msg, wparam, lparam);
         case WM_SIZE:
         {
@@ -7792,6 +8581,7 @@ LRESULT CALLBACK xaml_window_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
         }
         case WM_ACTIVATE:
         {
+            TRACE("xaml_window_wndproc: WM_ACTIVATE wparam=%lx\n", (unsigned long)wparam);
             if (wparam != WA_INACTIVE)
                 core_window_fire_activated(0 /* CodeActivated */);
             else

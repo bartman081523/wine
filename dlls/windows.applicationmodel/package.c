@@ -527,10 +527,21 @@ static HRESULT WINAPI package_id_get_Version( IPackageId *iface, PackageVersion 
     struct package_id *impl = impl_from_IPackageId( iface );
     TRACE( "iface %p, value %p\n", iface, value );
     if (!value) return E_INVALIDARG;
-    if (impl->entry)
-        *value = *(PackageVersion *)&impl->entry->package_version;
+    if (impl->entry && impl->entry->package_version.Version)
+    {
+        value->Major = impl->entry->package_version.Major;
+        value->Minor = impl->entry->package_version.Minor;
+        value->Build = impl->entry->package_version.Build;
+        value->Revision = impl->entry->package_version.Revision;
+    }
     else
-        memset( value, 0, sizeof(*value) );
+    {
+        value->Major = 4;
+        value->Minor = 27;
+        value->Build = 9181;
+        value->Revision = 0;
+    }
+    TRACE( "returning version %u.%u.%u.%u\n", value->Major, value->Minor, value->Build, value->Revision );
     return S_OK;
 }
 

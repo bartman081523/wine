@@ -293,6 +293,195 @@ void WINAPI RoUninitialize(void)
     CoUninitialize();
 }
 
+/* Stub implementation for McgBridge.Uwp.Consent.ConsentBridge and ConsentBridgeSettings */
+struct stub_consent_async_op
+{
+    void *vtbl;
+    LONG ref;
+};
+
+static HRESULT WINAPI consent_async_QueryInterface(void *this, REFIID riid, void **ppv)
+{
+    if (!ppv) return E_POINTER;
+    *ppv = this;
+    return S_OK;
+}
+static ULONG WINAPI consent_async_AddRef(void *this) { return 2; }
+static ULONG WINAPI consent_async_Release(void *this) { return 1; }
+static HRESULT WINAPI consent_async_GetIids(void *this, ULONG *count, IID **iids) { if (count) *count = 0; return S_OK; }
+static HRESULT WINAPI consent_async_GetRuntimeClassName(void *this, HSTRING *name) { return S_OK; }
+static HRESULT WINAPI consent_async_GetTrustLevel(void *this, TrustLevel *trust) { if (trust) *trust = BaseTrust; return S_OK; }
+static HRESULT WINAPI consent_async_put_Completed(void *this, void *handler)
+{
+    if (handler)
+    {
+        void **vtbl = *(void ***)handler;
+        HRESULT (WINAPI *invoke)(void *, void *, int) = (void *)vtbl[3];
+        invoke(handler, this, 1 /* Completed */);
+    }
+    return S_OK;
+}
+static HRESULT WINAPI consent_async_get_Completed(void *this, void **handler)
+{
+    if (handler) *handler = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI consent_async_GetResults(void *this, BOOLEAN *results)
+{
+    if (results) *results = FALSE;
+    return S_OK;
+}
+static HRESULT WINAPI consent_async_get_Id(void *this, unsigned int *id) { if (id) *id = 1; return S_OK; }
+static HRESULT WINAPI consent_async_get_Status(void *this, int *status) { if (status) *status = 1; return S_OK; }
+static HRESULT WINAPI consent_async_get_ErrorCode(void *this, HRESULT *ec) { if (ec) *ec = S_OK; return S_OK; }
+static HRESULT WINAPI consent_async_Cancel(void *this) { return S_OK; }
+static HRESULT WINAPI consent_async_Close(void *this) { return S_OK; }
+
+static void *stub_consent_async_vtbl[] = {
+    consent_async_QueryInterface,
+    consent_async_AddRef,
+    consent_async_Release,
+    consent_async_GetIids,
+    consent_async_GetRuntimeClassName,
+    consent_async_GetTrustLevel,
+    consent_async_put_Completed,
+    consent_async_get_Completed,
+    consent_async_GetResults,
+    consent_async_get_Id,
+    consent_async_get_Status,
+    consent_async_get_ErrorCode,
+    consent_async_Cancel,
+    consent_async_Close,
+    consent_async_GetResults, consent_async_GetResults,
+};
+static struct stub_consent_async_op global_consent_async_op = { stub_consent_async_vtbl, 1 };
+
+struct stub_consent_bridge
+{
+    void *vtbl;
+    LONG ref;
+};
+
+static HRESULT WINAPI consent_bridge_QueryInterface(void *this, REFIID riid, void **ppv)
+{
+    if (!ppv) return E_POINTER;
+    *ppv = this;
+    return S_OK;
+}
+static ULONG WINAPI consent_bridge_AddRef(void *this) { return 2; }
+static ULONG WINAPI consent_bridge_Release(void *this) { return 1; }
+static HRESULT WINAPI consent_bridge_GetIids(void *this, ULONG *count, IID **iids) { if (count) *count = 0; return S_OK; }
+static HRESULT WINAPI consent_bridge_GetRuntimeClassName(void *this, HSTRING *name) { return S_OK; }
+static HRESULT WINAPI consent_bridge_GetTrustLevel(void *this, TrustLevel *trust) { if (trust) *trust = BaseTrust; return S_OK; }
+static HRESULT WINAPI consent_bridge_nop(void *this) { return S_OK; }
+static HRESULT WINAPI consent_bridge_CheckConsentRequired(void *this, void **out_op)
+{
+    if (out_op) *out_op = &global_consent_async_op;
+    return S_OK;
+}
+
+static void *stub_consent_bridge_vtbl[] = {
+    consent_bridge_QueryInterface,
+    consent_bridge_AddRef,
+    consent_bridge_Release,
+    consent_bridge_GetIids,
+    consent_bridge_GetRuntimeClassName,
+    consent_bridge_GetTrustLevel,
+    consent_bridge_nop,
+    consent_bridge_nop,
+    consent_bridge_CheckConsentRequired,
+    consent_bridge_nop,
+    consent_bridge_nop,
+    consent_bridge_nop,
+    consent_bridge_nop,
+    consent_bridge_nop,
+    consent_bridge_nop,
+    consent_bridge_nop,
+};
+static struct stub_consent_bridge global_consent_bridge = { stub_consent_bridge_vtbl, 1 };
+
+static HRESULT WINAPI consent_factory_QueryInterface(void *this, REFIID riid, void **ppv)
+{
+    if (!ppv) return E_POINTER;
+    *ppv = this;
+    return S_OK;
+}
+static ULONG WINAPI consent_factory_AddRef(void *this) { return 2; }
+static ULONG WINAPI consent_factory_Release(void *this) { return 1; }
+static HRESULT WINAPI consent_factory_GetIids(void *this, ULONG *count, IID **iids) { if (count) *count = 0; return S_OK; }
+static HRESULT WINAPI consent_factory_GetRuntimeClassName(void *this, HSTRING *name) { return S_OK; }
+static HRESULT WINAPI consent_factory_GetTrustLevel(void *this, TrustLevel *trust) { if (trust) *trust = BaseTrust; return S_OK; }
+static HRESULT WINAPI consent_factory_CreateInstance(void *this, void *settings, void **out_instance)
+{
+    if (out_instance) *out_instance = &global_consent_bridge;
+    return S_OK;
+}
+
+static void *stub_consent_factory_vtbl[] = {
+    consent_factory_QueryInterface,
+    consent_factory_AddRef,
+    consent_factory_Release,
+    consent_factory_GetIids,
+    consent_factory_GetRuntimeClassName,
+    consent_factory_GetTrustLevel,
+    consent_factory_CreateInstance,
+    consent_factory_CreateInstance,
+    consent_factory_CreateInstance,
+    consent_factory_CreateInstance,
+};
+static struct { void *vtbl; LONG ref; } global_consent_factory = { stub_consent_factory_vtbl, 1 };
+
+/* Stub for ConsentBridgeSettings */
+static HRESULT WINAPI consent_settings_QueryInterface(void *this, REFIID riid, void **ppv)
+{
+    if (!ppv) return E_POINTER;
+    *ppv = this;
+    return S_OK;
+}
+static ULONG WINAPI consent_settings_AddRef(void *this) { return 2; }
+static ULONG WINAPI consent_settings_Release(void *this) { return 1; }
+static HRESULT WINAPI consent_settings_GetIids(void *this, ULONG *count, IID **iids) { if (count) *count = 0; return S_OK; }
+static HRESULT WINAPI consent_settings_GetRuntimeClassName(void *this, HSTRING *name) { return S_OK; }
+static HRESULT WINAPI consent_settings_GetTrustLevel(void *this, TrustLevel *trust) { if (trust) *trust = BaseTrust; return S_OK; }
+static HRESULT WINAPI consent_settings_slot(void *this) { return S_OK; }
+
+static void *stub_consent_settings_vtbl[50];
+static struct { void *vtbl; LONG ref; } global_consent_settings;
+
+static void init_consent_settings_vtbl(void)
+{
+    int i;
+    if (stub_consent_settings_vtbl[0]) return;
+    stub_consent_settings_vtbl[0] = consent_settings_QueryInterface;
+    stub_consent_settings_vtbl[1] = consent_settings_AddRef;
+    stub_consent_settings_vtbl[2] = consent_settings_Release;
+    stub_consent_settings_vtbl[3] = consent_settings_GetIids;
+    stub_consent_settings_vtbl[4] = consent_settings_GetRuntimeClassName;
+    stub_consent_settings_vtbl[5] = consent_settings_GetTrustLevel;
+    for (i = 6; i < 50; i++)
+        stub_consent_settings_vtbl[i] = consent_settings_slot;
+    global_consent_settings.vtbl = stub_consent_settings_vtbl;
+    global_consent_settings.ref = 1;
+}
+
+static HRESULT WINAPI consent_settings_factory_ActivateInstance(void *this, IInspectable **instance)
+{
+    init_consent_settings_vtbl();
+    if (instance) *instance = (IInspectable *)&global_consent_settings;
+    return S_OK;
+}
+
+static void *stub_consent_settings_factory_vtbl[] = {
+    consent_factory_QueryInterface,
+    consent_factory_AddRef,
+    consent_factory_Release,
+    consent_factory_GetIids,
+    consent_factory_GetRuntimeClassName,
+    consent_factory_GetTrustLevel,
+    consent_settings_factory_ActivateInstance,
+};
+static struct { void *vtbl; LONG ref; } global_consent_settings_factory = { stub_consent_settings_factory_vtbl, 1 };
+
 /***********************************************************************
  *      RoGetActivationFactory (combase.@)
  */
@@ -300,6 +489,7 @@ HRESULT WINAPI DECLSPEC_HOTPATCH RoGetActivationFactory(HSTRING classid, REFIID 
 {
     PFNGETACTIVATIONFACTORY pDllGetActivationFactory;
     IActivationFactory *factory;
+    const WCHAR *class_str;
     WCHAR *library;
     HMODULE module;
     HRESULT hr;
@@ -311,6 +501,24 @@ HRESULT WINAPI DECLSPEC_HOTPATCH RoGetActivationFactory(HSTRING classid, REFIID 
 
     if (FAILED(hr = ensure_mta()))
         return hr;
+
+    class_str = WindowsGetStringRawBuffer(classid, NULL);
+    if (class_str)
+    {
+        if (!wcscmp(class_str, L"McgBridge.Uwp.Consent.ConsentBridge"))
+        {
+            TRACE("Returning stub factory for %s\n", debugstr_w(class_str));
+            *class_factory = &global_consent_factory;
+            return S_OK;
+        }
+        if (!wcscmp(class_str, L"McgBridge.Uwp.Consent.ConsentBridgeSettings"))
+        {
+            TRACE("Returning stub settings factory for %s\n", debugstr_w(class_str));
+            init_consent_settings_vtbl();
+            *class_factory = &global_consent_settings_factory;
+            return S_OK;
+        }
+    }
 
     hr = get_library_for_classid(WindowsGetStringRawBuffer(classid, NULL), &library);
     if (FAILED(hr))
