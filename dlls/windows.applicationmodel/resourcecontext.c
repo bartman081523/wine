@@ -195,6 +195,17 @@ static HRESULT WINAPI qmap_map_GetIids(void *This, ULONG *c, IID **i) { if (c) *
 static HRESULT WINAPI qmap_map_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Foundation.Collections.PropertySet", 41, n); }
 static HRESULT WINAPI qmap_map_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
 
+static void get_app_locale(WCHAR *locale, WCHAR *fallback)
+{
+    locale[0] = 0;
+    if (!GetUserDefaultLocaleName(locale, LOCALE_NAME_MAX_LENGTH) || !locale[0])
+        wcscpy(locale, L"en-US");
+    if (!_wcsicmp(locale, L"en-US") || !_wcsicmp(locale, L"en"))
+        wcscpy(fallback, L"de-DE");
+    else
+        wcscpy(fallback, L"en-US");
+}
+
 static HRESULT WINAPI qmap_map_Lookup(void *This, HSTRING key, HSTRING *value)
 {
     const WCHAR *str = WindowsGetStringRawBuffer(key, NULL);
@@ -203,7 +214,11 @@ static HRESULT WINAPI qmap_map_Lookup(void *This, HSTRING key, HSTRING *value)
     if (str)
     {
         if (!wcscmp(str, L"Language") || !wcscmp(str, L"language"))
-            return WindowsCreateString(L"de-DE", 5, value);
+        {
+            WCHAR locale[LOCALE_NAME_MAX_LENGTH], fallback[LOCALE_NAME_MAX_LENGTH];
+            get_app_locale(locale, fallback);
+            return WindowsCreateString(locale, wcslen(locale), value);
+        }
         if (!wcscmp(str, L"Scale") || !wcscmp(str, L"scale"))
             return WindowsCreateString(L"100", 3, value);
         if (!wcscmp(str, L"Contrast") || !wcscmp(str, L"contrast"))
@@ -409,10 +424,12 @@ static HRESULT WINAPI lvec_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t 
 
 static HRESULT WINAPI lvec_GetAt(void *This, UINT32 index, HSTRING *value)
 {
+    WCHAR locale[LOCALE_NAME_MAX_LENGTH], fallback[LOCALE_NAME_MAX_LENGTH];
     TRACE("lvec_GetAt This %p, index %u, value %p, ret %p\n", This, index, value, __builtin_return_address(0));
     if (!value) return E_POINTER;
-    if (index == 0) return WindowsCreateString(L"de-DE", 5, value);
-    if (index == 1) return WindowsCreateString(L"en-US", 5, value);
+    get_app_locale(locale, fallback);
+    if (index == 0) return WindowsCreateString(locale, wcslen(locale), value);
+    if (index == 1) return WindowsCreateString(fallback, wcslen(fallback), value);
     return 0x8000000b; /* E_BOUNDS */
 }
 static HRESULT WINAPI lvec_get_Size(void *This, UINT32 *size)
@@ -549,11 +566,13 @@ static HRESULT WINAPI iter_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t 
 
 static HRESULT WINAPI iter_get_Current(void *This, HSTRING *value)
 {
+    WCHAR locale[LOCALE_NAME_MAX_LENGTH], fallback[LOCALE_NAME_MAX_LENGTH];
     struct languages_iterator_impl *impl = impl_from_IIterator(This);
     TRACE("iter_get_Current %p, index %u, value %p\n", impl, impl->current_index, value);
     if (!value) return E_POINTER;
-    if (impl->current_index == 0) return WindowsCreateString(L"de-DE", 5, value);
-    if (impl->current_index == 1) return WindowsCreateString(L"en-US", 5, value);
+    get_app_locale(locale, fallback);
+    if (impl->current_index == 0) return WindowsCreateString(locale, wcslen(locale), value);
+    if (impl->current_index == 1) return WindowsCreateString(fallback, wcslen(fallback), value);
     return 0x8000000b; /* E_BOUNDS */
 }
 
@@ -1319,10 +1338,22 @@ static HRESULT WINAPI rmap_GetValueForContext(void *This, HSTRING resourceKey, v
 
     if (wcsstr(raw, L"loc.archive") || wcsstr(raw, L"loc_archives"))
     {
-        /* Determine language qualifier, default to "de" */
-        const WCHAR *lang = L"de";
+        WCHAR locale[LOCALE_NAME_MAX_LENGTH], fallback[LOCALE_NAME_MAX_LENGTH];
+        const WCHAR *lang = L"en";
+        get_app_locale(locale, fallback);
+        if (!_wcsnicmp(locale, L"de", 2))
+            lang = L"de";
+        else if (!_wcsnicmp(locale, L"fr", 2))
+            lang = L"fr";
+        else if (!_wcsnicmp(locale, L"es", 2))
+            lang = L"es";
+        else if (!_wcsnicmp(locale, L"it", 2))
+            lang = L"it";
+        else
+            lang = L"en";
+
         swprintf(candidate_path, ARRAY_SIZE(candidate_path), L"loc_archives\\%s\\loc.archive", lang);
-        TRACE("rmap: resolving %s to candidate %s\n", debugstr_w(raw), debugstr_w(candidate_path));
+        TRACE("rmap: resolving %s to candidate %s (locale %s)\n", debugstr_w(raw), debugstr_w(candidate_path), debugstr_w(locale));
         return create_resource_candidate_instance(candidate_path, value);
     }
 
