@@ -75,6 +75,11 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
             *out = wcsdup(L"cryptowinrt.dll");
             return S_OK;
         }
+        if (!wcsncmp(classid, L"Windows.ApplicationModel.Core.", 30))
+        {
+            *out = wcsdup(L"twinapi.appcore.dll");
+            return S_OK;
+        }
         if (!wcsncmp(classid, L"Windows.ApplicationModel.", 25))
         {
             *out = wcsdup(L"windows.applicationmodel.dll");
@@ -181,7 +186,8 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
             *out = wcsdup(L"windows.media.devices.dll");
             return S_OK;
         }
-        if (!wcsncmp(classid, L"Windows.UI.Xaml.", 16))
+        if (!wcsncmp(classid, L"Windows.UI.Xaml.", 16) ||
+            !wcsncmp(classid, L"Windows.UI.Text.", 16))
         {
             *out = wcsdup(L"windows.ui.xaml.dll");
             return S_OK;
