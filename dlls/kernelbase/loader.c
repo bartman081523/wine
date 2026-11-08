@@ -1280,3 +1280,19 @@ BOOL WINAPI DECLSPEC_HOTPATCH ZombifyActCtx( HANDLE context )
 {
     return set_ntstatus( RtlZombifyActivationContext( context ));
 }
+
+
+/***********************************************************************
+ *          ResolveDelayLoadsFromDll    (kernelbase.@)
+ */
+NTSTATUS WINAPI DECLSPEC_HOTPATCH ResolveDelayLoadsFromDll( void *parent_base, const char *target_dll, ULONG flags )
+{
+    TRACE( "(%p, %s, 0x%08lx)\n", parent_base, debugstr_a(target_dll), flags );
+    if (target_dll)
+    {
+        HMODULE mod = LoadLibraryA( target_dll );
+        if (!mod)
+            WARN( "failed to load target DLL %s\n", debugstr_a(target_dll) );
+    }
+    return STATUS_SUCCESS;
+}

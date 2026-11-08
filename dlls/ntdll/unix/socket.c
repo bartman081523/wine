@@ -2220,11 +2220,20 @@ NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc
 
 #ifdef IP_HDRINCL
         case IOCTL_AFD_WINE_GET_IP_HDRINCL:
-            if (get_sock_type( handle ) != SOCK_RAW) return STATUS_INVALID_PARAMETER;
+            if (get_sock_type( handle ) != SOCK_RAW)
+            {
+                if (out_size >= sizeof(int)) *(int *)out_buffer = 0;
+                return STATUS_SUCCESS;
+            }
             return do_getsockopt( handle, io, IPPROTO_IP, IP_HDRINCL, out_buffer, out_size );
 
         case IOCTL_AFD_WINE_SET_IP_HDRINCL:
-            if (get_sock_type( handle ) != SOCK_RAW) return STATUS_INVALID_PARAMETER;
+            if (get_sock_type( handle ) != SOCK_RAW)
+            {
+                if (in_size >= sizeof(int) && *(int *)in_buffer != 0)
+                    return STATUS_INVALID_PARAMETER;
+                return STATUS_SUCCESS;
+            }
             return do_setsockopt( handle, io, IPPROTO_IP, IP_HDRINCL, in_buffer, in_size );
 #endif
 
@@ -2365,7 +2374,12 @@ NTSTATUS sock_ioctl( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, void *apc
 
 #ifdef IPV6_ADD_MEMBERSHIP
         case IOCTL_AFD_WINE_SET_IPV6_ADD_MEMBERSHIP:
-            return do_setsockopt( handle, io, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, in_buffer, in_size );
+        {
+            NTSTATUS s = do_setsockopt( handle, io, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, in_buffer, in_size );
+            if (s == STATUS_SHARING_VIOLATION || s == STATUS_ADDRESS_ALREADY_EXISTS)
+                return STATUS_SUCCESS;
+            return s;
+        }
 #endif
 
         case IOCTL_AFD_WINE_GET_IPV6_DONTFRAG:

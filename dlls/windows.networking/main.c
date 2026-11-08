@@ -2885,6 +2885,678 @@ static const void *stream_socket_factory_vtbl[] = {
 
 static struct { const void *lpVtbl; } stream_socket_factory = { stream_socket_factory_vtbl };
 
+/* -------------------------------------------------------------------------
+ * Windows.Networking.Sockets.MessageWebSocket Implementation
+ * ------------------------------------------------------------------------- */
+static const GUID IID_IMessageWebSocket = {0x33727d08, 0x34d5, 0x4746, {0xad, 0x7b, 0x8d, 0xde, 0x5b, 0xc2, 0xef, 0x88}};
+static const GUID IID_IWebSocket = {0xf877396f, 0x99b1, 0x4e18, {0xbc, 0x08, 0x85, 0x0c, 0x9a, 0xdf, 0x15, 0x6e}};
+static const GUID IID_IWebSocketControl = {0x2ec4bdc3, 0xd9a5, 0x455a, {0x98, 0x11, 0xde, 0x24, 0xd4, 0x53, 0x37, 0xe9}};
+static const GUID IID_IWebSocketInformation = {0x5e9e5e76, 0xc95a, 0x47a5, {0xb2, 0x5f, 0x07, 0x84, 0x76, 0x39, 0xd1, 0x81}};
+static const GUID IID_IVector_HSTRING = {0x2af22683, 0x3734, 0x56d0, {0xa6, 0x0e, 0x68, 0x8c, 0xc8, 0x5d, 0x16, 0x19}};
+
+struct hstring_vector
+{
+    struct { const void *lpVtbl; } IVector_iface;
+    LONG ref;
+    HSTRING items[32];
+    UINT32 count;
+};
+
+#define impl_from_hstring_vector(ptr) ((struct hstring_vector *)((char *)(ptr) - offsetof(struct hstring_vector, IVector_iface)))
+
+static HRESULT WINAPI hstring_vec_QI(void *This, REFIID riid, void **ppv)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IVector_HSTRING))
+    {
+        *ppv = &impl->IVector_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI hstring_vec_AddRef(void *This)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI hstring_vec_Release(void *This)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        UINT32 i;
+        for (i = 0; i < impl->count; i++) WindowsDeleteString(impl->items[i]);
+        free(impl);
+    }
+    return ref;
+}
+
+static HRESULT WINAPI hstring_vec_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI hstring_vec_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Foundation.Collections.IVector`1<String>", 48, n); }
+static HRESULT WINAPI hstring_vec_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI hstring_vec_GetAt(void *This, UINT32 index, HSTRING *item)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    if (!item) return E_POINTER;
+    if (index >= impl->count) return E_BOUNDS;
+    return WindowsDuplicateString(impl->items[index], item);
+}
+
+static HRESULT WINAPI hstring_vec_get_Size(void *This, UINT32 *size)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    if (!size) return E_POINTER;
+    *size = impl->count;
+    return S_OK;
+}
+
+static HRESULT WINAPI hstring_vec_GetView(void *This, void **view)
+{
+    return hstring_vec_QI(This, &IID_IVector_HSTRING, view);
+}
+
+static HRESULT WINAPI hstring_vec_IndexOf(void *This, HSTRING value, UINT32 *index, BOOLEAN *found)
+{
+    if (found) *found = FALSE;
+    if (index) *index = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI hstring_vec_SetAt(void *This, UINT32 index, HSTRING item)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    if (index >= impl->count) return E_BOUNDS;
+    WindowsDeleteString(impl->items[index]);
+    return WindowsDuplicateString(item, &impl->items[index]);
+}
+
+static HRESULT WINAPI hstring_vec_InsertAt(void *This, UINT32 index, HSTRING item)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI hstring_vec_RemoveAt(void *This, UINT32 index)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI hstring_vec_Append(void *This, HSTRING item)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    if (impl->count < ARRAY_SIZE(impl->items))
+    {
+        WindowsDuplicateString(item, &impl->items[impl->count++]);
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI hstring_vec_RemoveAtEnd(void *This)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    if (impl->count > 0)
+    {
+        impl->count--;
+        WindowsDeleteString(impl->items[impl->count]);
+    }
+    return S_OK;
+}
+
+static HRESULT WINAPI hstring_vec_Clear(void *This)
+{
+    struct hstring_vector *impl = impl_from_hstring_vector(This);
+    UINT32 i;
+    for (i = 0; i < impl->count; i++) WindowsDeleteString(impl->items[i]);
+    impl->count = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI hstring_vec_GetMany(void *This, UINT32 start, UINT32 len, HSTRING *items, UINT32 *actual)
+{
+    if (actual) *actual = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI hstring_vec_ReplaceAll(void *This, UINT32 len, HSTRING *items)
+{
+    return S_OK;
+}
+
+static const void *hstring_vector_vtbl[] = {
+    (void *)hstring_vec_QI,
+    (void *)hstring_vec_AddRef,
+    (void *)hstring_vec_Release,
+    (void *)hstring_vec_GetIids,
+    (void *)hstring_vec_GetRuntimeClassName,
+    (void *)hstring_vec_GetTrustLevel,
+    (void *)hstring_vec_GetAt,
+    (void *)hstring_vec_get_Size,
+    (void *)hstring_vec_GetView,
+    (void *)hstring_vec_IndexOf,
+    (void *)hstring_vec_SetAt,
+    (void *)hstring_vec_InsertAt,
+    (void *)hstring_vec_RemoveAt,
+    (void *)hstring_vec_Append,
+    (void *)hstring_vec_RemoveAtEnd,
+    (void *)hstring_vec_Clear,
+    (void *)hstring_vec_GetMany,
+    (void *)hstring_vec_ReplaceAll
+};
+
+static HRESULT create_hstring_vector(void **out)
+{
+    struct hstring_vector *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IVector_iface.lpVtbl = hstring_vector_vtbl;
+    impl->ref = 1;
+    *out = &impl->IVector_iface;
+    return S_OK;
+}
+
+struct message_websocket_impl
+{
+    struct { const void *lpVtbl; } IMessageWebSocket_iface;
+    struct { const void *lpVtbl; } IWebSocket_iface;
+    struct { const void *lpVtbl; } IClosable_iface;
+    LONG ref;
+    struct {
+        struct { const void *lpVtbl; } IWebSocketControl_iface;
+        UINT32 outbound_buffer_size;
+        struct hstring_vector *supported_protocols;
+    } control;
+    struct {
+        struct { const void *lpVtbl; } IWebSocketInformation_iface;
+    } information;
+    struct {
+        struct { const void *lpVtbl; } IOutputStream_iface;
+        struct { const void *lpVtbl; } IClosable_iface;
+    } output_stream;
+    IUnknown *message_received_handler;
+    IUnknown *closed_handler;
+    CRITICAL_SECTION cs;
+};
+
+#define impl_from_msg_ws(ptr) ((struct message_websocket_impl *)((char *)(ptr) - offsetof(struct message_websocket_impl, IMessageWebSocket_iface)))
+#define impl_from_msg_ws_sock(ptr) ((struct message_websocket_impl *)((char *)(ptr) - offsetof(struct message_websocket_impl, IWebSocket_iface)))
+#define impl_from_msg_ws_closable(ptr) ((struct message_websocket_impl *)((char *)(ptr) - offsetof(struct message_websocket_impl, IClosable_iface)))
+#define impl_from_msg_ws_ctrl(ptr) ((struct message_websocket_impl *)((char *)(ptr) - offsetof(struct message_websocket_impl, control.IWebSocketControl_iface)))
+#define impl_from_msg_ws_info(ptr) ((struct message_websocket_impl *)((char *)(ptr) - offsetof(struct message_websocket_impl, information.IWebSocketInformation_iface)))
+#define impl_from_msg_ws_out(ptr) ((struct message_websocket_impl *)((char *)(ptr) - offsetof(struct message_websocket_impl, output_stream.IOutputStream_iface)))
+#define impl_from_msg_ws_out_closable(ptr) ((struct message_websocket_impl *)((char *)(ptr) - offsetof(struct message_websocket_impl, output_stream.IClosable_iface)))
+
+static HRESULT WINAPI msg_ws_QI(void *This, REFIID riid, void **ppv)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IMessageWebSocket))
+    {
+        *ppv = &impl->IMessageWebSocket_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IWebSocket))
+    {
+        *ppv = &impl->IWebSocket_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IClosable))
+    {
+        *ppv = &impl->IClosable_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    TRACE("unsupported IID %s\n", debugstr_guid(riid));
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI msg_ws_AddRef(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws(This);
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI msg_ws_Release(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref)
+    {
+        if (impl->control.supported_protocols)
+            hstring_vec_Release(&impl->control.supported_protocols->IVector_iface);
+        if (impl->message_received_handler)
+            IUnknown_Release(impl->message_received_handler);
+        if (impl->closed_handler)
+            IUnknown_Release(impl->closed_handler);
+        DeleteCriticalSection(&impl->cs);
+        free(impl);
+    }
+    return ref;
+}
+
+static HRESULT WINAPI msg_ws_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI msg_ws_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.Sockets.MessageWebSocket", 42, n); }
+static HRESULT WINAPI msg_ws_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI msg_ws_get_Control(void *This, void **value)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws(This);
+    if (!value) return E_POINTER;
+    *value = &impl->control.IWebSocketControl_iface;
+    msg_ws_AddRef(This);
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_get_Information(void *This, void **value)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws(This);
+    if (!value) return E_POINTER;
+    *value = &impl->information.IWebSocketInformation_iface;
+    msg_ws_AddRef(This);
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_add_MessageReceived(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws(This);
+    TRACE("add_MessageReceived handler %p\n", handler);
+    if (token) token->value = 1;
+    if (impl->message_received_handler) IUnknown_Release(impl->message_received_handler);
+    impl->message_received_handler = (IUnknown *)handler;
+    if (impl->message_received_handler) IUnknown_AddRef(impl->message_received_handler);
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_remove_MessageReceived(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static const void *message_websocket_vtbl[] = {
+    (void *)msg_ws_QI,
+    (void *)msg_ws_AddRef,
+    (void *)msg_ws_Release,
+    (void *)msg_ws_GetIids,
+    (void *)msg_ws_GetRuntimeClassName,
+    (void *)msg_ws_GetTrustLevel,
+    (void *)msg_ws_get_Control,
+    (void *)msg_ws_get_Information,
+    (void *)msg_ws_add_MessageReceived,
+    (void *)msg_ws_remove_MessageReceived
+};
+
+static HRESULT WINAPI msg_ws_sock_QI(void *This, REFIID riid, void **ppv)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_sock(This);
+    return msg_ws_QI(&impl->IMessageWebSocket_iface, riid, ppv);
+}
+static ULONG WINAPI msg_ws_sock_AddRef(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_sock(This);
+    return msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+}
+static ULONG WINAPI msg_ws_sock_Release(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_sock(This);
+    return msg_ws_Release(&impl->IMessageWebSocket_iface);
+}
+
+static HRESULT WINAPI msg_ws_sock_ConnectAsync(void *This, void *uri, void **operation)
+{
+    MESSAGE("windows.networking: MessageWebSocket::ConnectAsync uri %p -> SUCCESS\n", uri);
+    return create_socket_async_action(S_OK, operation);
+}
+
+static HRESULT WINAPI msg_ws_sock_SetRequestHeader(void *This, HSTRING headerName, HSTRING headerValue)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_sock_add_Closed(void *This, void *handler, EventRegistrationToken *token)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_sock(This);
+    if (token) token->value = 1;
+    if (impl->closed_handler) IUnknown_Release(impl->closed_handler);
+    impl->closed_handler = (IUnknown *)handler;
+    if (impl->closed_handler) IUnknown_AddRef(impl->closed_handler);
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_sock_remove_Closed(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_sock_Close(void *This, UINT16 code, HSTRING reason)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_sock_get_OutputStream(void *This, void **value)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_sock(This);
+    if (!value) return E_POINTER;
+    *value = &impl->output_stream.IOutputStream_iface;
+    msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+    return S_OK;
+}
+
+static const void *message_websocket_socket_vtbl[] = {
+    (void *)msg_ws_sock_QI,
+    (void *)msg_ws_sock_AddRef,
+    (void *)msg_ws_sock_Release,
+    (void *)msg_ws_GetIids,
+    (void *)msg_ws_GetRuntimeClassName,
+    (void *)msg_ws_GetTrustLevel,
+    (void *)msg_ws_sock_get_OutputStream,
+    (void *)msg_ws_sock_ConnectAsync,
+    (void *)msg_ws_sock_SetRequestHeader,
+    (void *)msg_ws_sock_add_Closed,
+    (void *)msg_ws_sock_remove_Closed,
+    (void *)msg_ws_sock_Close
+};
+
+static HRESULT WINAPI msg_ws_closable_QI(void *This, REFIID riid, void **ppv)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_closable(This);
+    return msg_ws_QI(&impl->IMessageWebSocket_iface, riid, ppv);
+}
+static ULONG WINAPI msg_ws_closable_AddRef(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_closable(This);
+    return msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+}
+static ULONG WINAPI msg_ws_closable_Release(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_closable(This);
+    return msg_ws_Release(&impl->IMessageWebSocket_iface);
+}
+static HRESULT WINAPI msg_ws_Close(void *This)
+{
+    TRACE("MessageWebSocket::Close\n");
+    return S_OK;
+}
+
+static const void *message_websocket_closable_vtbl[] = {
+    (void *)msg_ws_closable_QI,
+    (void *)msg_ws_closable_AddRef,
+    (void *)msg_ws_closable_Release,
+    (void *)msg_ws_GetIids,
+    (void *)msg_ws_GetRuntimeClassName,
+    (void *)msg_ws_GetTrustLevel,
+    (void *)msg_ws_Close
+};
+
+static HRESULT WINAPI msg_ws_ctrl_QI(void *This, REFIID riid, void **ppv)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_ctrl(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IWebSocketControl))
+    {
+        *ppv = &impl->control.IWebSocketControl_iface;
+        msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI msg_ws_ctrl_AddRef(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_ctrl(This);
+    return msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+}
+static ULONG WINAPI msg_ws_ctrl_Release(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_ctrl(This);
+    return msg_ws_Release(&impl->IMessageWebSocket_iface);
+}
+
+static HRESULT WINAPI msg_ws_ctrl_get_OutboundBufferSizeInBytes(void *This, UINT32 *value)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_ctrl(This);
+    if (value) *value = impl->control.outbound_buffer_size;
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_ctrl_put_OutboundBufferSizeInBytes(void *This, UINT32 value)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_ctrl(This);
+    impl->control.outbound_buffer_size = value;
+    return S_OK;
+}
+
+static HRESULT WINAPI msg_ws_ctrl_get_ServerCredential(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI msg_ws_ctrl_put_ServerCredential(void *This, void *value) { return S_OK; }
+static HRESULT WINAPI msg_ws_ctrl_get_ProxyCredential(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI msg_ws_ctrl_put_ProxyCredential(void *This, void *value) { return S_OK; }
+
+static HRESULT WINAPI msg_ws_ctrl_get_SupportedProtocols(void *This, void **value)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_ctrl(This);
+    if (!value) return E_POINTER;
+    if (!impl->control.supported_protocols)
+    {
+        create_hstring_vector((void **)&impl->control.supported_protocols);
+    }
+    *value = impl->control.supported_protocols;
+    hstring_vec_AddRef(*value);
+    return S_OK;
+}
+
+static const void *message_websocket_control_vtbl[] = {
+    (void *)msg_ws_ctrl_QI,
+    (void *)msg_ws_ctrl_AddRef,
+    (void *)msg_ws_ctrl_Release,
+    (void *)msg_ws_GetIids,
+    (void *)msg_ws_GetRuntimeClassName,
+    (void *)msg_ws_GetTrustLevel,
+    (void *)msg_ws_ctrl_get_OutboundBufferSizeInBytes,
+    (void *)msg_ws_ctrl_put_OutboundBufferSizeInBytes,
+    (void *)msg_ws_ctrl_get_ServerCredential,
+    (void *)msg_ws_ctrl_put_ServerCredential,
+    (void *)msg_ws_ctrl_get_ProxyCredential,
+    (void *)msg_ws_ctrl_put_ProxyCredential,
+    (void *)msg_ws_ctrl_get_SupportedProtocols
+};
+
+static HRESULT WINAPI msg_ws_info_QI(void *This, REFIID riid, void **ppv)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_info(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IWebSocketInformation))
+    {
+        *ppv = &impl->information.IWebSocketInformation_iface;
+        msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI msg_ws_info_AddRef(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_info(This);
+    return msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+}
+static ULONG WINAPI msg_ws_info_Release(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_info(This);
+    return msg_ws_Release(&impl->IMessageWebSocket_iface);
+}
+static HRESULT WINAPI msg_ws_info_get_LocalAddress(void *This, void **value) { if (value) *value = NULL; return S_OK; }
+static HRESULT WINAPI msg_ws_info_get_BandwidthStatistics(void *This, void *value) { return S_OK; }
+static HRESULT WINAPI msg_ws_info_get_Protocol(void *This, HSTRING *value) { return WindowsCreateString(L"", 0, value); }
+
+static const void *message_websocket_info_vtbl[] = {
+    (void *)msg_ws_info_QI,
+    (void *)msg_ws_info_AddRef,
+    (void *)msg_ws_info_Release,
+    (void *)msg_ws_GetIids,
+    (void *)msg_ws_GetRuntimeClassName,
+    (void *)msg_ws_GetTrustLevel,
+    (void *)msg_ws_info_get_LocalAddress,
+    (void *)msg_ws_info_get_BandwidthStatistics,
+    (void *)msg_ws_info_get_Protocol
+};
+
+static HRESULT WINAPI msg_ws_out_QI(void *This, REFIID riid, void **ppv)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_out(This);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IOutputStream))
+    {
+        *ppv = &impl->output_stream.IOutputStream_iface;
+        msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+        return S_OK;
+    }
+    if (IsEqualGUID(riid, &IID_IClosable))
+    {
+        *ppv = &impl->output_stream.IClosable_iface;
+        msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI msg_ws_out_AddRef(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_out(This);
+    return msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+}
+static ULONG WINAPI msg_ws_out_Release(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_out(This);
+    return msg_ws_Release(&impl->IMessageWebSocket_iface);
+}
+static HRESULT WINAPI msg_ws_out_WriteAsync(void *This, void *buffer, void **operation)
+{
+    UINT32 len = 0;
+    void **buf_vtbl = *(void ***)buffer;
+    HRESULT (WINAPI *get_len_fn)(void *, UINT32 *) = (void *)buf_vtbl[7];
+    get_len_fn(buffer, &len);
+    return create_async_op_write_uint32(len, operation);
+}
+static HRESULT WINAPI msg_ws_out_FlushAsync(void *This, void **operation)
+{
+    return create_async_op_flush_bool(TRUE, operation);
+}
+
+static const void *message_websocket_output_vtbl[] = {
+    (void *)msg_ws_out_QI,
+    (void *)msg_ws_out_AddRef,
+    (void *)msg_ws_out_Release,
+    (void *)msg_ws_GetIids,
+    (void *)msg_ws_GetRuntimeClassName,
+    (void *)msg_ws_GetTrustLevel,
+    (void *)msg_ws_out_WriteAsync,
+    (void *)msg_ws_out_FlushAsync
+};
+
+static HRESULT WINAPI msg_ws_out_closable_QI(void *This, REFIID riid, void **ppv)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_out_closable(This);
+    return msg_ws_out_QI(&impl->output_stream.IOutputStream_iface, riid, ppv);
+}
+static ULONG WINAPI msg_ws_out_closable_AddRef(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_out_closable(This);
+    return msg_ws_AddRef(&impl->IMessageWebSocket_iface);
+}
+static ULONG WINAPI msg_ws_out_closable_Release(void *This)
+{
+    struct message_websocket_impl *impl = impl_from_msg_ws_out_closable(This);
+    return msg_ws_Release(&impl->IMessageWebSocket_iface);
+}
+static HRESULT WINAPI msg_ws_out_Close(void *This) { return S_OK; }
+
+static const void *message_websocket_output_closable_vtbl[] = {
+    (void *)msg_ws_out_closable_QI,
+    (void *)msg_ws_out_closable_AddRef,
+    (void *)msg_ws_out_closable_Release,
+    (void *)msg_ws_GetIids,
+    (void *)msg_ws_GetRuntimeClassName,
+    (void *)msg_ws_GetTrustLevel,
+    (void *)msg_ws_out_Close
+};
+
+static HRESULT create_message_websocket(void **out)
+{
+    struct message_websocket_impl *impl = calloc(1, sizeof(*impl));
+    if (!impl) return E_OUTOFMEMORY;
+    impl->IMessageWebSocket_iface.lpVtbl = message_websocket_vtbl;
+    impl->IWebSocket_iface.lpVtbl = message_websocket_socket_vtbl;
+    impl->IClosable_iface.lpVtbl = message_websocket_closable_vtbl;
+    impl->control.IWebSocketControl_iface.lpVtbl = message_websocket_control_vtbl;
+    impl->information.IWebSocketInformation_iface.lpVtbl = message_websocket_info_vtbl;
+    impl->output_stream.IOutputStream_iface.lpVtbl = message_websocket_output_vtbl;
+    impl->output_stream.IClosable_iface.lpVtbl = message_websocket_output_closable_vtbl;
+    impl->ref = 1;
+    InitializeCriticalSection(&impl->cs);
+    *out = &impl->IMessageWebSocket_iface;
+    return S_OK;
+}
+
+static ULONG WINAPI msg_ws_fac_AddRef(void *This) { return 2; }
+static ULONG WINAPI msg_ws_fac_Release(void *This) { return 1; }
+
+static HRESULT WINAPI msg_ws_fac_QI(void *This, REFIID riid, void **ppv)
+{
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory))
+    {
+        *ppv = This;
+        msg_ws_fac_AddRef(This);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static HRESULT WINAPI msg_ws_fac_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI msg_ws_fac_GetRuntimeClassName(void *This, HSTRING *n) { return WindowsCreateString(L"Windows.Networking.Sockets.MessageWebSocket", 42, n); }
+static HRESULT WINAPI msg_ws_fac_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI msg_ws_fac_ActivateInstance(void *This, IInspectable **instance)
+{
+    if (!instance) return E_POINTER;
+    return create_message_websocket((void **)instance);
+}
+
+static const void *message_websocket_factory_vtbl[] = {
+    (void *)msg_ws_fac_QI,
+    (void *)msg_ws_fac_AddRef,
+    (void *)msg_ws_fac_Release,
+    (void *)msg_ws_fac_GetIids,
+    (void *)msg_ws_fac_GetRuntimeClassName,
+    (void *)msg_ws_fac_GetTrustLevel,
+    (void *)msg_ws_fac_ActivateInstance
+};
+
+static struct { const void *lpVtbl; } message_websocket_factory = { message_websocket_factory_vtbl };
+
 HRESULT WINAPI SetSocketMediaStreamingMode(BOOL value)
 {
     FIXME("value %d stub!\n", value);
@@ -2914,6 +3586,12 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, void **factory)
     if (!wcscmp(name, L"Windows.Networking.Sockets.StreamSocket"))
     {
         *factory = &stream_socket_factory;
+        return S_OK;
+    }
+    if (!wcscmp(name, L"Windows.Networking.Sockets.MessageWebSocket"))
+    {
+        *factory = &message_websocket_factory;
+        msg_ws_fac_AddRef(*factory);
         return S_OK;
     }
 

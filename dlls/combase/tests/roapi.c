@@ -639,6 +639,93 @@ static void test_RoGetErrorReportingFlags(void)
     ok(flags == RO_ERROR_REPORTING_USESETERRORINFO, "Got unexpected flag %#x.\n", flags);
 }
 
+static const GUID IID_IMessageWebSocket = {0x33727d08, 0x34d5, 0x4746, {0xad, 0x7b, 0x8d, 0xde, 0x5b, 0xc2, 0xef, 0x88}};
+static const GUID IID_IWebSocket = {0xf877396f, 0x99b1, 0x4e18, {0xbc, 0x08, 0x85, 0x0c, 0x9a, 0xdf, 0x15, 0x6e}};
+static const GUID IID_IClosable = {0x30d5a829, 0x7fa4, 0x4026, {0x83, 0xbb, 0xd7, 0x5b, 0xae, 0x4e, 0xa9, 0x9e}};
+static const GUID IID_IMouseDeviceStatics = {0x484a9045, 0x6d70, 0x49db, {0x8e, 0x68, 0x46, 0xff, 0xbd, 0x17, 0xd3, 0x8d}};
+
+static void test_MessageWebSocket_activation(void)
+{
+    static const WCHAR class_name[] = L"Windows.Networking.Sockets.MessageWebSocket";
+    IActivationFactory *factory = NULL;
+    IInspectable *instance = NULL;
+    IUnknown *msg_ws = NULL;
+    IUnknown *ws = NULL;
+    IUnknown *closable = NULL;
+    HSTRING str;
+    HRESULT hr;
+
+    hr = RoInitialize(RO_INIT_MULTITHREADED);
+    ok(hr == S_OK || hr == S_FALSE, "RoInitialize failed: %#lx\n", hr);
+
+    hr = WindowsCreateString(class_name, ARRAY_SIZE(class_name) - 1, &str);
+    ok(hr == S_OK, "WindowsCreateString failed: %#lx\n", hr);
+
+    hr = RoGetActivationFactory(str, &IID_IActivationFactory, (void **)&factory);
+    ok(hr == S_OK, "RoGetActivationFactory for MessageWebSocket failed: %#lx\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        hr = IActivationFactory_ActivateInstance(factory, &instance);
+        ok(hr == S_OK, "ActivateInstance failed: %#lx\n", hr);
+        if (SUCCEEDED(hr))
+        {
+            hr = IInspectable_QueryInterface(instance, &IID_IMessageWebSocket, (void **)&msg_ws);
+            ok(hr == S_OK, "QueryInterface IMessageWebSocket failed: %#lx\n", hr);
+            if (SUCCEEDED(hr)) IUnknown_Release(msg_ws);
+
+            hr = IInspectable_QueryInterface(instance, &IID_IWebSocket, (void **)&ws);
+            ok(hr == S_OK, "QueryInterface IWebSocket failed: %#lx\n", hr);
+            if (SUCCEEDED(hr)) IUnknown_Release(ws);
+
+            hr = IInspectable_QueryInterface(instance, &IID_IClosable, (void **)&closable);
+            ok(hr == S_OK, "QueryInterface IClosable failed: %#lx\n", hr);
+            if (SUCCEEDED(hr)) IUnknown_Release(closable);
+
+            IInspectable_Release(instance);
+        }
+        IActivationFactory_Release(factory);
+    }
+    WindowsDeleteString(str);
+    RoUninitialize();
+}
+
+static void test_MouseDevice_activation(void)
+{
+    static const WCHAR class_name[] = L"Windows.Devices.Input.MouseDevice";
+    IActivationFactory *factory = NULL;
+    IUnknown *statics = NULL;
+    HSTRING str;
+    HRESULT hr;
+
+    hr = RoInitialize(RO_INIT_MULTITHREADED);
+    ok(hr == S_OK || hr == S_FALSE, "RoInitialize failed: %#lx\n", hr);
+
+    hr = WindowsCreateString(class_name, ARRAY_SIZE(class_name) - 1, &str);
+    ok(hr == S_OK, "WindowsCreateString failed: %#lx\n", hr);
+
+    hr = RoGetActivationFactory(str, &IID_IActivationFactory, (void **)&factory);
+    ok(hr == S_OK, "RoGetActivationFactory for MouseDevice failed: %#lx\n", hr);
+    if (SUCCEEDED(hr))
+    {
+        hr = IActivationFactory_QueryInterface(factory, &IID_IMouseDeviceStatics, (void **)&statics);
+        ok(hr == S_OK, "QueryInterface IMouseDeviceStatics failed: %#lx\n", hr);
+        if (SUCCEEDED(hr))
+        {
+            typedef HRESULT (WINAPI *p_GetForCurrentView)(void *, void **);
+            p_GetForCurrentView get_view = *(p_GetForCurrentView *)(*(void ***)statics + 6);
+            IUnknown *mouse_dev = NULL;
+            hr = get_view(statics, (void **)&mouse_dev);
+            ok(hr == S_OK, "GetForCurrentView failed: %#lx\n", hr);
+            if (SUCCEEDED(hr) && mouse_dev)
+                IUnknown_Release(mouse_dev);
+            IUnknown_Release(statics);
+        }
+        IActivationFactory_Release(factory);
+    }
+    WindowsDeleteString(str);
+    RoUninitialize();
+}
+
 START_TEST(roapi)
 {
     BOOL ret;
@@ -649,6 +736,8 @@ START_TEST(roapi)
     test_ActivationFactories();
     test_RoGetAgileReference();
     test_RoGetErrorReportingFlags();
+    test_MessageWebSocket_activation();
+    test_MouseDevice_activation();
 
     SetLastError(0xdeadbeef);
     ret = DeleteFileW(L"wine.combase.test.dll");

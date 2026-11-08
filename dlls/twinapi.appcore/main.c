@@ -23,6 +23,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(twinapi);
 
 #include "platform_diagnostics.c"
 #include "web_auth.c"
+#include "diagnostics.c"
 
 /***********************************************************************
  *           RegisterAppConstrainedChangeNotification (twinapi.appcore.@)
@@ -86,6 +87,20 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( platform_diagnostics_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.Security.Authentication.Web.Core.WebAuthenticationCoreManager" ))
         IActivationFactory_QueryInterface( web_auth_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Security.Authentication.Web.Core.WebTokenRequest" ))
+        IActivationFactory_QueryInterface( web_token_request_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Security.Credentials.WebAccountProvider" ))
+        IActivationFactory_QueryInterface( web_account_provider_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Security.Credentials.WebAccount" ))
+        IActivationFactory_QueryInterface( web_account_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Foundation.Diagnostics.LoggingChannelOptions" ))
+        IActivationFactory_QueryInterface( logging_channel_options_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Foundation.Diagnostics.LoggingChannel" ))
+        IActivationFactory_QueryInterface( logging_channel_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Foundation.Diagnostics.LoggingOptions" ))
+        IActivationFactory_QueryInterface( logging_options_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Foundation.Diagnostics.LoggingFields" ))
+        IActivationFactory_QueryInterface( logging_fields_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;

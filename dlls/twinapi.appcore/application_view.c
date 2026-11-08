@@ -142,6 +142,9 @@ struct application_view_impl
     struct { const void *lpVtbl; } IApplicationView4_iface;
     struct { const void *lpVtbl; } IRedhawkInterop_iface;
     LONG ref;
+    boolean is_fullscreen;
+    RECT saved_rect;
+    DWORD saved_style;
 };
 
 #define impl_from_IApplicationView(ptr)  ((struct application_view_impl *)((char *)(ptr) - offsetof(struct application_view_impl, IApplicationView_iface)))
@@ -236,8 +239,9 @@ static HRESULT WINAPI view_get_AdjacentToRightDisplayEdge(void *This, boolean *v
 }
 static HRESULT WINAPI view_get_IsFullScreen(void *This, boolean *value)
 {
+    struct application_view_impl *impl = impl_from_IApplicationView(This);
     if (!value) return E_POINTER;
-    *value = FALSE;
+    *value = impl->is_fullscreen;
     return S_OK;
 }
 static HRESULT WINAPI view_get_IsOnLockScreen(void *This, boolean *value)
@@ -313,10 +317,24 @@ static HRESULT WINAPI view2_get_SuppressSystemOverlays(void *This, boolean *valu
     return S_OK;
 }
 static HRESULT WINAPI view2_put_SuppressSystemOverlays(void *This, boolean value) { return S_OK; }
+static HWND get_app_window(void);
+
 static HRESULT WINAPI view2_get_VisibleBounds(void *This, Rect *value)
 {
+    HWND hwnd = get_app_window();
+    RECT rc;
     if (!value) return E_POINTER;
-    value->X = 0; value->Y = 0; value->Width = 1920; value->Height = 1080;
+    if (hwnd && GetClientRect(hwnd, &rc))
+    {
+        value->X = 0;
+        value->Y = 0;
+        value->Width = (FLOAT)(rc.right - rc.left);
+        value->Height = (FLOAT)(rc.bottom - rc.top);
+    }
+    else
+    {
+        value->X = 0; value->Y = 0; value->Width = 1920; value->Height = 1080;
+    }
     return S_OK;
 }
 static HRESULT WINAPI view2_add_VisibleBoundsChanged(void *This, void *handler, EventRegistrationToken *token)
@@ -380,18 +398,80 @@ static HRESULT WINAPI view3_get_FullScreenSystemOverlayMode(void *This, FullScre
     return S_OK;
 }
 static HRESULT WINAPI view3_put_FullScreenSystemOverlayMode(void *This, FullScreenSystemOverlayMode value) { return S_OK; }
+static HWND get_app_window(void)
+{
+    HWND hwnd = GetActiveWindow();
+    if (!hwnd) hwnd = GetForegroundWindow();
+    if (!hwnd) hwnd = FindWindowW( L"Windows.UI.Core.CoreWindow", NULL );
+    return hwnd;
+}
+
 static HRESULT WINAPI view3_get_IsFullScreenMode(void *This, boolean *value)
 {
+    struct application_view_impl *impl = impl_from_IApplicationView3(This);
     if (!value) return E_POINTER;
-    *value = FALSE;
+    *value = impl->is_fullscreen;
     return S_OK;
 }
+
 static HRESULT WINAPI view3_TryEnterFullScreenMode(void *This, boolean *success)
 {
-    if (success) *success = FALSE;
+    struct application_view_impl *impl = impl_from_IApplicationView3(This);
+    HWND hwnd = get_app_window();
+    TRACE("ApplicationView3::TryEnterFullScreenMode hwnd %p\n", hwnd);
+
+    if (hwnd)
+    {
+        HMONITOR hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = { sizeof(mi) };
+        if (GetMonitorInfoW(hmon, &mi))
+        {
+            if (!impl->is_fullscreen)
+            {
+                GetWindowRect(hwnd, &impl->saved_rect);
+                impl->saved_style = GetWindowLongW(hwnd, GWL_STYLE);
+            }
+            SetWindowLongW(hwnd, GWL_STYLE, (impl->saved_style & ~WS_OVERLAPPEDWINDOW) | WS_POPUP);
+            SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
+                         mi.rcMonitor.right - mi.rcMonitor.left,
+                         mi.rcMonitor.bottom - mi.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+            impl->is_fullscreen = TRUE;
+            if (success) *success = TRUE;
+            return S_OK;
+        }
+    }
+
+    impl->is_fullscreen = TRUE;
+    if (success) *success = TRUE;
     return S_OK;
 }
-static HRESULT WINAPI view3_ExitFullScreenMode(void *This) { return S_OK; }
+
+static HRESULT WINAPI view3_ExitFullScreenMode(void *This)
+{
+    struct application_view_impl *impl = impl_from_IApplicationView3(This);
+    HWND hwnd = get_app_window();
+    TRACE("ApplicationView3::ExitFullScreenMode hwnd %p\n", hwnd);
+
+    if (hwnd && impl->is_fullscreen)
+    {
+        if (impl->saved_style)
+            SetWindowLongW(hwnd, GWL_STYLE, impl->saved_style);
+        if (impl->saved_rect.right > impl->saved_rect.left)
+        {
+            SetWindowPos(hwnd, NULL, impl->saved_rect.left, impl->saved_rect.top,
+                         impl->saved_rect.right - impl->saved_rect.left,
+                         impl->saved_rect.bottom - impl->saved_rect.top,
+                         SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        }
+        else
+        {
+            ShowWindow(hwnd, SW_RESTORE);
+        }
+    }
+    impl->is_fullscreen = FALSE;
+    return S_OK;
+}
 static HRESULT WINAPI view3_ShowStandardSystemOverlays(void *This) { return S_OK; }
 static HRESULT WINAPI view3_TryResizeView(void *This, Size value, boolean *success)
 {

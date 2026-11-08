@@ -1321,11 +1321,17 @@ static HRESULT WINAPI list_manager_IsConnectedToInternet(
 
     LIST_FOR_EACH_ENTRY( network, &mgr->networks, struct network, entry )
     {
-        if (network->connected_to_internet)
+        if (network->connected_to_internet || (network->connected && !getenv( "WINE_UWP_OFFLINE" )))
         {
             *pbIsConnected = VARIANT_TRUE;
             return S_OK;
         }
+    }
+
+    if (!getenv( "WINE_UWP_OFFLINE" ))
+    {
+        *pbIsConnected = VARIANT_TRUE;
+        return S_OK;
     }
 
     *pbIsConnected = VARIANT_FALSE;
@@ -1350,6 +1356,12 @@ static HRESULT WINAPI list_manager_IsConnected(
         }
     }
 
+    if (!getenv( "WINE_UWP_OFFLINE" ))
+    {
+        *pbIsConnected = VARIANT_TRUE;
+        return S_OK;
+    }
+
     *pbIsConnected = VARIANT_FALSE;
     return S_OK;
 }
@@ -1361,17 +1373,20 @@ static HRESULT WINAPI list_manager_GetConnectivity(
     struct list_manager *mgr = impl_from_INetworkListManager( iface );
     struct network *network;
 
-    FIXME( "%p, %p\n", iface, pConnectivity );
+    TRACE( "%p, %p\n", iface, pConnectivity );
 
     *pConnectivity = NLM_CONNECTIVITY_DISCONNECTED;
 
     LIST_FOR_EACH_ENTRY( network, &mgr->networks, struct network, entry )
     {
-        if (network->connected_to_internet)
-            *pConnectivity |= NLM_CONNECTIVITY_IPV4_INTERNET;
+        if (network->connected_to_internet || (network->connected && !getenv( "WINE_UWP_OFFLINE" )))
+            *pConnectivity |= NLM_CONNECTIVITY_IPV4_INTERNET | NLM_CONNECTIVITY_IPV6_INTERNET;
         else if (network->connected)
             *pConnectivity |= NLM_CONNECTIVITY_IPV4_LOCALNETWORK;
     }
+
+    if (!getenv( "WINE_UWP_OFFLINE" ))
+        *pConnectivity |= NLM_CONNECTIVITY_IPV4_INTERNET | NLM_CONNECTIVITY_IPV6_INTERNET;
 
     return S_OK;
 }
@@ -1812,7 +1827,7 @@ static void init_networks( struct list_manager *mgr )
             network->connected = VARIANT_TRUE;
             connection->connected = VARIANT_TRUE;
         }
-        if (aa->FirstGatewayAddress)
+        if (aa->FirstGatewayAddress || (network->connected && !getenv( "WINE_UWP_OFFLINE" )))
         {
             network->connected_to_internet = VARIANT_TRUE;
             connection->connected_to_internet = VARIANT_TRUE;

@@ -897,9 +897,9 @@ static HRESULT WINAPI connection_profile_GetNetworkConnectivityLevel( IConnectio
 
     if (FAILED(hr = INetworkListManager_GetConnectivity( impl->network_list_manager, &connectivity ))) return hr;
 
-    if (connectivity == NLM_CONNECTIVITY_DISCONNECTED)
-        network_connectivity_level = NetworkConnectivityLevel_None;
-    else if (connectivity & ( NLM_CONNECTIVITY_IPV4_INTERNET | NLM_CONNECTIVITY_IPV6_INTERNET ))
+    if (connectivity & ( NLM_CONNECTIVITY_IPV4_INTERNET | NLM_CONNECTIVITY_IPV6_INTERNET ))
+        network_connectivity_level = NetworkConnectivityLevel_InternetAccess;
+    else if (!offline_env || !*offline_env || strcmp( offline_env, "0" ) == 0)
         network_connectivity_level = NetworkConnectivityLevel_InternetAccess;
     else if (connectivity & ( NLM_CONNECTIVITY_IPV4_LOCALNETWORK | NLM_CONNECTIVITY_IPV6_LOCALNETWORK | NLM_CONNECTIVITY_IPV4_NOTRAFFIC | NLM_CONNECTIVITY_IPV6_NOTRAFFIC ))
         network_connectivity_level = NetworkConnectivityLevel_LocalAccess;
@@ -1056,8 +1056,10 @@ HRESULT WINAPI connection_profile2_GetSignalBars( IConnectionProfile2 *iface, IR
 
 HRESULT WINAPI connection_profile2_GetDomainConnectivityLevel( IConnectionProfile2 *iface, DomainConnectivityLevel *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_POINTER;
+    *value = DomainConnectivityLevel_None;
+    return S_OK;
 }
 
 HRESULT WINAPI connection_profile2_GetNetworkUsageAsync( IConnectionProfile2 *iface, DateTime time_start, DateTime time_end,

@@ -66,6 +66,8 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( resource_manager_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.Services.Store.StoreContext" ))
         IActivationFactory_QueryInterface( store_context_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.ApplicationModel.Store.CurrentApp" ))
+        IActivationFactory_QueryInterface( get_current_app_factory(), &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.System.MemoryManager" ) ||
              !wcscmp( buffer, RuntimeClass_MemoryManager ))
         IActivationFactory_QueryInterface( memory_manager_factory, &IID_IActivationFactory, (void **)factory );

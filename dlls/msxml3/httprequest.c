@@ -2073,6 +2073,7 @@ struct xml_http_request_2
     IXMLHTTPRequest2Callback *callback;
     IXMLHTTPRequest3Callback *callback3;
     ISequentialStream *response_body;
+    ISequentialStream *custom_response_stream;
     ISequentialStream *request_body;
     ULONGLONG request_body_size;
 };
@@ -2131,6 +2132,7 @@ static ULONG WINAPI xml_http_request_2_Release(IXMLHTTPRequest3 *iface)
         /* do not call httprequest_put_onreadystatechange to avoid ref cycle */
         This->req.sink = NULL;
         if (This->response_body) ISequentialStream_Release(This->response_body);
+        if (This->custom_response_stream) ISequentialStream_Release(This->custom_response_stream);
         if (This->request_body) ISequentialStream_Release(This->request_body);
         if (This->callback3) IXMLHTTPRequest3Callback_Release(This->callback3);
         if (This->callback) IXMLHTTPRequest2Callback_Release(This->callback);
@@ -2224,8 +2226,11 @@ static HRESULT WINAPI xml_http_request_2_SetCookie(IXMLHTTPRequest3 *iface, cons
 static HRESULT WINAPI xml_http_request_2_SetCustomResponseStream(IXMLHTTPRequest3 *iface, ISequentialStream *stream)
 {
     struct xml_http_request_2 *This = impl_from_IXMLHTTPRequest3(iface);
-    FIXME("(%p)->(%p) stub!\n", This, stream);
-    return E_NOTIMPL;
+    TRACE("(%p)->(%p)\n", This, stream);
+    if (This->custom_response_stream) ISequentialStream_Release(This->custom_response_stream);
+    This->custom_response_stream = stream;
+    if (stream) ISequentialStream_AddRef(stream);
+    return S_OK;
 }
 
 static HRESULT WINAPI xml_http_request_2_SetProperty(IXMLHTTPRequest3 *iface, XHR_PROPERTY property, ULONGLONG value)
@@ -2290,8 +2295,17 @@ static HRESULT WINAPI xml_http_request_2_SetRequestHeader(IXMLHTTPRequest3 *ifac
 static HRESULT WINAPI xml_http_request_2_GetAllResponseHeaders(IXMLHTTPRequest3 *iface, WCHAR **headers)
 {
     struct xml_http_request_2 *This = impl_from_IXMLHTTPRequest3(iface);
-    FIXME("(%p)->(%p) stub!\n", This, headers);
-    return E_NOTIMPL;
+    const WCHAR *src = This->req.raw_respheaders ? This->req.raw_respheaders : L"";
+    DWORD len = (wcslen(src) + 1) * sizeof(WCHAR);
+
+    TRACE("(%p)->(%p)\n", This, headers);
+    if (!headers) return E_POINTER;
+
+    if (!(*headers = CoTaskMemAlloc(len)))
+        return E_OUTOFMEMORY;
+
+    memcpy(*headers, src, len);
+    return S_OK;
 }
 
 static HRESULT WINAPI xml_http_request_2_GetCookie(IXMLHTTPRequest3 *iface, const WCHAR *url,
@@ -2319,6 +2333,19 @@ static HRESULT WINAPI xml_http_request_2_GetResponseHeader(IXMLHTTPRequest3 *ifa
     {
         *value = NULL;
         return E_FILE_NOT_FOUND;
+    }
+
+    if (hr == S_OK && *value)
+    {
+        BSTR bstr = (BSTR)*value;
+        DWORD len = (SysStringLen(bstr) + 1) * sizeof(WCHAR);
+        WCHAR *cotask = CoTaskMemAlloc(len);
+        if (cotask)
+        {
+            memcpy(cotask, bstr, len);
+            *value = cotask;
+        }
+        SysFreeString(bstr);
     }
 
     return hr;
@@ -2588,8 +2615,18 @@ static HRESULT WINAPI xml_http_request_2_IDispatch_Invoke(IDispatch *iface, DISP
             return S_OK;
         }
 
-        IXMLHTTPRequest2Callback_OnDataAvailable(This->callback, xhr2_iface, This->response_body);
-        IXMLHTTPRequest2Callback_OnResponseReceived(This->callback, xhr2_iface, This->response_body);
+        if (This->custom_response_stream)
+        {
+            char buf[4096];
+            ULONG read_bytes = 0, written = 0;
+            while (SUCCEEDED(ISequentialStream_Read(This->response_body, buf, sizeof(buf), &read_bytes)) && read_bytes > 0)
+            {
+                ISequentialStream_Write(This->custom_response_stream, buf, read_bytes, &written);
+            }
+        }
+
+        IXMLHTTPRequest2Callback_OnDataAvailable(This->callback, xhr2_iface, This->custom_response_stream ? This->custom_response_stream : This->response_body);
+        IXMLHTTPRequest2Callback_OnResponseReceived(This->callback, xhr2_iface, This->custom_response_stream ? This->custom_response_stream : This->response_body);
         IXMLHTTPRequest2Callback_Release(This->callback);
     }
 

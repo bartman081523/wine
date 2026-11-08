@@ -642,6 +642,7 @@ static HRESULT WINAPI activation_factory_QueryInterface( IActivationFactory *ifa
 
     if (IsEqualGUID( iid, &IID_IUnknown ) ||
         IsEqualGUID( iid, &IID_IInspectable ) ||
+        IsEqualGUID( iid, &IID_IAgileObject ) ||
         IsEqualGUID( iid, &IID_IActivationFactory ))
     {
         IInspectable_AddRef( (*out = &impl->IActivationFactory_iface) );
@@ -720,19 +721,116 @@ static const struct IActivationFactoryVtbl activation_factory_vtbl =
 
 DEFINE_IINSPECTABLE( device_statics, IDeviceInformationStatics, struct device_information_statics, IActivationFactory_iface );
 
+struct create_from_id_params
+{
+    IUnknown IUnknown_iface;
+    HSTRING id;
+    LONG ref;
+};
+
+static inline struct create_from_id_params *impl_from_create_from_id_IUnknown( IUnknown *iface )
+{
+    return CONTAINING_RECORD( iface, struct create_from_id_params, IUnknown_iface );
+}
+
+static HRESULT WINAPI create_from_id_params_QueryInterface( IUnknown *iface, REFIID iid, void **out )
+{
+    if (IsEqualGUID( iid, &IID_IUnknown ))
+    {
+        IUnknown_AddRef( iface );
+        *out = iface;
+        return S_OK;
+    }
+    *out = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI create_from_id_params_AddRef( IUnknown *iface )
+{
+    struct create_from_id_params *impl = impl_from_create_from_id_IUnknown( iface );
+    return InterlockedIncrement( &impl->ref );
+}
+
+static ULONG WINAPI create_from_id_params_Release( IUnknown *iface )
+{
+    struct create_from_id_params *impl = impl_from_create_from_id_IUnknown( iface );
+    ULONG ref = InterlockedDecrement( &impl->ref );
+    if (!ref)
+    {
+        WindowsDeleteString( impl->id );
+        free( impl );
+    }
+    return ref;
+}
+
+static const struct IUnknownVtbl create_from_id_params_vtbl =
+{
+    create_from_id_params_QueryInterface,
+    create_from_id_params_AddRef,
+    create_from_id_params_Release,
+};
+
+static HRESULT create_from_id_params_create( HSTRING id, IUnknown **out )
+{
+    struct create_from_id_params *impl;
+    if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
+    impl->IUnknown_iface.lpVtbl = &create_from_id_params_vtbl;
+    impl->ref = 1;
+    WindowsDuplicateString( id, &impl->id );
+    *out = &impl->IUnknown_iface;
+    return S_OK;
+}
+
+static HRESULT create_from_id_async( IUnknown *invoker, IUnknown *param, PROPVARIANT *result, BOOL called_async )
+{
+    struct create_from_id_params *params = impl_from_create_from_id_IUnknown( param );
+    IDeviceInformation *info = NULL;
+    DEV_OBJECT obj = {0};
+    const WCHAR *str;
+    HRESULT hr;
+
+    if (!called_async) return STATUS_PENDING;
+
+    str = WindowsGetStringRawBuffer( params->id, NULL );
+    obj.ObjectType = DevObjectTypeDeviceInterface;
+    obj.pszObjectId = (WCHAR *)(str && *str ? str : L"{00000000-0000-0000-FFFF-FFFFFFFFFFFF}");
+    hr = device_information_create( &obj, &info );
+    if (FAILED(hr)) return hr;
+
+    result->vt = VT_UNKNOWN;
+    result->punkVal = (IUnknown *)info;
+    return S_OK;
+}
+
 static HRESULT WINAPI device_statics_CreateFromIdAsync( IDeviceInformationStatics *iface, HSTRING id,
                                                         IAsyncOperation_DeviceInformation **op )
 {
-    FIXME( "iface %p, id %s, op %p stub!\n", iface, debugstr_hstring(id), op );
-    return E_NOTIMPL;
+    IUnknown *params;
+    HRESULT hr;
+
+    TRACE( "iface %p, id %s, op %p\n", iface, debugstr_hstring(id), op );
+
+    if (FAILED(hr = create_from_id_params_create( id, &params ))) return hr;
+    hr = async_operation_inspectable_create( &IID_IAsyncOperation_DeviceInformation, (IUnknown *)iface, params,
+                                             create_from_id_async, (IAsyncOperation_IInspectable **)op );
+    IUnknown_Release( params );
+    return hr;
 }
 
 static HRESULT WINAPI device_statics_CreateFromIdAsyncAdditionalProperties( IDeviceInformationStatics *iface, HSTRING id,
                                                                             IIterable_HSTRING *additional_properties,
                                                                             IAsyncOperation_DeviceInformation **op )
 {
-    FIXME( "iface %p, id %s, additional_properties %p, op %p stub!\n", iface, debugstr_hstring(id), additional_properties, op );
-    return E_NOTIMPL;
+    IUnknown *params;
+    HRESULT hr;
+
+    TRACE( "iface %p, id %s, additional_properties %p, op %p\n", iface, debugstr_hstring(id), additional_properties, op );
+
+    if (FAILED(hr = create_from_id_params_create( id, &params ))) return hr;
+    hr = async_operation_inspectable_create( &IID_IAsyncOperation_DeviceInformation, (IUnknown *)iface, params,
+                                             create_from_id_async, (IAsyncOperation_IInspectable **)op );
+    IUnknown_Release( params );
+    return hr;
 }
 
 static HRESULT find_all_async( IUnknown *invoker, IUnknown *param, PROPVARIANT *result, BOOL called_async )
@@ -940,9 +1038,17 @@ static HRESULT WINAPI device_statics2_CreateFromIdAsync( IDeviceInformationStati
                                                          IIterable_HSTRING *additional_properties, DeviceInformationKind kind,
                                                          IAsyncOperation_DeviceInformation **async_operation )
 {
-    FIXME( "iface %p, device_id %s, additional_properties %p, kind %u, async_operation %p stub!\n",
+    IUnknown *params;
+    HRESULT hr;
+
+    TRACE( "iface %p, device_id %s, additional_properties %p, kind %u, async_operation %p\n",
             iface, debugstr_hstring( device_id ), additional_properties, kind, async_operation );
-    return E_NOTIMPL;
+
+    if (FAILED(hr = create_from_id_params_create( device_id, &params ))) return hr;
+    hr = async_operation_inspectable_create( &IID_IAsyncOperation_DeviceInformation, (IUnknown *)iface, params,
+                                             create_from_id_async, (IAsyncOperation_IInspectable **)async_operation );
+    IUnknown_Release( params );
+    return hr;
 }
 
 static HRESULT WINAPI device_statics2_FindAllAsync( IDeviceInformationStatics2 *iface, HSTRING filter,

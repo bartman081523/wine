@@ -296,13 +296,13 @@ static HRESULT WINAPI store_result_product_get_Language(void *iface, HSTRING *va
 static HRESULT WINAPI store_result_product_get_Title(void *iface, HSTRING *value)
 {
     if (!value) return E_INVALIDARG;
-    return WindowsCreateString(L"WhatsApp", 8, value);
+    return WindowsCreateString(L"Application", 11, value);
 }
 
 static HRESULT WINAPI store_result_product_get_Description(void *iface, HSTRING *value)
 {
     if (!value) return E_INVALIDARG;
-    return WindowsCreateString(L"WhatsApp Desktop", 16, value);
+    return WindowsCreateString(L"Application Product", 19, value);
 }
 
 static HRESULT WINAPI store_result_product_get_ProductKind(void *iface, HSTRING *value)
@@ -2011,3 +2011,190 @@ static struct store_context_factory store_context_factory_obj =
 };
 
 IActivationFactory *store_context_factory = &store_context_factory_obj.IActivationFactory_iface;
+
+/* ========================================================================= */
+/* Windows.ApplicationModel.Store.CurrentApp & LicenseInformation            */
+/* ========================================================================= */
+static const GUID IID_ICurrentAppStatics = {0xd52dc065, 0xda3f, 0x4685, {0x99, 0x5e, 0x9b, 0x48, 0x2e, 0xb5, 0xe6, 0x03}};
+static const GUID IID_ILicenseInformation = {0x8eb7dc30, 0xf170, 0x4ed5, {0x8e, 0x21, 0x15, 0x16, 0xda, 0x3f, 0xd3, 0x67}};
+
+struct license_info
+{
+    struct { const void *lpVtbl; } ILicenseInformation_iface;
+    LONG ref;
+};
+
+static HRESULT WINAPI license_info_QI(void *This, REFIID riid, void **ppv)
+{
+    TRACE("This %p, riid %s, ppv %p\n", This, debugstr_guid(riid), ppv);
+    if (!ppv) return E_POINTER;
+    *ppv = This;
+    return S_OK;
+}
+static ULONG WINAPI license_info_AddRef(void *This) { return 2; }
+static ULONG WINAPI license_info_Release(void *This) { return 1; }
+static HRESULT WINAPI license_info_GetIids(void *This, ULONG *count, IID **iids) { if (count) *count = 0; return S_OK; }
+static HRESULT WINAPI license_info_GetRuntimeClassName(void *This, HSTRING *name)
+{
+    return WindowsCreateString(L"Windows.ApplicationModel.Store.LicenseInformation", 48, name);
+}
+static HRESULT WINAPI license_info_GetTrustLevel(void *This, TrustLevel *trust) { if (trust) *trust = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI license_info_get_IsActive(void *This, boolean *value)
+{
+    TRACE("This %p, value %p -> TRUE\n", This, value);
+    if (value && (ULONG_PTR)value > 0x10000 && !IsBadWritePtr(value, sizeof(*value)))
+        *value = TRUE;
+    return S_OK;
+}
+
+static HRESULT WINAPI license_info_get_IsTrial(void *This, boolean *value)
+{
+    TRACE("This %p, value %p -> FALSE\n", This, value);
+    if (value && (ULONG_PTR)value > 0x10000 && !IsBadWritePtr(value, sizeof(*value)))
+        *value = FALSE;
+    return S_OK;
+}
+
+static HRESULT WINAPI license_info_get_ExpirationDate(void *This, void *value)
+{
+    if (value && (ULONG_PTR)value > 0x10000 && !IsBadWritePtr(value, 8))
+        memset(value, 0, 8);
+    return S_OK;
+}
+
+static HRESULT WINAPI license_info_get_LicenseId(void *This, HSTRING *value)
+{
+    return WindowsCreateString(L"StandardLicense", 15, value);
+}
+
+static HRESULT WINAPI license_info_add_LicenseChanged(void *This, void *handler)
+{
+    TRACE("This %p, handler %p\n", This, handler);
+    return S_OK;
+}
+
+static HRESULT WINAPI license_info_remove_LicenseChanged(void *This, EventRegistrationToken token)
+{
+    return S_OK;
+}
+
+static HRESULT WINAPI license_info_slot(void *This, void *arg1, void *arg2)
+{
+    TRACE("This %p stub!\n", This);
+    if (arg1 && (ULONG_PTR)arg1 > 0x10000 && !IsBadWritePtr(arg1, sizeof(void *)))
+        *(void **)arg1 = NULL;
+    return S_OK;
+}
+
+static void *license_info_vtbl[50];
+static struct license_info global_license_info;
+
+static void init_license_info_vtbl(void)
+{
+    int i;
+    if (license_info_vtbl[0]) return;
+    license_info_vtbl[0] = license_info_QI;
+    license_info_vtbl[1] = license_info_AddRef;
+    license_info_vtbl[2] = license_info_Release;
+    license_info_vtbl[3] = license_info_GetIids;
+    license_info_vtbl[4] = license_info_GetRuntimeClassName;
+    license_info_vtbl[5] = license_info_GetTrustLevel;
+    license_info_vtbl[6] = license_info_add_LicenseChanged;    /* offset 0x30 */
+    license_info_vtbl[7] = license_info_get_IsActive;          /* offset 0x38 */
+    license_info_vtbl[8] = license_info_get_IsTrial;           /* offset 0x40 */
+    license_info_vtbl[9] = license_info_get_ExpirationDate;    /* offset 0x48 */
+    license_info_vtbl[10] = license_info_add_LicenseChanged;   /* offset 0x50 */
+    license_info_vtbl[11] = license_info_remove_LicenseChanged;/* offset 0x58 */
+    for (i = 12; i < 50; i++)
+        license_info_vtbl[i] = license_info_slot;
+    global_license_info.ILicenseInformation_iface.lpVtbl = license_info_vtbl;
+    global_license_info.ref = 1;
+}
+
+static HRESULT WINAPI current_app_fac_QI(IActivationFactory *iface, REFIID riid, void **ppv)
+{
+    TRACE("iface %p, riid %s, ppv %p\n", iface, debugstr_guid(riid), ppv);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory) ||
+        IsEqualGUID(riid, &IID_ICurrentAppStatics))
+    {
+        *ppv = iface;
+        return S_OK;
+    }
+    FIXME("unhandled QI %s\n", debugstr_guid(riid));
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI current_app_fac_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI current_app_fac_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI current_app_fac_GetIids(IActivationFactory *iface, ULONG *count, IID **iids) { if (count) *count = 0; return S_OK; }
+static HRESULT WINAPI current_app_fac_GetRuntimeClassName(IActivationFactory *iface, HSTRING *name)
+{
+    return WindowsCreateString(L"Windows.ApplicationModel.Store.CurrentApp", 39, name);
+}
+static HRESULT WINAPI current_app_fac_GetTrustLevel(IActivationFactory *iface, TrustLevel *trust) { if (trust) *trust = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI current_app_fac_get_LicenseInformation(void *iface, void **value)
+{
+    init_license_info_vtbl();
+    TRACE("iface %p, value %p -> %p\n", iface, value, &global_license_info);
+    if (!value) return E_POINTER;
+    *value = &global_license_info;
+    return S_OK;
+}
+
+static HRESULT WINAPI current_app_fac_get_LinkUri(void *iface, void **value)
+{
+    if (value) *value = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI current_app_fac_get_AppId(void *iface, GUID *value)
+{
+    if (value) memset(value, 0, sizeof(*value));
+    return S_OK;
+}
+
+static HRESULT WINAPI current_app_fac_slot(void *iface, void **value)
+{
+    init_license_info_vtbl();
+    TRACE("iface %p, value %p stub!\n", iface, value);
+    if (value && (ULONG_PTR)value > 0x10000 && !IsBadWritePtr(value, sizeof(void *)))
+        *value = &global_license_info;
+    return S_OK;
+}
+
+static void *current_app_fac_vtbl[50];
+static struct { void *vtbl; LONG ref; } global_current_app_factory;
+
+static void init_current_app_fac_vtbl(void)
+{
+    int i;
+    if (current_app_fac_vtbl[0]) return;
+    init_license_info_vtbl();
+    current_app_fac_vtbl[0] = current_app_fac_QI;
+    current_app_fac_vtbl[1] = current_app_fac_AddRef;
+    current_app_fac_vtbl[2] = current_app_fac_Release;
+    current_app_fac_vtbl[3] = current_app_fac_GetIids;
+    current_app_fac_vtbl[4] = current_app_fac_GetRuntimeClassName;
+    current_app_fac_vtbl[5] = current_app_fac_GetTrustLevel;
+    current_app_fac_vtbl[6] = current_app_fac_get_LicenseInformation; /* offset 0x30 */
+    current_app_fac_vtbl[7] = current_app_fac_get_LinkUri;            /* offset 0x38 */
+    current_app_fac_vtbl[8] = current_app_fac_get_AppId;              /* offset 0x40 */
+    for (i = 9; i < 50; i++)
+        current_app_fac_vtbl[i] = current_app_fac_slot;
+    current_app_fac_vtbl[12] = current_app_fac_get_LicenseInformation; /* offset 0x60 (C++/WinRT CurrentApp::LicenseInformation) */
+    global_current_app_factory.vtbl = current_app_fac_vtbl;
+    global_current_app_factory.ref = 1;
+}
+
+static IActivationFactory *get_current_app_factory(void)
+{
+    init_current_app_fac_vtbl();
+    return (IActivationFactory *)&global_current_app_factory;
+}

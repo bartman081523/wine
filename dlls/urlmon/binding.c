@@ -1269,10 +1269,20 @@ static HRESULT WINAPI InternetBindInfo_GetBindString(IInternetBindInfo *iface,
         *pcElFetched = 1;
         return S_OK;
     }
-    }
+    default: {
+        IInternetBindInfo *bindinfo = NULL;
+        HRESULT hres;
 
-    FIXME("not supported string type %ld\n", ulStringType);
-    return E_NOTIMPL;
+        if (This->callback && SUCCEEDED(IBindStatusCallback_QueryInterface(This->callback, &IID_IInternetBindInfo, (void**)&bindinfo)))
+        {
+            hres = IInternetBindInfo_GetBindString(bindinfo, ulStringType, ppwzStr, cEl, pcElFetched);
+            IInternetBindInfo_Release(bindinfo);
+            return hres;
+        }
+        TRACE("unsupported string type %ld, using default setting\n", ulStringType);
+        return INET_E_USE_DEFAULT_SETTING;
+    }
+    }
 }
 
 static const IInternetBindInfoVtbl InternetBindInfoVtbl = {

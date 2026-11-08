@@ -221,6 +221,21 @@ static BOOL load_entry( HANDLE packages, WINE_APPMODEL_ENTRY *entry )
     entry->architecture = read_string_value( key, L"Architecture" );
     entry->version = read_string_value( key, L"Version" );
     entry->path = read_string_value( key, L"Path" );
+    if (!entry->is_framework && (!entry->path || GetFileAttributesW( entry->path ) == INVALID_FILE_ATTRIBUTES))
+    {
+        WCHAR mod_path[MAX_PATH];
+        if (GetModuleFileNameW( NULL, mod_path, MAX_PATH ))
+        {
+            WCHAR *last_slash = wcsrchr( mod_path, L'\\' );
+            if (last_slash)
+            {
+                *last_slash = 0;
+                HeapFree( GetProcessHeap(), 0, (WCHAR *)entry->path );
+                entry->path = HeapAlloc( GetProcessHeap(), 0, (lstrlenW( mod_path ) + 1) * sizeof(WCHAR) );
+                if (entry->path) lstrcpyW( (WCHAR *)entry->path, mod_path );
+            }
+        }
+    }
     entry->app_id = read_string_value( key, L"AppId" );
     entry->is_framework = read_dword_value( key, L"IsFramework", 0 );
     if (entry->app_id && !*entry->app_id)

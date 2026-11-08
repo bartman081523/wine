@@ -70,6 +70,11 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
     if (RegOpenKeyExW(hkey_root, classid, 0, KEY_READ, &hkey_class))
     {
         RegCloseKey(hkey_root);
+        if (!wcsncmp(classid, L"Windows.Foundation.Diagnostics.", 31))
+        {
+            *out = wcsdup(L"twinapi.appcore.dll");
+            return S_OK;
+        }
         if (!wcscmp(classid, L"Windows.Security.Cryptography.DataProtection.DataProtectionProvider"))
         {
             *out = wcsdup(L"cryptowinrt.dll");
@@ -170,6 +175,11 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
             *out = wcsdup(L"windows.storage.applicationdata.dll");
             return S_OK;
         }
+        if (!wcsncmp(classid, L"Windows.Storage.Streams.", 24))
+        {
+            *out = wcsdup(L"wintypes.dll");
+            return S_OK;
+        }
         if (!wcsncmp(classid, L"Windows.Storage.", 16))
         {
             *out = wcsdup(L"windows.storage.dll");
@@ -216,6 +226,11 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
         if (!wcsncmp(classid, L"GraphControl.", 13))
         {
             *out = wcsdup(L"GraphControl.dll");
+            return S_OK;
+        }
+        if (!wcsncmp(classid, L"Windows.UI.Text.Core.", 21))
+        {
+            *out = wcsdup(L"windows.ui.core.textinput.dll");
             return S_OK;
         }
         if (!wcsncmp(classid, L"TraceLogging.", 13))
@@ -498,6 +513,126 @@ static void *stub_consent_settings_factory_vtbl[] = {
 };
 static struct { void *vtbl; LONG ref; } global_consent_settings_factory = { stub_consent_settings_factory_vtbl, 1 };
 
+/* Stub for Windows.System.Power.PowerManager */
+static HRESULT WINAPI power_manager_QueryInterface(void *this, REFIID iid, void **out)
+{
+    if (!out) return E_POINTER;
+    *out = this;
+    return S_OK;
+}
+static ULONG WINAPI power_manager_AddRef(void *this) { return 2; }
+static ULONG WINAPI power_manager_Release(void *this) { return 1; }
+static HRESULT WINAPI power_manager_GetIids(void *this, ULONG *count, IID **iids)
+{
+    if (count) *count = 0;
+    if (iids) *iids = NULL;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_GetRuntimeClassName(void *this, HSTRING *name)
+{
+    return WindowsCreateString(L"Windows.System.Power.PowerManager", 33, name);
+}
+static HRESULT WINAPI power_manager_GetTrustLevel(void *this, TrustLevel *trust)
+{
+    if (trust) *trust = BaseTrust;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_get_BatteryStatus(void *this, DWORD *val)
+{
+    if (val) *val = 2; /* BatteryStatus::Idle (AC connected) */
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_get_EnergySaverStatus(void *this, DWORD *val)
+{
+    if (val) *val = 0; /* EnergySaverStatus::Off */
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_get_PowerSupplyStatus(void *this, DWORD *val)
+{
+    if (val) *val = 1; /* PowerSupplyStatus::Adequate */
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_get_RemainingChargePercent(void *this, int *val)
+{
+    if (val) *val = 100;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_add_BatteryStatusChanged(void *this, void *handler, __int64 *token)
+{
+    if (token) *token = 1;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_remove_BatteryStatusChanged(void *this, __int64 token)
+{
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_add_EnergySaverStatusChanged(void *this, void *handler, __int64 *token)
+{
+    if (token) *token = 2;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_remove_EnergySaverStatusChanged(void *this, __int64 token)
+{
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_add_PowerSupplyStatusChanged(void *this, void *handler, __int64 *token)
+{
+    if (token) *token = 3;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_remove_PowerSupplyStatusChanged(void *this, __int64 token)
+{
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_add_RemainingChargePercentChanged(void *this, void *handler, __int64 *token)
+{
+    if (token) *token = 4;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_remove_RemainingChargePercentChanged(void *this, __int64 token)
+{
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_get_RemainingDischargeTime(void *this, __int64 *val)
+{
+    if (val) *val = 0;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_add_RemainingDischargeTimeChanged(void *this, void *handler, __int64 *token)
+{
+    if (token) *token = 5;
+    return S_OK;
+}
+static HRESULT WINAPI power_manager_remove_RemainingDischargeTimeChanged(void *this, __int64 token)
+{
+    return S_OK;
+}
+
+static void *stub_power_manager_factory_vtbl[] = {
+    power_manager_QueryInterface,
+    power_manager_AddRef,
+    power_manager_Release,
+    power_manager_GetIids,
+    power_manager_GetRuntimeClassName,
+    power_manager_GetTrustLevel,
+    /* 6  (0x30) */ power_manager_get_BatteryStatus,
+    /* 7  (0x38) */ power_manager_get_EnergySaverStatus,
+    /* 8  (0x40) */ power_manager_get_PowerSupplyStatus,
+    /* 9  (0x48) */ power_manager_get_RemainingChargePercent,
+    /* 10 (0x50) */ power_manager_add_BatteryStatusChanged,
+    /* 11 (0x58) */ power_manager_remove_BatteryStatusChanged,
+    /* 12 (0x60) */ power_manager_add_EnergySaverStatusChanged,
+    /* 13 (0x68) */ power_manager_add_PowerSupplyStatusChanged,
+    /* 14 (0x70) */ power_manager_remove_PowerSupplyStatusChanged,
+    /* 15 (0x78) */ power_manager_add_RemainingChargePercentChanged,
+    /* 16 (0x80) */ power_manager_remove_RemainingChargePercentChanged,
+    /* 17 (0x88) */ power_manager_get_RemainingDischargeTime,
+    /* 18 (0x90) */ power_manager_add_RemainingDischargeTimeChanged,
+    /* 19 (0x98) */ power_manager_remove_RemainingDischargeTimeChanged,
+    /* 20 (0xa0) */ power_manager_remove_EnergySaverStatusChanged,
+};
+static struct { void *vtbl; LONG ref; } global_power_manager_factory = { stub_power_manager_factory_vtbl, 1 };
+
 /***********************************************************************
  *      RoGetActivationFactory (combase.@)
  */
@@ -532,6 +667,12 @@ HRESULT WINAPI DECLSPEC_HOTPATCH RoGetActivationFactory(HSTRING classid, REFIID 
             TRACE("Returning stub settings factory for %s\n", debugstr_w(class_str));
             init_consent_settings_vtbl();
             *class_factory = &global_consent_settings_factory;
+            return S_OK;
+        }
+        if (!wcscmp(class_str, L"Windows.System.Power.PowerManager"))
+        {
+            TRACE("Returning stub factory for %s\n", debugstr_w(class_str));
+            *class_factory = &global_power_manager_factory;
             return S_OK;
         }
     }

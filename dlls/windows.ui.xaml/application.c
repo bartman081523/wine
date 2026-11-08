@@ -6124,6 +6124,79 @@ IActivationFactory *page_factory = &default_page_factory.IActivationFactory_ifac
  * ------------------------------------------------------------------------- */
 static const GUID IID_ICoreTextServicesManager = {0xc2507d83, 0x6e0a, 0x4a8a, {0xbd, 0xf8, 0x19, 0x48, 0x87, 0x48, 0x54, 0xba}};
 static const GUID IID_ICoreTextServicesManagerStatics = {0x1520a388, 0xe2cf, 0x4d65, {0xae, 0xb9, 0xb3, 0x2d, 0x86, 0xfe, 0x39, 0xb9}};
+static const GUID IID_ICoreTextEditContext = {0xbf500057, 0x010b, 0x4638, {0xb7, 0xeb, 0x07, 0x97, 0xab, 0x47, 0x5a, 0x89}};
+
+struct text_edit_context_instance
+{
+    struct { const void *lpVtbl; } ICoreTextEditContext_iface;
+    LONG ref;
+};
+
+static HRESULT WINAPI text_edit_ctx_QI(void *This, REFIID riid, void **ppvObject)
+{
+    struct text_edit_context_instance *impl = (struct text_edit_context_instance *)This;
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_ICoreTextEditContext))
+    {
+        *ppvObject = &impl->ICoreTextEditContext_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+    TRACE("unhandled QI %s, returning self\n", debugstr_guid(riid));
+    *ppvObject = &impl->ICoreTextEditContext_iface;
+    InterlockedIncrement(&impl->ref);
+    return S_OK;
+}
+
+static ULONG WINAPI text_edit_ctx_AddRef(void *This)
+{
+    struct text_edit_context_instance *impl = (struct text_edit_context_instance *)This;
+    return InterlockedIncrement(&impl->ref);
+}
+
+static ULONG WINAPI text_edit_ctx_Release(void *This)
+{
+    struct text_edit_context_instance *impl = (struct text_edit_context_instance *)This;
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI text_edit_ctx_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+
+static HRESULT WINAPI text_edit_ctx_GetRuntimeClassName(void *This, HSTRING *n)
+{
+    return WindowsCreateString(L"Windows.UI.Text.Core.CoreTextEditContext", 40, n);
+}
+
+static HRESULT WINAPI text_edit_ctx_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI text_edit_ctx_slot(void *This)
+{
+    TRACE("This %p stub!\n", This);
+    return S_OK;
+}
+
+static void *text_edit_ctx_vtbl[50];
+
+static void init_text_edit_ctx_vtbl(void)
+{
+    int i;
+    if (text_edit_ctx_vtbl[0]) return;
+    text_edit_ctx_vtbl[0] = text_edit_ctx_QI;
+    text_edit_ctx_vtbl[1] = text_edit_ctx_AddRef;
+    text_edit_ctx_vtbl[2] = text_edit_ctx_Release;
+    text_edit_ctx_vtbl[3] = text_edit_ctx_GetIids;
+    text_edit_ctx_vtbl[4] = text_edit_ctx_GetRuntimeClassName;
+    text_edit_ctx_vtbl[5] = text_edit_ctx_GetTrustLevel;
+    for (i = 6; i < 50; i++)
+        text_edit_ctx_vtbl[i] = text_edit_ctx_slot;
+}
 
 struct text_manager_instance
 {
@@ -6191,7 +6264,14 @@ static HRESULT WINAPI text_mgr_remove_InputLanguageChanged(void *This, EventRegi
 
 static HRESULT WINAPI text_mgr_CreateEditContext(void *This, void **out)
 {
-    if (out) *out = NULL;
+    struct text_edit_context_instance *inst;
+    TRACE("This %p, out %p\n", This, out);
+    if (!out) return E_POINTER;
+    init_text_edit_ctx_vtbl();
+    if (!(inst = calloc(1, sizeof(*inst)))) return E_OUTOFMEMORY;
+    inst->ICoreTextEditContext_iface.lpVtbl = text_edit_ctx_vtbl;
+    inst->ref = 1;
+    *out = &inst->ICoreTextEditContext_iface;
     return S_OK;
 }
 

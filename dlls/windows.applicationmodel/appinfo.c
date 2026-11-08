@@ -135,15 +135,37 @@ static const struct IAppDisplayInfoVtbl app_display_info_vtbl =
     app_display_info_GetLogo,
 };
 
+static void get_fallback_app_identity( WCHAR *name, DWORD name_len, WCHAR *pfn, DWORD pfn_len )
+{
+    WCHAR path[MAX_PATH], *p;
+    GetModuleFileNameW( NULL, path, ARRAY_SIZE(path) );
+    p = wcsrchr( path, '\\' );
+    if (p) p++; else p = path;
+    if (name)
+    {
+        lstrcpynW( name, p, name_len );
+        p = wcsrchr( name, '.' );
+        if (p) *p = 0;
+    }
+    if (pfn)
+    {
+        WCHAR base[64];
+        lstrcpynW( base, (name && *name) ? name : L"Application", ARRAY_SIZE(base) );
+        swprintf( pfn, pfn_len, L"%s_App", base );
+    }
+}
+
 static HRESULT create_app_display_info( const WCHAR *display_name, const WCHAR *description, IAppDisplayInfo **out )
 {
     struct app_display_info *impl;
+    WCHAR fallback_name[64];
     if (!out) return E_INVALIDARG;
     if (!(impl = calloc( 1, sizeof(*impl) ))) return E_OUTOFMEMORY;
     impl->IAppDisplayInfo_iface.lpVtbl = &app_display_info_vtbl;
     impl->ref = 1;
-    lstrcpynW( impl->display_name, display_name ? display_name : L"WhatsApp", ARRAY_SIZE(impl->display_name) );
-    lstrcpynW( impl->description, description ? description : L"WhatsApp", ARRAY_SIZE(impl->description) );
+    get_fallback_app_identity( fallback_name, ARRAY_SIZE(fallback_name), NULL, 0 );
+    lstrcpynW( impl->display_name, display_name ? display_name : fallback_name, ARRAY_SIZE(impl->display_name) );
+    lstrcpynW( impl->description, description ? description : fallback_name, ARRAY_SIZE(impl->description) );
     *out = &impl->IAppDisplayInfo_iface;
     return S_OK;
 }
@@ -365,6 +387,7 @@ static const struct IAppInfo4Vtbl app_info4_vtbl =
 static HRESULT create_app_info( const WCHAR *aumid, IAppInfo **out )
 {
     struct app_info *impl;
+    WCHAR fallback_name[64];
     const WINE_APPMODEL_ENTRY *entry = WineAppModelGetCurrentEntry();
 
     if (!out) return E_INVALIDARG;
@@ -397,20 +420,26 @@ static HRESULT create_app_info( const WCHAR *aumid, IAppInfo **out )
     }
     else if (entry)
     {
-        const WCHAR *id = (entry->app_id && *entry->app_id) ? entry->app_id : L"App";
-        const WCHAR *pfn = (entry->family_name && *entry->family_name) ? entry->family_name : L"5319275A.WhatsAppDesktop_cv1g1gvanyjgm";
+        WCHAR fallback_pfn[128];
+        const WCHAR *id, *pfn;
+        id = (entry->app_id && *entry->app_id) ? entry->app_id : L"App";
+        get_fallback_app_identity( NULL, 0, fallback_pfn, ARRAY_SIZE(fallback_pfn) );
+        pfn = (entry->family_name && *entry->family_name) ? entry->family_name : fallback_pfn;
         lstrcpynW( impl->id, id, ARRAY_SIZE(impl->id) );
         lstrcpynW( impl->package_family_name, pfn, ARRAY_SIZE(impl->package_family_name) );
         swprintf( impl->app_user_model_id, ARRAY_SIZE(impl->app_user_model_id), L"%s!%s", pfn, id );
     }
     else
     {
+        WCHAR fallback_pfn[128];
+        get_fallback_app_identity( fallback_name, ARRAY_SIZE(fallback_name), fallback_pfn, ARRAY_SIZE(fallback_pfn) );
         lstrcpynW( impl->id, L"App", ARRAY_SIZE(impl->id) );
-        lstrcpynW( impl->package_family_name, L"5319275A.WhatsAppDesktop_cv1g1gvanyjgm", ARRAY_SIZE(impl->package_family_name) );
-        lstrcpynW( impl->app_user_model_id, L"5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App", ARRAY_SIZE(impl->app_user_model_id) );
+        lstrcpynW( impl->package_family_name, fallback_pfn, ARRAY_SIZE(impl->package_family_name) );
+        swprintf( impl->app_user_model_id, ARRAY_SIZE(impl->app_user_model_id), L"%s!App", fallback_pfn );
     }
 
-    lstrcpynW( impl->display_name, (entry && entry->name && *entry->name) ? entry->name : L"WhatsApp", ARRAY_SIZE(impl->display_name) );
+    get_fallback_app_identity( fallback_name, ARRAY_SIZE(fallback_name), NULL, 0 );
+    lstrcpynW( impl->display_name, (entry && entry->name && *entry->name) ? entry->name : fallback_name, ARRAY_SIZE(impl->display_name) );
 
     *out = &impl->IAppInfo_iface;
     TRACE( "created IAppInfo %p: aumid %s, pfn %s, id %s\n",

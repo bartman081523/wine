@@ -318,10 +318,31 @@ static HRESULT STDMETHODCALLTYPE dxgi_factory_CreateSwapChainForCoreWindow(IWine
         IUnknown *device, IUnknown *window, const DXGI_SWAP_CHAIN_DESC1 *desc,
         IDXGIOutput *output, IDXGISwapChain1 **swapchain)
 {
-    FIXME("iface %p, device %p, window %p, desc %p, output %p, swapchain %p stub!\n",
+    static const GUID IID_ICoreWindowInterop = {0x45d64a29, 0xa63e, 0x4cb6, {0xb4, 0x98, 0x57, 0x81, 0xd2, 0x98, 0xcb, 0x4f}};
+    HWND hwnd = NULL;
+
+    TRACE("iface %p, device %p, window %p, desc %p, output %p, swapchain %p.\n",
             iface, device, window, desc, output, swapchain);
 
-    return E_NOTIMPL;
+    if (window)
+    {
+        struct {
+            const void *lpVtbl;
+        } *interop = NULL;
+        if (SUCCEEDED(IUnknown_QueryInterface(window, &IID_ICoreWindowInterop, (void **)&interop)) && interop)
+        {
+            HRESULT (WINAPI *get_WindowHandle)(void *, HWND *) = ((void **)interop->lpVtbl)[3];
+            ULONG (WINAPI *release)(void *) = ((void **)interop->lpVtbl)[2];
+            get_WindowHandle(interop, &hwnd);
+            release(interop);
+        }
+    }
+
+    if (!hwnd) hwnd = GetActiveWindow();
+    if (!hwnd) hwnd = GetDesktopWindow();
+
+    TRACE("Using hwnd %p for CoreWindow swapchain\n", hwnd);
+    return dxgi_factory_CreateSwapChainForHwnd(iface, device, hwnd, desc, NULL, output, swapchain);
 }
 
 static HRESULT STDMETHODCALLTYPE dxgi_factory_GetSharedResourceAdapterLuid(IWineDXGIFactory *iface,
@@ -415,13 +436,6 @@ static BOOL CALLBACK find_host_proc(HWND hwnd, LPARAM lparam)
         return FALSE;
     }
 
-    if (wcsstr(title, L"WhatsApp") || wcsstr(title, L"5319275A"))
-    {
-        TRACE("find_host_proc matched by title: hwnd %p, title %s, class %s\n",
-                hwnd, debugstr_w(title), debugstr_w(class_name));
-        *out = hwnd;
-        return FALSE;
-    }
     return TRUE;
 }
 

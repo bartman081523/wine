@@ -36,11 +36,15 @@
 #define WIDL_using_Windows_System
 #define WIDL_using_Windows_UI_Core
 #define WIDL_using_Windows_UI_Notifications
+#define WIDL_using_Windows_UI_Input
+#define WIDL_using_Windows_Devices_Input
 
 #include "windows.foundation.h"
 #include "windows.ui.h"
 #include "windows.ui.viewmanagement.h"
 #include "windows.system.h"
+#include "windows.devices.input.h"
+#include "windows.ui.input.h"
 #include "windows.ui.core.h"
 #include "windows.ui.notifications.h"
 
@@ -58,6 +62,11 @@ extern IActivationFactory *display_information_factory;
 extern IActivationFactory *keyboard_capabilities_factory;
 extern IActivationFactory *mouse_capabilities_factory;
 extern IActivationFactory *touch_capabilities_factory;
+extern IActivationFactory *mouse_device_factory;
+extern IActivationFactory *corecursor_factory;
+
+void mouse_device_dispatch_move(int dx, int dy);
+BOOL mouse_device_has_listener(void);
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

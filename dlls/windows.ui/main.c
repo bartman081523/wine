@@ -28,6 +28,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(ui);
 #include "displayinformation.c"
 #include "inputcapabilities.c"
 #include "taskbarmanager.c"
+#include "pointervisualization.c"
 
 HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID riid, void **out )
 {
@@ -76,6 +77,12 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
     if (!wcscmp( buffer, L"Windows.Devices.Input.TouchCapabilities" ))
         IActivationFactory_QueryInterface( touch_capabilities_factory, &IID_IActivationFactory, (void **)factory );
 
+    if (!wcscmp( buffer, L"Windows.Devices.Input.MouseDevice" ))
+        IActivationFactory_QueryInterface( mouse_device_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.UI.Core.CoreCursor" ))
+        IActivationFactory_QueryInterface( corecursor_factory, &IID_IActivationFactory, (void **)factory );
+
     if (!wcscmp( buffer, L"Windows.UI.Notifications.BadgeUpdateManager" ))
         IActivationFactory_QueryInterface( badgeupdatemanager_factory, &IID_IActivationFactory, (void **)factory );
 
@@ -87,6 +94,9 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
 
     if (!wcscmp( buffer, L"Windows.UI.Shell.TaskbarManager" ))
         IActivationFactory_QueryInterface( taskbar_manager_factory, &IID_IActivationFactory, (void **)factory );
+
+    if (!wcscmp( buffer, L"Windows.UI.Input.PointerVisualizationSettings" ))
+        IActivationFactory_QueryInterface( pointer_visualization_settings_factory, &IID_IActivationFactory, (void **)factory );
 
     if (!wcsncmp( buffer, L"Windows.UI.Composition.", 23 ))
     {

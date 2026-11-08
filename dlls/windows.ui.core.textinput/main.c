@@ -478,6 +478,109 @@ static struct core_input_view_statics core_input_view_statics =
 
 static IActivationFactory *core_input_view_factory = &core_input_view_statics.IActivationFactory_iface;
 
+/* Stub implementation for Windows.UI.Text.Core.CoreTextServicesManager */
+static const GUID IID_ICoreTextServicesManagerStatics = {0x1520a388, 0xe2cf, 0x4d65, {0xae, 0xb9, 0xb3, 0x2d, 0x86, 0xfe, 0x39, 0xb9}};
+
+static HRESULT WINAPI core_text_services_manager_QueryInterface(void *this, REFIID riid, void **ppv)
+{
+    TRACE("this %p, riid %s, ppv %p\n", this, debugstr_guid(riid), ppv);
+    if (!ppv) return E_POINTER;
+    *ppv = this;
+    return S_OK;
+}
+
+static ULONG WINAPI core_text_services_manager_AddRef(void *this) { return 2; }
+static ULONG WINAPI core_text_services_manager_Release(void *this) { return 1; }
+static HRESULT WINAPI core_text_services_manager_GetIids(void *this, ULONG *count, IID **iids) { if (count) *count = 0; return S_OK; }
+static HRESULT WINAPI core_text_services_manager_GetRuntimeClassName(void *this, HSTRING *name)
+{
+    return WindowsCreateString(L"Windows.UI.Text.Core.CoreTextServicesManager", 44, name);
+}
+static HRESULT WINAPI core_text_services_manager_GetTrustLevel(void *this, TrustLevel *trust)
+{
+    if (trust) *trust = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI core_text_services_manager_slot(void *this)
+{
+    TRACE("this %p stub!\n", this);
+    return S_OK;
+}
+
+static void *core_text_services_manager_vtbl[50];
+static struct { void *vtbl; LONG ref; } global_core_text_services_manager;
+
+static void init_core_text_services_manager_vtbl(void)
+{
+    int i;
+    if (core_text_services_manager_vtbl[0]) return;
+    core_text_services_manager_vtbl[0] = core_text_services_manager_QueryInterface;
+    core_text_services_manager_vtbl[1] = core_text_services_manager_AddRef;
+    core_text_services_manager_vtbl[2] = core_text_services_manager_Release;
+    core_text_services_manager_vtbl[3] = core_text_services_manager_GetIids;
+    core_text_services_manager_vtbl[4] = core_text_services_manager_GetRuntimeClassName;
+    core_text_services_manager_vtbl[5] = core_text_services_manager_GetTrustLevel;
+    for (i = 6; i < 50; i++)
+        core_text_services_manager_vtbl[i] = core_text_services_manager_slot;
+    global_core_text_services_manager.vtbl = core_text_services_manager_vtbl;
+    global_core_text_services_manager.ref = 1;
+}
+
+static HRESULT WINAPI text_services_factory_QueryInterface(IActivationFactory *iface, REFIID riid, void **ppv)
+{
+    TRACE("iface %p, riid %s, ppv %p\n", iface, debugstr_guid(riid), ppv);
+    if (!ppv) return E_POINTER;
+    *ppv = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_IActivationFactory) ||
+        IsEqualGUID(riid, &IID_ICoreTextServicesManagerStatics))
+    {
+        *ppv = iface;
+        return S_OK;
+    }
+
+    FIXME("unhandled QI %s\n", debugstr_guid(riid));
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI text_services_factory_AddRef(IActivationFactory *iface) { return 2; }
+static ULONG WINAPI text_services_factory_Release(IActivationFactory *iface) { return 1; }
+static HRESULT WINAPI text_services_factory_GetIids(IActivationFactory *iface, ULONG *count, IID **iids) { if (count) *count = 0; return S_OK; }
+static HRESULT WINAPI text_services_factory_GetRuntimeClassName(IActivationFactory *iface, HSTRING *name)
+{
+    return WindowsCreateString(L"Windows.UI.Text.Core.CoreTextServicesManager", 44, name);
+}
+static HRESULT WINAPI text_services_factory_GetTrustLevel(IActivationFactory *iface, TrustLevel *trust)
+{
+    if (trust) *trust = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI text_services_factory_GetForCurrentView(void *iface, void **value)
+{
+    TRACE("iface %p, value %p\n", iface, value);
+    init_core_text_services_manager_vtbl();
+    if (value) *value = &global_core_text_services_manager;
+    return S_OK;
+}
+
+static void *stub_text_services_factory_vtbl[] = {
+    text_services_factory_QueryInterface,
+    text_services_factory_AddRef,
+    text_services_factory_Release,
+    text_services_factory_GetIids,
+    text_services_factory_GetRuntimeClassName,
+    text_services_factory_GetTrustLevel,
+    text_services_factory_GetForCurrentView, /* offset 0x30: ActivateInstance / GetForCurrentView */
+    text_services_factory_GetForCurrentView, /* offset 0x38 */
+    text_services_factory_GetForCurrentView, /* offset 0x40 */
+};
+static struct { void *vtbl; LONG ref; } global_core_text_services_factory = { stub_text_services_factory_vtbl, 1 };
+
 HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out)
 {
     FIXME("clsid %s, riid %s, out %p stub!\n", debugstr_guid(clsid), debugstr_guid(riid), out);
@@ -494,6 +597,8 @@ HRESULT WINAPI DllGetActivationFactory(HSTRING classid, IActivationFactory **fac
 
     if (!wcscmp(name, RuntimeClass_Windows_UI_ViewManagement_Core_CoreInputView))
         IActivationFactory_QueryInterface(core_input_view_factory, &IID_IActivationFactory, (void **)factory);
+    else if (!wcscmp(name, L"Windows.UI.Text.Core.CoreTextServicesManager"))
+        IActivationFactory_QueryInterface((IActivationFactory *)&global_core_text_services_factory, &IID_IActivationFactory, (void **)factory);
 
     return *factory ? S_OK : CLASS_E_CLASSNOTAVAILABLE;
 }

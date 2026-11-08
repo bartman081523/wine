@@ -18,9 +18,14 @@
  */
 
 #include "private.h"
+#include "roapi.h"
 
 #define WIDL_using_Windows_ApplicationModel_Core
 #include "windows.applicationmodel.core.h"
+#define WIDL_using_Windows_ApplicationModel_Activation
+#include "windows.applicationmodel.activation.h"
+#define WIDL_using_Windows_UI_Core
+#include "windows.ui.core.h"
 
 /* ntdll RtlPcToFileHeader (rtlsupportapi.h does not compile standalone here) */
 extern void * WINAPI RtlPcToFileHeader(void *pc, void **base);
@@ -637,6 +642,226 @@ static const struct ICoreApplicationViewTitleBarVtbl titlebar_vtbl = {
 /* =========================================================================
  * Windows.ApplicationModel.Core.CoreApplicationView
  * ========================================================================= */
+static const GUID IID_IActivatedEventArgs = {0xcf651713, 0xcd08, 0x4fd8, {0xb6, 0x97, 0xa2, 0x81, 0xb6, 0x54, 0x4e, 0x2e}};
+static const GUID IID_ILaunchActivatedEventArgs = {0xfbcbc926, 0xa18a, 0x4b3f, {0x82, 0xb0, 0x33, 0xbe, 0xe0, 0x20, 0x20, 0x52}};
+static const GUID IID_IPrelaunchActivatedEventArgs = {0x0c44717b, 0x19f7, 0x48d6, {0xb0, 0x46, 0xcf, 0x22, 0x82, 0x6e, 0xaa, 0x74}};
+static const GUID IID_IPrelaunchActivatedEventArgs2 = {0xfbc93e26, 0xa14a, 0x4b4f, {0x82, 0xb0, 0x33, 0xbe, 0xd9, 0x20, 0xaf, 0x52}};
+static const GUID IID_IActivatedEventArgsWithUser = {0x1cf09b9e, 0x9962, 0x4936, {0x80, 0xff, 0xaf, 0xc8, 0xe8, 0xae, 0x5c, 0x8c}};
+
+struct launch_args_impl
+{
+    struct { const void *lpVtbl; } ILaunchArgs_iface;
+    struct { const void *lpVtbl; } IActivatedArgs_iface;
+    struct { const void *lpVtbl; } IPrelaunchArgs_iface;
+    struct { const void *lpVtbl; } IUserArgs_iface;
+    LONG ref;
+};
+
+#define impl_from_ILaunchArgs(ptr) ((struct launch_args_impl *)((char *)(ptr) - offsetof(struct launch_args_impl, ILaunchArgs_iface)))
+#define impl_from_IActivatedArgs(ptr) ((struct launch_args_impl *)((char *)(ptr) - offsetof(struct launch_args_impl, IActivatedArgs_iface)))
+#define impl_from_IPrelaunchArgs(ptr) ((struct launch_args_impl *)((char *)(ptr) - offsetof(struct launch_args_impl, IPrelaunchArgs_iface)))
+#define impl_from_IUserArgs(ptr) ((struct launch_args_impl *)((char *)(ptr) - offsetof(struct launch_args_impl, IUserArgs_iface)))
+
+static HRESULT largs_QI_internal(struct launch_args_impl *impl, REFIID riid, void **ppvObject)
+{
+    if (!ppvObject) return E_POINTER;
+    *ppvObject = NULL;
+
+    if (IsEqualGUID(riid, &IID_IUnknown) ||
+        IsEqualGUID(riid, &IID_IInspectable) ||
+        IsEqualGUID(riid, &IID_IAgileObject) ||
+        IsEqualGUID(riid, &IID_ILaunchActivatedEventArgs))
+    {
+        *ppvObject = &impl->ILaunchArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IActivatedEventArgs))
+    {
+        *ppvObject = &impl->IActivatedArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IPrelaunchActivatedEventArgs) ||
+        IsEqualGUID(riid, &IID_IPrelaunchActivatedEventArgs2))
+    {
+        *ppvObject = &impl->IPrelaunchArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &IID_IActivatedEventArgsWithUser))
+    {
+        *ppvObject = &impl->IUserArgs_iface;
+        InterlockedIncrement(&impl->ref);
+        return S_OK;
+    }
+
+    TRACE("largs %p: unhandled QI %s\n", impl, debugstr_guid(riid));
+    return E_NOINTERFACE;
+}
+
+static HRESULT WINAPI largs_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    return largs_QI_internal(impl_from_ILaunchArgs(This), riid, ppvObject);
+}
+static ULONG WINAPI largs_AddRef(void *This)
+{
+    return InterlockedIncrement(&impl_from_ILaunchArgs(This)->ref);
+}
+static ULONG WINAPI largs_Release(void *This)
+{
+    struct launch_args_impl *impl = impl_from_ILaunchArgs(This);
+    ULONG ref = InterlockedDecrement(&impl->ref);
+    if (!ref) free(impl);
+    return ref;
+}
+
+static HRESULT WINAPI aargs_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    return largs_QI_internal(impl_from_IActivatedArgs(This), riid, ppvObject);
+}
+static ULONG WINAPI aargs_AddRef(void *This)
+{
+    return InterlockedIncrement(&impl_from_IActivatedArgs(This)->ref);
+}
+static ULONG WINAPI aargs_Release(void *This)
+{
+    return largs_Release(&impl_from_IActivatedArgs(This)->ILaunchArgs_iface);
+}
+
+static HRESULT WINAPI pargs_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    return largs_QI_internal(impl_from_IPrelaunchArgs(This), riid, ppvObject);
+}
+static ULONG WINAPI pargs_AddRef(void *This)
+{
+    return InterlockedIncrement(&impl_from_IPrelaunchArgs(This)->ref);
+}
+static ULONG WINAPI pargs_Release(void *This)
+{
+    return largs_Release(&impl_from_IPrelaunchArgs(This)->ILaunchArgs_iface);
+}
+
+static HRESULT WINAPI uargs_QueryInterface(void *This, REFIID riid, void **ppvObject)
+{
+    return largs_QI_internal(impl_from_IUserArgs(This), riid, ppvObject);
+}
+static ULONG WINAPI uargs_AddRef(void *This)
+{
+    return InterlockedIncrement(&impl_from_IUserArgs(This)->ref);
+}
+static ULONG WINAPI uargs_Release(void *This)
+{
+    return largs_Release(&impl_from_IUserArgs(This)->ILaunchArgs_iface);
+}
+
+static HRESULT WINAPI largs_GetIids(void *This, ULONG *c, IID **i) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI largs_GetRuntimeClassName(void *This, HSTRING *n)
+{
+    return WindowsCreateString(L"Windows.ApplicationModel.Activation.LaunchActivatedEventArgs", 60, n);
+}
+static HRESULT WINAPI largs_GetTrustLevel(void *This, TrustLevel *t) { if (t) *t = BaseTrust; return S_OK; }
+
+static HRESULT WINAPI largs_get_Arguments(void *This, HSTRING *value)
+{
+    if (!value) return E_POINTER;
+    return WindowsCreateString(L"", 0, value);
+}
+
+static HRESULT WINAPI largs_get_TileId(void *This, HSTRING *value)
+{
+    if (!value) return E_POINTER;
+    return WindowsCreateString(L"App", 3, value);
+}
+
+static HRESULT WINAPI largs_get_Kind(void *This, int *value)
+{
+    if (!value) return E_POINTER;
+    *value = 0; /* ActivationKind_Launch */
+    return S_OK;
+}
+
+static HRESULT WINAPI largs_get_PreviousExecutionState(void *This, int *value)
+{
+    if (!value) return E_POINTER;
+    *value = 0; /* ApplicationExecutionState_NotRunning */
+    return S_OK;
+}
+
+static HRESULT WINAPI largs_get_SplashScreen(void *This, void **value)
+{
+    if (!value) return E_POINTER;
+    *value = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI prelaunch_get_PrelaunchActivated(void *This, boolean *value)
+{
+    if (!value) return E_POINTER;
+    *value = FALSE;
+    return S_OK;
+}
+
+static HRESULT WINAPI largs_generic_stub(void *This)
+{
+    return S_OK;
+}
+
+static const void *launch_args_vtbl[16] = {
+    (void *)largs_QueryInterface,
+    (void *)largs_AddRef,
+    (void *)largs_Release,
+    (void *)largs_GetIids,
+    (void *)largs_GetRuntimeClassName,
+    (void *)largs_GetTrustLevel,
+    (void *)largs_get_Arguments,
+    (void *)largs_get_TileId,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub
+};
+
+static const void *activated_args_vtbl[16] = {
+    (void *)aargs_QueryInterface,
+    (void *)aargs_AddRef,
+    (void *)aargs_Release,
+    (void *)largs_GetIids,
+    (void *)largs_GetRuntimeClassName,
+    (void *)largs_GetTrustLevel,
+    (void *)largs_get_Kind,
+    (void *)largs_get_PreviousExecutionState,
+    (void *)largs_get_SplashScreen,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub
+};
+
+static const void *prelaunch_args_vtbl[16] = {
+    (void *)pargs_QueryInterface,
+    (void *)pargs_AddRef,
+    (void *)pargs_Release,
+    (void *)largs_GetIids,
+    (void *)largs_GetRuntimeClassName,
+    (void *)largs_GetTrustLevel,
+    (void *)prelaunch_get_PrelaunchActivated,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub
+};
+
+static const void *user_args_vtbl[16] = {
+    (void *)uargs_QueryInterface,
+    (void *)uargs_AddRef,
+    (void *)uargs_Release,
+    (void *)largs_GetIids,
+    (void *)largs_GetRuntimeClassName,
+    (void *)largs_GetTrustLevel,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub,
+    (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub, (void *)largs_generic_stub,
+    (void *)largs_generic_stub, (void *)largs_generic_stub
+};
+
 struct core_application_view
 {
     ICoreApplicationView  ICoreApplicationView_iface;
@@ -644,6 +869,7 @@ struct core_application_view
     ICoreApplicationView3 ICoreApplicationView3_iface;
     LONG ref;
     struct core_view_titlebar *titlebar;
+    ITypedEventHandler_CoreApplicationView_IActivatedEventArgs *activated_handler;
 };
 
 static inline struct core_application_view *impl_from_ICoreApplicationView( ICoreApplicationView *iface )
@@ -723,21 +949,54 @@ static HRESULT WINAPI view_GetTrustLevel( ICoreApplicationView *iface, TrustLeve
 
 static HRESULT WINAPI view_get_CoreWindow( ICoreApplicationView *iface, __x_ABI_CWindows_CUI_CCore_CICoreWindow **value )
 {
+    static const WCHAR core_window_name[] = L"Windows.UI.Core.CoreWindow";
+    HSTRING class_name;
+    HSTRING_HEADER header;
+    __x_ABI_CWindows_CUI_CCore_CICoreWindowStatic *window_static = NULL;
+    HRESULT hr;
+
+    TRACE( "iface %p, value %p\n", iface, value );
     if (!value) return E_POINTER;
     *value = NULL;
-    return S_OK;
+
+    hr = WindowsCreateStringReference( core_window_name, ARRAY_SIZE(core_window_name) - 1, &header, &class_name );
+    if (FAILED(hr)) return hr;
+
+    hr = RoGetActivationFactory( class_name, &IID___x_ABI_CWindows_CUI_CCore_CICoreWindowStatic, (void **)&window_static );
+    if (FAILED(hr))
+    {
+        ERR( "RoGetActivationFactory CoreWindow failed: %#lx\n", hr );
+        return hr;
+    }
+
+    hr = __x_ABI_CWindows_CUI_CCore_CICoreWindowStatic_GetForCurrentThread( window_static, value );
+    __x_ABI_CWindows_CUI_CCore_CICoreWindowStatic_Release( window_static );
+    return hr;
 }
 
 static HRESULT WINAPI view_add_Activated( ICoreApplicationView *iface,
         ITypedEventHandler_CoreApplicationView_IActivatedEventArgs *handler, EventRegistrationToken *token )
 {
+    struct core_application_view *impl = impl_from_ICoreApplicationView( iface );
     TRACE( "iface %p, handler %p\n", iface, handler );
+    if (impl->activated_handler)
+        ITypedEventHandler_CoreApplicationView_IActivatedEventArgs_Release( impl->activated_handler );
+    impl->activated_handler = handler;
+    if (handler)
+        ITypedEventHandler_CoreApplicationView_IActivatedEventArgs_AddRef( handler );
     if (token) token->value = 1;
     return S_OK;
 }
 
 static HRESULT WINAPI view_remove_Activated( ICoreApplicationView *iface, EventRegistrationToken token )
 {
+    struct core_application_view *impl = impl_from_ICoreApplicationView( iface );
+    TRACE( "iface %p, token %#I64x\n", iface, token.value );
+    if (impl->activated_handler)
+    {
+        ITypedEventHandler_CoreApplicationView_IActivatedEventArgs_Release( impl->activated_handler );
+        impl->activated_handler = NULL;
+    }
     return S_OK;
 }
 
@@ -796,9 +1055,20 @@ static HRESULT WINAPI view2_GetTrustLevel( ICoreApplicationView2 *iface, TrustLe
 }
 static HRESULT WINAPI view2_get_Dispatcher( ICoreApplicationView2 *iface, __x_ABI_CWindows_CUI_CCore_CICoreDispatcher **value )
 {
+    __x_ABI_CWindows_CUI_CCore_CICoreWindow *window = NULL;
+    HRESULT hr;
+
+    TRACE( "iface %p, value %p\n", iface, value );
     if (!value) return E_POINTER;
     *value = NULL;
-    return S_OK;
+
+    hr = view_get_CoreWindow( (ICoreApplicationView *)iface, &window );
+    if (SUCCEEDED(hr) && window)
+    {
+        hr = __x_ABI_CWindows_CUI_CCore_CICoreWindow_get_Dispatcher( window, value );
+        __x_ABI_CWindows_CUI_CCore_CICoreWindow_Release( window );
+    }
+    return hr;
 }
 
 static const struct ICoreApplicationView2Vtbl view2_vtbl = {
@@ -904,8 +1174,83 @@ static HRESULT WINAPI core_application_instance_GetCurrentView( ICoreApplication
 static HRESULT WINAPI core_application_instance_Run( ICoreApplication *iface,
         IFrameworkViewSource *view_source )
 {
-    FIXME( "iface %p, view_source %p stub!\n", iface, view_source );
-    return E_NOTIMPL;
+    IFrameworkView *view = NULL;
+    ICoreApplicationView *app_view = NULL;
+    HRESULT hr;
+
+    TRACE( "iface %p, view_source %p\n", iface, view_source );
+    if (!view_source) return E_POINTER;
+
+    hr = IFrameworkViewSource_CreateView( view_source, &view );
+    if (FAILED(hr))
+    {
+        ERR( "IFrameworkViewSource_CreateView failed: %#lx\n", hr );
+        return hr;
+    }
+
+    hr = ICoreApplication_GetCurrentView( iface, &app_view );
+    if (SUCCEEDED(hr) && app_view)
+    {
+        __x_ABI_CWindows_CUI_CCore_CICoreWindow *window = NULL;
+
+        hr = IFrameworkView_Initialize( view, app_view );
+        TRACE( "IFrameworkView_Initialize returned: %#lx\n", hr );
+
+        hr = view_get_CoreWindow( app_view, &window );
+        if (SUCCEEDED(hr) && window)
+        {
+            hr = IFrameworkView_SetWindow( view, window );
+            TRACE( "IFrameworkView_SetWindow returned: %#lx\n", hr );
+        }
+        else
+        {
+            WARN( "Failed to get CoreWindow for SetWindow: %#lx\n", hr );
+        }
+
+        hr = IFrameworkView_Load( view, NULL );
+        TRACE( "IFrameworkView_Load returned: %#lx\n", hr );
+
+        if (global_core_view && global_core_view->activated_handler)
+        {
+            struct launch_args_impl *largs = calloc( 1, sizeof(*largs) );
+            if (largs)
+            {
+                largs->ILaunchArgs_iface.lpVtbl = launch_args_vtbl;
+                largs->IActivatedArgs_iface.lpVtbl = activated_args_vtbl;
+                largs->IPrelaunchArgs_iface.lpVtbl = prelaunch_args_vtbl;
+                largs->IUserArgs_iface.lpVtbl = user_args_vtbl;
+                largs->ref = 1;
+                TRACE( "Firing CoreApplicationView Activated event handler %p\n", global_core_view->activated_handler );
+                hr = ITypedEventHandler_CoreApplicationView_IActivatedEventArgs_Invoke(
+                    global_core_view->activated_handler, &global_core_view->ICoreApplicationView_iface,
+                    (__x_ABI_CWindows_CApplicationModel_CActivation_CIActivatedEventArgs *)&largs->IActivatedArgs_iface );
+                TRACE( "Activated handler returned %#lx\n", hr );
+                largs_Release( &largs->ILaunchArgs_iface );
+            }
+        }
+
+        if (window)
+        {
+            TRACE( "Activating CoreWindow %p\n", window );
+            __x_ABI_CWindows_CUI_CCore_CICoreWindow_Activate( window );
+            __x_ABI_CWindows_CUI_CCore_CICoreWindow_Release( window );
+            window = NULL;
+        }
+    }
+    else
+    {
+        hr = IFrameworkView_Load( view, NULL );
+        TRACE( "IFrameworkView_Load returned: %#lx\n", hr );
+    }
+
+    hr = IFrameworkView_Run( view );
+    TRACE( "IFrameworkView_Run returned: %#lx\n", hr );
+
+    IFrameworkView_Uninitialize( view );
+    if (app_view) ICoreApplicationView_Release( app_view );
+    IFrameworkView_Release( view );
+
+    return S_OK;
 }
 
 static HRESULT WINAPI core_application_instance_RunWithActivationFactories( ICoreApplication *iface,

@@ -102,38 +102,44 @@ static HRESULT WINAPI inputpane_GetRuntimeClassName( IInputPane *iface, HSTRING 
 
 static HRESULT WINAPI inputpane_GetTrustLevel( IInputPane *iface, TrustLevel *trust_level )
 {
-    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
-    return E_NOTIMPL;
+    TRACE( "iface %p, trust_level %p\n", iface, trust_level );
+    if (!trust_level) return E_POINTER;
+    *trust_level = BaseTrust;
+    return S_OK;
 }
 
 static HRESULT WINAPI inputpane_add_Showing( IInputPane *iface, ITypedEventHandler_InputPane_InputPaneVisibilityEventArgs *handler, EventRegistrationToken *token )
 {
-    FIXME( "iface %p, handler %p, token %p stub!\n", iface, handler, token);
-    return E_NOTIMPL;
+    TRACE( "iface %p, handler %p, token %p\n", iface, handler, token );
+    if (token) token->value = 1;
+    return S_OK;
 }
 
 static HRESULT WINAPI inputpane_remove_Showing( IInputPane *iface, EventRegistrationToken token )
 {
-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, token %#I64x\n", iface, token.value );
+    return S_OK;
 }
 
 static HRESULT WINAPI inputpane_add_Hiding( IInputPane *iface, ITypedEventHandler_InputPane_InputPaneVisibilityEventArgs *handler, EventRegistrationToken *token )
 {
-    FIXME( "iface %p, handler %p, token %p stub!\n", iface, handler, token);
-    return E_NOTIMPL;
+    TRACE( "iface %p, handler %p, token %p\n", iface, handler, token );
+    if (token) token->value = 1;
+    return S_OK;
 }
 
 static HRESULT WINAPI inputpane_remove_Hiding( IInputPane *iface, EventRegistrationToken token )
 {
-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, token %#I64x\n", iface, token.value );
+    return S_OK;
 }
 
 static HRESULT WINAPI inputpane_OccludedRect( IInputPane *iface, Rect *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_POINTER;
+    memset( value, 0, sizeof(*value) );
+    return S_OK;
 }
 
 static const struct IInputPaneVtbl inputpane_vtbl =
