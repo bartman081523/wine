@@ -273,7 +273,6 @@ static void load_xodus_tokens(void)
                     if (uhs)
                     {
                         MultiByteToWideChar(CP_UTF8, 0, uhs, -1, token_cache.user_hash, ARRAYSIZE(token_cache.user_hash));
-                        free(uhs);
                     }
                     if (gtg)
                     {
@@ -297,14 +296,22 @@ static void load_xodus_tokens(void)
                     }
                     if (xsts_tok)
                     {
-                        int tok_wlen = MultiByteToWideChar(CP_UTF8, 0, xsts_tok, -1, NULL, 0);
+                        char xbl_buf[8192];
+                        int tok_wlen;
+                        if (uhs && uhs[0] && strncmp(xsts_tok, "XBL3.0", 6) != 0)
+                            snprintf(xbl_buf, sizeof(xbl_buf), "XBL3.0 x=%s;%s", uhs, xsts_tok);
+                        else
+                            snprintf(xbl_buf, sizeof(xbl_buf), "%s", xsts_tok);
+
+                        tok_wlen = MultiByteToWideChar(CP_UTF8, 0, xbl_buf, -1, NULL, 0);
                         token_cache.token = malloc((tok_wlen + 1) * sizeof(WCHAR));
                         if (token_cache.token)
                         {
-                            MultiByteToWideChar(CP_UTF8, 0, xsts_tok, -1, token_cache.token, tok_wlen);
+                            MultiByteToWideChar(CP_UTF8, 0, xbl_buf, -1, token_cache.token, tok_wlen);
                         }
                         free(xsts_tok);
                     }
+                    if (uhs) free(uhs);
                     free(xbox_token);
                 }
                 free(xbox_token_b64);
@@ -1414,7 +1421,12 @@ static HRESULT web_account_create( void *provider, const WCHAR *user_str, const 
         map_insert_str( impl->properties, L"Gamertag", gamertag );
         map_insert_str( impl->properties, L"Sandbox", L"RETAIL" );
         if (token_cache.user_hash[0])
+        {
             map_insert_str( impl->properties, L"UserHash", token_cache.user_hash );
+            map_insert_str( impl->properties, L"userhash", token_cache.user_hash );
+            map_insert_str( impl->properties, L"user_hash", token_cache.user_hash );
+            map_insert_str( impl->properties, L"uhs", token_cache.user_hash );
+        }
     }
 
     *out = &impl->IWebAccount_iface;
@@ -1585,7 +1597,12 @@ static HRESULT web_token_response_create( const WCHAR *token_str, void *account,
         map_insert_str( impl->properties, L"Privileges", token_cache.privileges );
         map_insert_str( impl->properties, L"TitleRestrictions", L"" );
         if (token_cache.user_hash[0])
+        {
             map_insert_str( impl->properties, L"UserHash", token_cache.user_hash );
+            map_insert_str( impl->properties, L"userhash", token_cache.user_hash );
+            map_insert_str( impl->properties, L"user_hash", token_cache.user_hash );
+            map_insert_str( impl->properties, L"uhs", token_cache.user_hash );
+        }
     }
     *out = &impl->IWebTokenResponse_iface;
     return S_OK;

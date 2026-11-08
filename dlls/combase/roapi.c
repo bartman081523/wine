@@ -207,6 +207,11 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
             *out = wcsdup(L"Microsoft.UI.Xaml.dll");
             return S_OK;
         }
+        if (!wcsncmp(classid, L"Windows.System.DispatcherQueue", 30))
+        {
+            *out = wcsdup(L"coremessaging.dll");
+            return S_OK;
+        }
         if (!wcsncmp(classid, L"Windows.System.MemoryManager", 28))
         {
             *out = wcsdup(L"windows.applicationmodel.dll");

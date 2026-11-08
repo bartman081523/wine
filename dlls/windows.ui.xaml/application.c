@@ -28,6 +28,7 @@ static const GUID IID_IWindow_3276167d    = {0x3276167d, 0xc9f6, 0x462d, {0x9d, 
 
 static const GUID IID_ComWrappers_internal  = {0x11d3b13a, 0x180e, 0x4789, {0xa8, 0xbe, 0x77, 0x12, 0x88, 0x28, 0x93, 0xe6}};
 static const GUID IID_ComWrappers_internal2 = {0x5c13e51c, 0x241d, 0x4859, {0x80, 0x05, 0x8a, 0x8d, 0x8d, 0x98, 0x15, 0xbf}};
+static const GUID IID_ITrackerOwner         = {0xeb24c20b, 0x9816, 0x4ac7, {0x8c, 0xff, 0x36, 0xf6, 0x7a, 0x11, 0x8f, 0x4e}};
 static const GUID IID_IWeakReferenceSource  = {0x00000038, 0x0000, 0x0000, {0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
 
 #define RuntimeClass_Application L"Windows.UI.Xaml.Application"
@@ -86,6 +87,7 @@ static HRESULT WINAPI app_QueryInterface(void *This, REFIID riid, void **ppvObje
     }
 
     if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner) ||
         IsEqualGUID(riid, &IID_IWeakReferenceSource))
     {
         return E_NOINTERFACE;
@@ -952,6 +954,7 @@ static HRESULT app_fac_QI_internal(struct application_factory_impl *impl, REFIID
     }
 
     if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner) ||
         IsEqualGUID(riid, &IID_IWeakReferenceSource))
     {
         return E_NOINTERFACE;
@@ -3786,6 +3789,7 @@ static HRESULT WINAPI win_QueryInterface(void *This, REFIID riid, void **ppvObje
     }
 
     if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner) ||
         IsEqualGUID(riid, &IID_IWeakReferenceSource))
     {
         return E_NOINTERFACE;
@@ -4129,6 +4133,7 @@ static HRESULT win_fac_QI_internal(struct window_factory_impl *impl, REFIID riid
     }
 
     if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner) ||
         IsEqualGUID(riid, &IID_IWeakReferenceSource))
     {
         return E_NOINTERFACE;
@@ -4689,6 +4694,7 @@ static HRESULT frame_QI_internal(struct frame_impl *impl, REFIID riid, void **pp
     }
 
     if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner) ||
         IsEqualGUID(riid, &IID_IWeakReferenceSource))
     {
         return E_NOINTERFACE;
@@ -5398,6 +5404,7 @@ static HRESULT frame_fac_QI_internal(struct frame_factory_impl *impl, REFIID rii
     }
 
     if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner) ||
         IsEqualGUID(riid, &IID_IWeakReferenceSource))
     {
         return E_NOINTERFACE;
@@ -5613,6 +5620,7 @@ static HRESULT page_nondelegating_QI_internal(struct page_impl *impl, REFIID rii
     }
 
     if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner) ||
         IsEqualGUID(riid, &IID_IWeakReferenceSource))
     {
         return E_NOINTERFACE;
@@ -6040,6 +6048,7 @@ static HRESULT page_fac_QI_internal(struct page_factory_impl *impl, REFIID riid,
     }
 
     if (IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner) ||
         IsEqualGUID(riid, &IID_IWeakReferenceSource))
     {
         return E_NOINTERFACE;

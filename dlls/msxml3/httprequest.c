@@ -504,6 +504,7 @@ static HRESULT WINAPI BSCHttpNegotiate_BeginningTransaction(IHttpNegotiate *ifac
         return S_OK;
     }
 
+    size += sizeof(WCHAR); /* space for null-terminator */
     buff = CoTaskMemAlloc(size);
     if (!buff)
     {
@@ -542,6 +543,7 @@ static HRESULT WINAPI BSCHttpNegotiate_BeginningTransaction(IHttpNegotiate *ifac
         lstrcpyW(ptr, L"\r\n");
         ptr += 2;
     }
+    *ptr = 0;
 
     *add_headers = buff;
 

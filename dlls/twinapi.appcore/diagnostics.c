@@ -1112,3 +1112,41 @@ static struct logging_fields_factory default_logging_fields_factory =
 };
 
 static IActivationFactory *logging_fields_factory = &default_logging_fields_factory.IActivationFactory_iface;
+
+/* =========================================================================
+ * AsyncCausalityTracer
+ * ========================================================================= */
+static const GUID IID_IAsyncCausalityTracerStatics =
+    {0x50850b26, 0x267e, 0x451b, {0xa8, 0x90, 0xab, 0x6a, 0x37, 0x02, 0x45, 0xee}};
+
+static HRESULT WINAPI causality_tracer_QueryInterface( void *iface, REFIID riid, void **out )
+{
+    if (!out) return E_POINTER;
+    *out = iface;
+    return S_OK;
+}
+static ULONG WINAPI causality_tracer_AddRef( void *iface ) { return 2; }
+static ULONG WINAPI causality_tracer_Release( void *iface ) { return 1; }
+static HRESULT WINAPI causality_tracer_GetIids( void *iface, ULONG *c, IID **i ) { if (c) *c = 0; return S_OK; }
+static HRESULT WINAPI causality_tracer_GetRuntimeClassName( void *iface, HSTRING *s )
+{
+    return WindowsCreateString( L"Windows.Foundation.Diagnostics.AsyncCausalityTracer", 51, s );
+}
+static HRESULT WINAPI causality_tracer_GetTrustLevel( void *iface, TrustLevel *t ) { if (t) *t = BaseTrust; return S_OK; }
+static HRESULT WINAPI causality_tracer_ActivateInstance( void *iface, IInspectable **inst ) { return E_NOTIMPL; }
+
+static const void *causality_tracer_vtbl[16] = {
+    causality_tracer_QueryInterface,
+    causality_tracer_AddRef,
+    causality_tracer_Release,
+    causality_tracer_GetIids,
+    causality_tracer_GetRuntimeClassName,
+    causality_tracer_GetTrustLevel,
+    causality_tracer_ActivateInstance,
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok
+};
+
+static struct { const void *lpVtbl; } default_causality_tracer_factory = { causality_tracer_vtbl };
+static IActivationFactory *async_causality_tracer_factory = (IActivationFactory *)&default_causality_tracer_factory;

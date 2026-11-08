@@ -72,6 +72,8 @@ static const GUID IID_IVector_UIElement      = {0xb4c1e3ac, 0x8768, 0x5b9d, {0xa
 static const GUID IID_IDependencyObject_local  = {0x5c526665, 0xf60e, 0x4912, {0xaf, 0x59, 0x5f, 0xe0, 0x68, 0x0f, 0x08, 0x9d}};
 static const GUID IID_IDependencyObject2_local = {0x29fed85d, 0x3d22, 0x43a1, {0xad, 0xd0, 0x17, 0x02, 0x7c, 0x08, 0xb2, 0x12}};
 static const GUID IID_ComWrappers_internal     = {0x11d3b13a, 0x180e, 0x4789, {0xa8, 0xbe, 0x77, 0x12, 0x88, 0x28, 0x93, 0xe6}};
+static const GUID IID_ComWrappers_internal2    = {0x5c13e51c, 0x241d, 0x4859, {0x80, 0x05, 0x8a, 0x8d, 0x8d, 0x98, 0x15, 0xbf}};
+static const GUID IID_ITrackerOwner            = {0xeb24c20b, 0x9816, 0x4ac7, {0x8c, 0xff, 0x36, 0xf6, 0x7a, 0x11, 0x8f, 0x4e}};
 static const GUID IID_IAgileObject_local       = {0x94ea2b94, 0xe9cc, 0x49e0, {0xc0, 0xff, 0xee, 0x64, 0xca, 0x8f, 0x5b, 0x90}};
 static const GUID IID_INavigationView_local    = {0xb00eb54c, 0x9174, 0x5d84, {0x96, 0x78, 0x56, 0xc9, 0x80, 0x16, 0xe6, 0x89}};
 static const GUID IID_INavigationView2_local   = {0x5ba2eefc, 0x3736, 0x5e42, {0xac, 0x56, 0x9d, 0x0b, 0xe5, 0x52, 0x3d, 0x40}};
@@ -729,7 +731,9 @@ static HRESULT elem_QI_internal(struct xaml_element *impl, REFIID riid, void **p
         return S_OK;
     }
 
-    if (IsEqualGUID(riid, &IID_ComWrappers_internal))
+    if (IsEqualGUID(riid, &IID_ComWrappers_internal) ||
+        IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner))
     {
         TRACE("elem %p (%s, type=%d) returning IRedhawkInterop_iface\n", impl, debugstr_w(impl->name), impl->type);
         *ppvObject = &impl->IRedhawkInterop_iface;
@@ -6878,7 +6882,9 @@ static HRESULT auto_fac_QI_internal(struct auto_properties_factory_impl *impl, R
         return S_OK;
     }
 
-    if (IsEqualGUID(riid, &IID_ComWrappers_internal))
+    if (IsEqualGUID(riid, &IID_ComWrappers_internal) ||
+        IsEqualGUID(riid, &IID_ComWrappers_internal2) ||
+        IsEqualGUID(riid, &IID_ITrackerOwner))
     {
         *ppvObject = &impl->IRedhawkInterop_iface;
         InterlockedIncrement(&impl->ref);

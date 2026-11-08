@@ -101,6 +101,8 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
         IActivationFactory_QueryInterface( logging_options_factory, &IID_IActivationFactory, (void **)factory );
     else if (!wcscmp( buffer, L"Windows.Foundation.Diagnostics.LoggingFields" ))
         IActivationFactory_QueryInterface( logging_fields_factory, &IID_IActivationFactory, (void **)factory );
+    else if (!wcscmp( buffer, L"Windows.Foundation.Diagnostics.AsyncCausalityTracer" ))
+        IActivationFactory_QueryInterface( async_causality_tracer_factory, &IID_IActivationFactory, (void **)factory );
 
     if (*factory) return S_OK;
     return CLASS_E_CLASSNOTAVAILABLE;
