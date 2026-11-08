@@ -1108,10 +1108,17 @@ NTSTATUS WINAPI NtLoadKeyEx( const OBJECT_ATTRIBUTES *attr, OBJECT_ATTRIBUTES *f
     struct object_attributes *objattr;
     char *unix_name;
     UNICODE_STRING nt_name;
-    OBJECT_ATTRIBUTES new_attr = *file;
+    OBJECT_ATTRIBUTES new_attr;
 
     TRACE( "(%p,%p,0x%x,%p,%p,0x%x,%p,%p)\n",
            attr, file, flags, trustkey, event, access, roothandle, iostatus );
+
+    if (!file || (ULONG_PTR)file < 0x10000)
+    {
+        WARN( "Invalid file pointer %p in NtLoadKeyEx\n", file );
+        return STATUS_INVALID_PARAMETER;
+    }
+    new_attr = *file;
 
     if (flags) FIXME( "flags %x not handled\n", flags );
     if (trustkey) FIXME("trustkey parameter not supported\n");
