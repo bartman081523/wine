@@ -1090,8 +1090,11 @@ SOURCES = \
 	xamlom.idl \
 	xapo.idl \
 	xapofx.h \
+	xasync.h \
+	xasyncprovider.idl \
 	xaudio2.idl \
 	xaudio2fx.idl \
+	xgameruntimefeature.idl \
 	xcmc.h \
 	xinput.h \
 	xmldom.h \
@@ -1100,8 +1103,13 @@ SOURCES = \
 	xmldso.idl \
 	xmldsodid.h \
 	xmllite.idl \
+	xnetworking.idl \
 	xpsobjectmodel.idl \
 	xpsobjectmodel_1.idl \
+	xstore.idl \
+	xsystem.idl \
+	xtaskqueue.h \
+	xuser.idl \
 	zmouse.h
 
 INSTALL_LIB = \
