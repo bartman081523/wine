@@ -59,6 +59,7 @@ struct core_window
     void *mouse_device;
     BOOL pointer_captured;
     BOOL cursor_hidden;
+    BOOL synthetic_centering;
     int last_mouse_x;
     int last_mouse_y;
     BOOL is_fullscreen;
@@ -906,24 +907,46 @@ static HRESULT WINAPI core_window_put_PointerCursor( ICoreWindow *iface, ICoreCu
         impl->last_mouse_x = -32768;
         impl->last_mouse_y = -32768;
         if (impl->hwnd)
+        {
+            RECT rc;
+            SetForegroundWindow( impl->hwnd );
+            SetActiveWindow( impl->hwnd );
+            SetFocus( impl->hwnd );
+            if (GetClientRect( impl->hwnd, &rc ))
+            {
+                MapWindowPoints( impl->hwnd, NULL, (POINT *)&rc, 2 );
+                ClipCursor( &rc );
+            }
+            SetCapture( impl->hwnd );
+            while (ShowCursor( FALSE ) >= 0) {}
+            SetCursor( NULL );
             PostMessageW( impl->hwnd, WM_SETCURSOR, (WPARAM)impl->hwnd, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE) );
+        }
     }
     else
     {
         impl->cursor_hidden = FALSE;
         if (impl->hwnd)
+        {
+            ClipCursor( NULL );
+            ReleaseCapture();
+            while (ShowCursor( TRUE ) < 0) {}
             PostMessageW( impl->hwnd, WM_SETCURSOR, (WPARAM)impl->hwnd, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE) );
+        }
     }
     return S_OK;
 }
 
 static HRESULT WINAPI core_window_get_PointerPosition( ICoreWindow *iface, Point *value )
 {
+    struct core_window *impl = impl_from_ICoreWindow( iface );
     POINT pt;
     TRACE( "iface %p, value %p\n", iface, value );
     if (!value) return E_POINTER;
     if (GetCursorPos( &pt ))
     {
+        if (impl && impl->hwnd)
+            ScreenToClient( impl->hwnd, &pt );
         value->X = (FLOAT)pt.x;
         value->Y = (FLOAT)pt.y;
     }
@@ -1143,6 +1166,8 @@ static HRESULT WINAPI core_window_GetAsyncKeyState( ICoreWindow *iface, VirtualK
     TRACE( "iface %p, key %d, state %p\n", iface, key, state );
     if (!state) return E_POINTER;
     s = GetAsyncKeyState( (int)key );
+    if (!(s & 0x8000))
+        s = GetKeyState( (int)key );
     *state = CoreVirtualKeyStates_None;
     if (s & 0x8000) *state |= CoreVirtualKeyStates_Down;
     if (s & 1) *state |= CoreVirtualKeyStates_Locked;
@@ -1155,6 +1180,8 @@ static HRESULT WINAPI core_window_GetKeyState( ICoreWindow *iface, VirtualKey ke
     TRACE( "iface %p, key %d, state %p\n", iface, key, state );
     if (!state) return E_POINTER;
     s = GetKeyState( (int)key );
+    if (!(s & 0x8000))
+        s = GetAsyncKeyState( (int)key );
     *state = CoreVirtualKeyStates_None;
     if (s & 0x8000) *state |= CoreVirtualKeyStates_Down;
     if (s & 1) *state |= CoreVirtualKeyStates_Locked;
@@ -1167,6 +1194,7 @@ static HRESULT WINAPI core_window_ReleasePointerCapture( ICoreWindow *iface )
     TRACE( "iface %p\n", iface );
     impl->pointer_captured = FALSE;
     ReleaseCapture();
+    ClipCursor( NULL );
     return S_OK;
 }
 
@@ -1176,7 +1204,23 @@ static HRESULT WINAPI core_window_SetPointerCapture( ICoreWindow *iface )
     TRACE( "iface %p\n", iface );
     impl->pointer_captured = TRUE;
     if (impl->hwnd)
+    {
+        SetForegroundWindow( impl->hwnd );
+        SetActiveWindow( impl->hwnd );
+        SetFocus( impl->hwnd );
         SetCapture( impl->hwnd );
+        if (impl->cursor_hidden)
+        {
+            RECT rc;
+            if (GetClientRect( impl->hwnd, &rc ))
+            {
+                MapWindowPoints( impl->hwnd, NULL, (POINT *)&rc, 2 );
+                ClipCursor( &rc );
+            }
+            while (ShowCursor( FALSE ) >= 0) {}
+            SetCursor( NULL );
+        }
+    }
     return S_OK;
 }
 
@@ -1668,15 +1712,16 @@ static HRESULT WINAPI core_window2_GetTrustLevel( ICoreWindow2 *iface, TrustLeve
 static HRESULT WINAPI core_window2_put_PointerPosition( ICoreWindow2 *iface, Point value )
 {
     struct core_window *impl = impl_from_ICoreWindow2( iface );
+    POINT pt = { (int)value.X, (int)value.Y };
     TRACE( "iface %p, value (%f, %f)\n", iface, value.X, value.Y );
-    SetCursorPos( (int)value.X, (int)value.Y );
     if (impl && impl->hwnd)
     {
-        POINT pt = { (int)value.X, (int)value.Y };
-        ScreenToClient( impl->hwnd, &pt );
-        impl->last_mouse_x = pt.x;
-        impl->last_mouse_y = pt.y;
+        ClientToScreen( impl->hwnd, &pt );
+        impl->last_mouse_x = (int)value.X;
+        impl->last_mouse_y = (int)value.Y;
+        impl->synthetic_centering = TRUE;
     }
+    SetCursorPos( pt.x, pt.y );
     return S_OK;
 }
 
@@ -1967,8 +2012,14 @@ static LRESULT CALLBACK core_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         }
         break;
 
+    case WM_MOUSEACTIVATE:
+        SetForegroundWindow( hwnd );
+        SetActiveWindow( hwnd );
+        SetFocus( hwnd );
+        return MA_ACTIVATE;
+
     case WM_SETCURSOR:
-        if (LOWORD(lparam) == HTCLIENT && impl && impl->cursor_hidden)
+        if (impl && impl->cursor_hidden)
         {
             SetCursor( NULL );
             return TRUE;
@@ -1976,15 +2027,39 @@ static LRESULT CALLBACK core_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         break;
 
     case WM_ACTIVATE:
-        if (LOWORD(wparam) != WA_INACTIVE && impl && impl->activated_handler)
+        if (LOWORD(wparam) != WA_INACTIVE)
         {
-            IWindowActivatedEventArgs *args = NULL;
-            if (SUCCEEDED(window_activated_args_create( &args )) && args)
+            SetForegroundWindow( hwnd );
+            SetActiveWindow( hwnd );
+            SetFocus( hwnd );
+            if (impl && impl->cursor_hidden)
             {
-                ITypedEventHandler_CoreWindow_WindowActivatedEventArgs_Invoke(
-                    impl->activated_handler, &impl->ICoreWindow_iface, args );
-                IWindowActivatedEventArgs_Release( args );
+                RECT rc;
+                if (GetClientRect( hwnd, &rc ))
+                {
+                    MapWindowPoints( hwnd, NULL, (POINT *)&rc, 2 );
+                    ClipCursor( &rc );
+                }
+                SetCapture( hwnd );
+                while (ShowCursor( FALSE ) >= 0) {}
+                SetCursor( NULL );
             }
+            if (impl && impl->activated_handler)
+            {
+                IWindowActivatedEventArgs *args = NULL;
+                if (SUCCEEDED(window_activated_args_create( &args )) && args)
+                {
+                    ITypedEventHandler_CoreWindow_WindowActivatedEventArgs_Invoke(
+                        impl->activated_handler, &impl->ICoreWindow_iface, args );
+                    IWindowActivatedEventArgs_Release( args );
+                }
+            }
+        }
+        else
+        {
+            ClipCursor( NULL );
+            ReleaseCapture();
+            while (ShowCursor( TRUE ) < 0) {}
         }
         break;
 
@@ -2002,6 +2077,21 @@ static LRESULT CALLBACK core_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         break;
 
     case WM_LBUTTONDOWN:
+        SetForegroundWindow( hwnd );
+        SetActiveWindow( hwnd );
+        SetFocus( hwnd );
+        if (impl && impl->cursor_hidden)
+        {
+            RECT rc;
+            if (GetClientRect( hwnd, &rc ))
+            {
+                MapWindowPoints( hwnd, NULL, (POINT *)&rc, 2 );
+                ClipCursor( &rc );
+            }
+            SetCapture( hwnd );
+            while (ShowCursor( FALSE ) >= 0) {}
+            SetCursor( NULL );
+        }
         if (impl && impl->pointer_pressed_handler)
         {
             IPointerEventArgs *args = NULL;
@@ -2032,6 +2122,21 @@ static LRESULT CALLBACK core_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         break;
 
     case WM_RBUTTONDOWN:
+        SetForegroundWindow( hwnd );
+        SetActiveWindow( hwnd );
+        SetFocus( hwnd );
+        if (impl && impl->cursor_hidden)
+        {
+            RECT rc;
+            if (GetClientRect( hwnd, &rc ))
+            {
+                MapWindowPoints( hwnd, NULL, (POINT *)&rc, 2 );
+                ClipCursor( &rc );
+            }
+            SetCapture( hwnd );
+            while (ShowCursor( FALSE ) >= 0) {}
+            SetCursor( NULL );
+        }
         if (impl && impl->pointer_pressed_handler)
         {
             IPointerEventArgs *args = NULL;
@@ -2068,13 +2173,49 @@ static LRESULT CALLBACK core_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LP
         int dx = 0, dy = 0;
         if (impl)
         {
-            if (impl->last_mouse_x != -32768 && impl->last_mouse_y != -32768)
+            if (impl->synthetic_centering)
             {
-                dx = cur_x - impl->last_mouse_x;
-                dy = cur_y - impl->last_mouse_y;
+                impl->synthetic_centering = FALSE;
+                impl->last_mouse_x = cur_x;
+                impl->last_mouse_y = cur_y;
             }
-            impl->last_mouse_x = cur_x;
-            impl->last_mouse_y = cur_y;
+            else
+            {
+                if (impl->last_mouse_x != -32768 && impl->last_mouse_y != -32768)
+                {
+                    dx = cur_x - impl->last_mouse_x;
+                    dy = cur_y - impl->last_mouse_y;
+                }
+                impl->last_mouse_x = cur_x;
+                impl->last_mouse_y = cur_y;
+            }
+
+            if (impl->cursor_hidden)
+            {
+                if (abs(dx) > 80 || abs(dy) > 80)
+                {
+                    dx = 0;
+                    dy = 0;
+                }
+                if (impl->hwnd)
+                {
+                    RECT rc;
+                    if (GetClientRect( impl->hwnd, &rc ))
+                    {
+                        int cx = (rc.right - rc.left) / 2;
+                        int cy = (rc.bottom - rc.top) / 2;
+                        if (abs(cur_x - cx) > 100 || abs(cur_y - cy) > 100)
+                        {
+                            POINT pt = { cx, cy };
+                            ClientToScreen( impl->hwnd, &pt );
+                            impl->last_mouse_x = cx;
+                            impl->last_mouse_y = cy;
+                            impl->synthetic_centering = TRUE;
+                            SetCursorPos( pt.x, pt.y );
+                        }
+                    }
+                }
+            }
         }
 
         if (impl && impl->pointer_moved_handler)
@@ -2259,6 +2400,9 @@ static HWND create_core_window_hwnd( struct core_window *impl )
         SetWindowLongPtrW( hwnd, GWLP_USERDATA, (LONG_PTR)impl );
         ShowWindow( hwnd, SW_SHOW );
         UpdateWindow( hwnd );
+        SetForegroundWindow( hwnd );
+        SetActiveWindow( hwnd );
+        SetFocus( hwnd );
     }
     return hwnd;
 }

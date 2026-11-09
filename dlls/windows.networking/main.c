@@ -29,6 +29,7 @@
 #include <activation.h>
 #include <eventtoken.h>
 #include <asyncinfo.h>
+#include <wininet.h>
 
 #include "wine/debug.h"
 
@@ -1252,9 +1253,9 @@ struct stream_socket_impl
         struct { const void *lpVtbl; } IClosable_iface;
     } output_stream;
     char remote_host[256];
-    char req_buf[8192];
+    char req_buf[32768];
     UINT32 req_len;
-    char resp_buf[65536];
+    char resp_buf[262144];
     UINT32 resp_len;
     UINT32 resp_pos;
     struct socket_async_op_read_buffer *pending_read;
@@ -2122,6 +2123,164 @@ static HRESULT create_async_op_flush_bool(boolean result, void **out)
     return S_OK;
 }
 
+/* HTTP forwarding via WinINet */
+static BOOL forward_http_request(const char *remote_host, const char *req_buf, UINT32 req_len, char *resp_buf, UINT32 resp_buf_size, UINT32 *out_resp_len)
+{
+    char host[256];
+    INTERNET_PORT port = 443;
+    char method[16];
+    char path[2048];
+    const char *p = req_buf;
+    const char *space1, *path_start, *space2, *hdr_start, *hdr_end, *body_start;
+    DWORD body_len = 0;
+    HINTERNET hInternet, hConnect, hReq;
+    DWORD req_flags;
+    char clean_headers[4096];
+    char raw_headers[4096];
+    DWORD hlen = sizeof(raw_headers);
+    DWORD index = 0;
+    char *colon;
+    char *dyn_body = NULL;
+    size_t method_len, path_len;
+    const char *line;
+    char *out;
+    size_t rem;
+
+    if (!remote_host || !remote_host[0] || !req_buf || req_len == 0) return FALSE;
+
+    memset(host, 0, sizeof(host));
+    memset(method, 0, sizeof(method));
+    memset(path, 0, sizeof(path));
+    memset(clean_headers, 0, sizeof(clean_headers));
+    memset(raw_headers, 0, sizeof(raw_headers));
+
+    lstrcpynA(host, remote_host, sizeof(host));
+    colon = strchr(host, ':');
+    if (colon) {
+        *colon = '\0';
+        port = (INTERNET_PORT)atoi(colon + 1);
+    }
+
+    space1 = strchr(p, ' ');
+    if (!space1) return FALSE;
+    method_len = min((size_t)(space1 - p), sizeof(method) - 1);
+    memcpy(method, p, method_len);
+    method[method_len] = '\0';
+
+    path_start = space1 + 1;
+    while (*path_start == ' ') path_start++;
+    space2 = strchr(path_start, ' ');
+    if (!space2) return FALSE;
+    path_len = min((size_t)(space2 - path_start), sizeof(path) - 1);
+    memcpy(path, path_start, path_len);
+    path[path_len] = '\0';
+
+    hdr_start = strstr(req_buf, "\r\n");
+    hdr_end = strstr(req_buf, "\r\n\r\n");
+    if (!hdr_start || !hdr_end) return FALSE;
+    hdr_start += 2;
+
+    /* Build clean headers (skip Host and Content-Length) */
+    line = hdr_start;
+    out = clean_headers;
+    rem = sizeof(clean_headers) - 1;
+    while (line < hdr_end) {
+        const char *next_line = strstr(line, "\r\n");
+        size_t l_len;
+        if (!next_line) break;
+        l_len = (next_line + 2) - line;
+        if (strncasecmp(line, "Host:", 5) != 0 && strncasecmp(line, "Content-Length:", 15) != 0) {
+            size_t to_copy = min(l_len, rem);
+            memcpy(out, line, to_copy);
+            out += to_copy;
+            rem -= to_copy;
+        }
+        line = next_line + 2;
+    }
+    *out = '\0';
+
+    body_start = hdr_end + 4;
+    body_len = req_len > (UINT32)(body_start - req_buf) ? (DWORD)(req_len - (body_start - req_buf)) : 0;
+
+    /* If user.auth.xboxlive.com, sanitize RpsTicket d= prefix to t= */
+    if (strstr(host, "user.auth.xboxlive.com") && body_len > 0)
+    {
+        dyn_body = malloc(body_len + 1);
+        if (dyn_body)
+        {
+            char *tk;
+            memcpy(dyn_body, body_start, body_len);
+            dyn_body[body_len] = '\0';
+            tk = strstr(dyn_body, "\"RpsTicket\":\"d=");
+            if (tk) tk[13] = 't';
+            tk = strstr(dyn_body, "\"RpsTicket\": \"d=");
+            if (tk) tk[14] = 't';
+            body_start = dyn_body;
+        }
+    }
+
+    hInternet = InternetOpenA("XodusNetwork/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInternet) {
+        if (dyn_body) free(dyn_body);
+        return FALSE;
+    }
+
+    hConnect = InternetConnectA(hInternet, host, port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConnect) {
+        InternetCloseHandle(hInternet);
+        if (dyn_body) free(dyn_body);
+        return FALSE;
+    }
+
+    req_flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
+    if (port == 443) req_flags |= INTERNET_FLAG_SECURE;
+
+    hReq = HttpOpenRequestA(hConnect, method, path, "HTTP/1.1", NULL, NULL, req_flags, 0);
+    if (!hReq) {
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        if (dyn_body) free(dyn_body);
+        return FALSE;
+    }
+
+    if (!HttpSendRequestA(hReq, clean_headers, strlen(clean_headers), (void*)body_start, body_len)) {
+        InternetCloseHandle(hReq);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        if (dyn_body) free(dyn_body);
+        return FALSE;
+    }
+
+    if (dyn_body) {
+        free(dyn_body);
+        dyn_body = NULL;
+    }
+
+    if (!HttpQueryInfoA(hReq, HTTP_QUERY_RAW_HEADERS_CRLF, raw_headers, &hlen, &index) || hlen >= resp_buf_size) {
+        InternetCloseHandle(hReq);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return FALSE;
+    }
+
+    memcpy(resp_buf, raw_headers, hlen);
+    *out_resp_len = hlen;
+
+    while (TRUE) {
+        DWORD read = 0;
+        DWORD space = resp_buf_size - 1 - *out_resp_len;
+        if (space == 0) break;
+        if (!InternetReadFile(hReq, resp_buf + *out_resp_len, space, &read) || read == 0) break;
+        *out_resp_len += read;
+    }
+    resp_buf[*out_resp_len] = '\0';
+
+    InternetCloseHandle(hReq);
+    InternetCloseHandle(hConnect);
+    InternetCloseHandle(hInternet);
+    return TRUE;
+}
+
 /* HTTP response synthesis helper */
 static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
 {
@@ -2253,18 +2412,28 @@ static void stream_socket_synthesize_response(struct stream_socket_impl *impl)
     }
     else
     {
-        static const char default_ok[] =
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json; charset=utf-8\r\n"
-            "ETag: \"default_etag\"\r\n"
-            "Content-Length: 2\r\n"
-            "Connection: close\r\n"
-            "\r\n"
-            "{}";
-        memcpy(impl->resp_buf, default_ok, sizeof(default_ok) - 1);
-        impl->resp_len = sizeof(default_ok) - 1;
-        impl->resp_pos = 0;
-        MESSAGE("windows.networking: Serving default 200 OK (%u bytes)\n", impl->resp_len);
+        UINT32 forwarded_len = 0;
+        if (forward_http_request(impl->remote_host, impl->req_buf, impl->req_len, impl->resp_buf, sizeof(impl->resp_buf), &forwarded_len))
+        {
+            impl->resp_len = forwarded_len;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Forwarded HTTP request to [%s] succeeded (%u bytes)\n", impl->remote_host, impl->resp_len);
+        }
+        else
+        {
+            static const char default_ok[] =
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: application/json; charset=utf-8\r\n"
+                "ETag: \"default_etag\"\r\n"
+                "Content-Length: 2\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "{}";
+            memcpy(impl->resp_buf, default_ok, sizeof(default_ok) - 1);
+            impl->resp_len = sizeof(default_ok) - 1;
+            impl->resp_pos = 0;
+            MESSAGE("windows.networking: Serving default 200 OK fallback (%u bytes)\n", impl->resp_len);
+        }
     }
 }
 
@@ -2574,6 +2743,12 @@ static HRESULT WINAPI stream_output_WriteAsync(void *This, void *buffer, void **
     void *byte_access = NULL;
     HRESULT (WINAPI *qi_fn)(void *, REFIID, void **) = (void *)buf_vtbl[0];
     BOOL has_full_req = FALSE;
+    char *hdr_end;
+    size_t hdr_len;
+    const char *cl_str = "Content-Length:";
+    char *cl_pos = NULL;
+    char *p;
+    UINT32 content_len = 0;
 
     EnterCriticalSection(&impl->cs);
     get_len_fn(buffer, &len);
@@ -2601,10 +2776,25 @@ static HRESULT WINAPI stream_output_WriteAsync(void *This, void *buffer, void **
         }
         rel_fn(byte_access);
     }
-    if (strstr(impl->req_buf, "\r\n\r\n"))
+    hdr_end = strstr(impl->req_buf, "\r\n\r\n");
+    if (hdr_end)
     {
-        stream_socket_synthesize_response(impl);
-        has_full_req = TRUE;
+        hdr_len = (hdr_end + 4) - impl->req_buf;
+        cl_pos = NULL;
+        for (p = impl->req_buf; p + 15 <= hdr_end; p++)
+        {
+            if (strncasecmp(p, cl_str, 15) == 0)
+            {
+                cl_pos = p + 15;
+                break;
+            }
+        }
+        content_len = cl_pos ? (UINT32)strtoul(cl_pos, NULL, 10) : 0;
+        if (impl->req_len >= hdr_len + content_len)
+        {
+            stream_socket_synthesize_response(impl);
+            has_full_req = TRUE;
+        }
     }
     LeaveCriticalSection(&impl->cs);
 

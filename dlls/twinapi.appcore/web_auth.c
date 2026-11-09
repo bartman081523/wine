@@ -84,6 +84,8 @@ struct xodus_token_cache {
     WCHAR age_group[32];
     WCHAR privileges[256];
     WCHAR *token;
+    WCHAR *xbl_rps_token;
+    WCHAR *xsts_token;
 };
 static struct xodus_token_cache token_cache;
 
@@ -193,9 +195,13 @@ static void load_xodus_tokens(void)
         if (wcsncmp(h, L"\\??\\", 4) == 0) h += 4;
         swprintf(path, MAX_PATH, L"%s\\.config\\xodus\\tokens.json", h);
     }
-    else
+    else if (GetEnvironmentVariableW(L"USERPROFILE", home, MAX_PATH))
     {
-        wcscpy(path, L"Z:\\home\\julian\\.config\\xodus\\tokens.json");
+        swprintf(path, MAX_PATH, L"%s\\.config\\xodus\\tokens.json", home);
+    }
+    else if (GetEnvironmentVariableW(L"HOME", home, MAX_PATH))
+    {
+        swprintf(path, MAX_PATH, L"Z:%s/.config/xodus/tokens.json", home);
     }
 
     {
@@ -203,17 +209,17 @@ static void load_xodus_tokens(void)
         for (p = path; *p; p++) if (*p == '/') *p = '\\';
     }
 
-    if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
+    if (!path[0] || GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
     {
-        wcscpy(path, L"Z:\\home\\julian\\.config\\xodus\\tokens.json");
+        TRACE("No valid Xodus tokens path resolved\n");
+        token_cache.loaded = TRUE;
+        return;
     }
 
     hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE)
     {
         TRACE("Could not open xodus tokens from %s\n", debugstr_w(path));
-        wcscpy(token_cache.username, L"chlorophyll2730@outlook.com");
-        wcscpy(token_cache.puid, L"00034001209222CE");
         token_cache.loaded = TRUE;
         return;
     }
@@ -296,18 +302,11 @@ static void load_xodus_tokens(void)
                     }
                     if (xsts_tok)
                     {
-                        char xbl_buf[8192];
-                        int tok_wlen;
-                        if (uhs && uhs[0] && strncmp(xsts_tok, "XBL3.0", 6) != 0)
-                            snprintf(xbl_buf, sizeof(xbl_buf), "XBL3.0 x=%s;%s", uhs, xsts_tok);
-                        else
-                            snprintf(xbl_buf, sizeof(xbl_buf), "%s", xsts_tok);
-
-                        tok_wlen = MultiByteToWideChar(CP_UTF8, 0, xbl_buf, -1, NULL, 0);
-                        token_cache.token = malloc((tok_wlen + 1) * sizeof(WCHAR));
-                        if (token_cache.token)
+                        int tok_wlen = MultiByteToWideChar(CP_UTF8, 0, xsts_tok, -1, NULL, 0);
+                        token_cache.xsts_token = malloc((tok_wlen + 1) * sizeof(WCHAR));
+                        if (token_cache.xsts_token)
                         {
-                            MultiByteToWideChar(CP_UTF8, 0, xbl_buf, -1, token_cache.token, tok_wlen);
+                            MultiByteToWideChar(CP_UTF8, 0, xsts_tok, -1, token_cache.xsts_token, tok_wlen);
                         }
                         free(xsts_tok);
                     }
@@ -317,64 +316,68 @@ static void load_xodus_tokens(void)
                 free(xbox_token_b64);
             }
 
-            if (!token_cache.token)
+            user_tokens_b64 = json_get_str(buf, "user-tokens");
+            if (user_tokens_b64)
             {
-                user_tokens_b64 = json_get_str(buf, "user-tokens");
-                if (user_tokens_b64)
+                int dec_len = 0;
+                char *user_tokens = base64_decode(user_tokens_b64, strlen(user_tokens_b64), &dec_len);
+                if (user_tokens)
                 {
-                    int dec_len = 0;
-                    char *user_tokens = base64_decode(user_tokens_b64, strlen(user_tokens_b64), &dec_len);
-                    if (user_tokens)
+                    char *xbl_token = json_get_str(user_tokens, "scope=service::user.auth.xboxlive.com::MBI_SSL&api-version=2.0");
+                    if (!xbl_token)
                     {
-                        char *xbl_token = json_get_str(user_tokens, "scope=service::user.auth.xboxlive.com::MBI_SSL&api-version=2.0");
-                        if (!xbl_token)
+                        const char *p = strstr(user_tokens, "\"d=ey");
+                        if (!p) p = strstr(user_tokens, "\"t=ey");
+                        if (p)
                         {
-                            const char *p = strstr(user_tokens, "\"d=ey");
-                            if (p)
+                            const char *q;
+                            p++;
+                            q = strchr(p, '\"');
+                            if (q)
                             {
-                                const char *q;
-                                p++;
-                                q = strchr(p, '\"');
-                                if (q)
-                                {
-                                    int tlen = q - p;
-                                    xbl_token = malloc(tlen + 1);
-                                    memcpy(xbl_token, p, tlen);
-                                    xbl_token[tlen] = '\0';
-                                }
+                                int tlen = q - p;
+                                xbl_token = malloc(tlen + 1);
+                                memcpy(xbl_token, p, tlen);
+                                xbl_token[tlen] = '\0';
                             }
                         }
-
-                        if (xbl_token)
-                        {
-                            int wlen = MultiByteToWideChar(CP_UTF8, 0, xbl_token, -1, NULL, 0);
-                            token_cache.token = malloc((wlen + 4) * sizeof(WCHAR));
-                            if (token_cache.token)
-                            {
-                                if (xbl_token[0] == 't' && xbl_token[1] == '=')
-                                {
-                                    MultiByteToWideChar(CP_UTF8, 0, xbl_token, -1, token_cache.token, wlen);
-                                }
-                                else
-                                {
-                                    wcscpy(token_cache.token, L"t=");
-                                    MultiByteToWideChar(CP_UTF8, 0, xbl_token, -1, token_cache.token + 2, wlen);
-                                }
-                            }
-                            free(xbl_token);
-                        }
-                        free(user_tokens);
                     }
-                    free(user_tokens_b64);
+
+                    if (xbl_token)
+                    {
+                        int wlen;
+                        if (xbl_token[0] == 'd' && xbl_token[1] == '=')
+                        {
+                            /* Convert d= (device token) to t= (title token) for Xbox Live user authentication */
+                            xbl_token[0] = 't';
+                        }
+                        wlen = MultiByteToWideChar(CP_UTF8, 0, xbl_token, -1, NULL, 0);
+                        token_cache.xbl_rps_token = malloc((wlen + 4) * sizeof(WCHAR));
+                        if (token_cache.xbl_rps_token)
+                        {
+                            if (xbl_token[0] == 't' && xbl_token[1] == '=')
+                            {
+                                MultiByteToWideChar(CP_UTF8, 0, xbl_token, -1, token_cache.xbl_rps_token, wlen);
+                            }
+                            else
+                            {
+                                wcscpy(token_cache.xbl_rps_token, L"t=");
+                                MultiByteToWideChar(CP_UTF8, 0, xbl_token, -1, token_cache.xbl_rps_token + 2, wlen);
+                            }
+                        }
+                        free(xbl_token);
+                    }
+                    free(user_tokens);
                 }
+                free(user_tokens_b64);
             }
+
+            token_cache.token = token_cache.xbl_rps_token ? token_cache.xbl_rps_token : token_cache.xsts_token;
             free(buf);
         }
     }
     CloseHandle(hFile);
 
-    if (!token_cache.username[0]) wcscpy(token_cache.username, L"chlorophyll2730@outlook.com");
-    if (!token_cache.puid[0]) wcscpy(token_cache.puid, L"00034001209222CE");
     token_cache.loaded = TRUE;
     TRACE("Loaded Xodus tokens: user %s, puid %s, has_token %d\n",
           debugstr_w(token_cache.username), debugstr_w(token_cache.puid), token_cache.token != NULL);
@@ -1357,8 +1360,8 @@ static void get_xuid_dec( const WCHAR *puid_hex, WCHAR *out_dec, size_t max_len 
     }
     if (val)
         swprintf( out_dec, max_len, L"%llu", (unsigned long long)val );
-    else
-        wcscpy( out_dec, L"914798515725006" );
+    else if (max_len > 0)
+        out_dec[0] = L'\0';
 }
 
 static void get_gamertag( const WCHAR *username, WCHAR *out_gt, size_t max_len )
@@ -1366,7 +1369,7 @@ static void get_gamertag( const WCHAR *username, WCHAR *out_gt, size_t max_len )
     const WCHAR *at;
     if (!username || !*username)
     {
-        lstrcpynW( out_gt, L"chlorophyll2730", max_len );
+        lstrcpynW( out_gt, L"Player", max_len );
         return;
     }
     at = wcschr( username, L'@' );
@@ -1583,7 +1586,16 @@ static HRESULT web_token_response_create( const WCHAR *token_str, void *account,
     else
         get_gamertag( token_cache.username, gamertag, ARRAYSIZE(gamertag) );
 
-    WindowsCreateString( token_str ? token_str : L"", wcslen( token_str ? token_str : L"" ), &impl->token );
+    if (token_str && token_cache.user_hash[0] && token_cache.xsts_token && wcscmp(token_str, token_cache.xsts_token) == 0)
+    {
+        WCHAR full_xbl[4096];
+        swprintf(full_xbl, ARRAYSIZE(full_xbl), L"XBL3.0 x=%s;%s", token_cache.user_hash, token_cache.xsts_token);
+        WindowsCreateString( full_xbl, wcslen( full_xbl ), &impl->token );
+    }
+    else
+    {
+        WindowsCreateString( token_str ? token_str : L"", wcslen( token_str ? token_str : L"" ), &impl->token );
+    }
     map_hstring_hstring_create( &impl->properties );
     if (impl->properties)
     {
@@ -1596,6 +1608,8 @@ static HRESULT web_token_response_create( const WCHAR *token_str, void *account,
         map_insert_str( impl->properties, L"AgeGroup", token_cache.age_group[0] ? token_cache.age_group : L"Adult" );
         map_insert_str( impl->properties, L"Privileges", token_cache.privileges );
         map_insert_str( impl->properties, L"TitleRestrictions", L"" );
+        map_insert_str( impl->properties, L"Signature", L"" );
+        map_insert_str( impl->properties, L"signature", L"" );
         if (token_cache.user_hash[0])
         {
             map_insert_str( impl->properties, L"UserHash", token_cache.user_hash );
@@ -2719,8 +2733,86 @@ static HRESULT build_token_request_result( void *req, void *webAccount, void **o
     void *vector_view = NULL;
     void *result = NULL;
     struct web_token_request *req_impl = req ? impl_from_IWebTokenRequest( req ) : NULL;
+    const WCHAR *scope = NULL;
+    const WCHAR *token_to_use = NULL;
+    BOOL is_xbl_rps = FALSE;
+    BOOL is_service_endpoint = FALSE;
 
     load_xodus_tokens();
+
+    if (req_impl && req_impl->scope)
+        scope = WindowsGetStringRawBuffer( req_impl->scope, NULL );
+
+    if (scope && *scope)
+    {
+        TRACE("build_token_request_result requested scope: %s\n", debugstr_w(scope));
+        if (wcsstr(scope, L"user.auth.xboxlive.com") || wcsstr(scope, L"MBI_SSL"))
+            is_xbl_rps = TRUE;
+        else if (wcsstr(scope, L"xboxlive.com") || wcsstr(scope, L"xsts"))
+            is_service_endpoint = TRUE;
+    }
+
+    if (req_impl && req_impl->properties)
+    {
+        struct map_hstring_hstring *pmap = impl_from_IMap( req_impl->properties );
+        UINT32 i;
+        EnterCriticalSection( &pmap->cs );
+        for (i = 0; i < pmap->count; i++)
+        {
+            const WCHAR *k = WindowsGetStringRawBuffer( pmap->entries[i].key, NULL );
+            const WCHAR *v = WindowsGetStringRawBuffer( pmap->entries[i].value, NULL );
+            if (!k || !v) continue;
+            TRACE("build_token_request_result property: %s = %s\n", debugstr_w(k), debugstr_w(v));
+            if (wcscmp(k, L"Url") == 0)
+            {
+                if (wcsstr(v, L"titlestorage") || wcsstr(v, L"userpresence") ||
+                    wcsstr(v, L"notify") || wcsstr(v, L"rta.xboxlive") ||
+                    wcsstr(v, L"profile") || wcsstr(v, L"achievements") ||
+                    wcsstr(v, L"leaderboards") || wcsstr(v, L"peoplehub"))
+                {
+                    is_service_endpoint = TRUE;
+                }
+            }
+            if (wcscmp(k, L"Target") == 0 || wcscmp(k, L"Policy") == 0)
+            {
+                if (wcsstr(v, L"user.auth.xboxlive.com") || wcsstr(v, L"MBI_SSL"))
+                    is_xbl_rps = TRUE;
+            }
+        }
+        LeaveCriticalSection( &pmap->cs );
+    }
+
+    if (is_service_endpoint && token_cache.xsts_token && token_cache.xsts_token[0])
+    {
+        token_to_use = token_cache.xsts_token;
+    }
+    else if (is_xbl_rps && !is_service_endpoint && token_cache.xbl_rps_token && token_cache.xbl_rps_token[0])
+    {
+        token_to_use = token_cache.xbl_rps_token;
+    }
+    else if (token_cache.xsts_token && token_cache.xsts_token[0])
+    {
+        token_to_use = token_cache.xsts_token;
+    }
+    else if (token_cache.token && token_cache.token[0])
+    {
+        token_to_use = token_cache.token;
+    }
+    else if (token_cache.xbl_rps_token && token_cache.xbl_rps_token[0])
+    {
+        token_to_use = token_cache.xbl_rps_token;
+    }
+
+    TRACE("Selected token_to_use: is_xbl_rps=%d, is_service_endpoint=%d, has_token=%d\n",
+          is_xbl_rps, is_service_endpoint, token_to_use != NULL);
+
+    if (!token_to_use || !token_to_use[0])
+    {
+        TRACE("No active Xodus token available for scope %s, returning WebTokenRequestStatus_UserCancel\n", debugstr_w(scope));
+        web_token_request_result_create( NULL, 1 /* WebTokenRequestStatus_UserCancel */, &result );
+        *out_result = result;
+        return S_OK;
+    }
 
     if (webAccount)
     {
@@ -2741,7 +2833,7 @@ static HRESULT build_token_request_result( void *req, void *webAccount, void **o
         web_account_create( provider, token_cache.username, token_cache.xuid[0] ? token_cache.xuid : token_cache.puid, &account );
     }
 
-    web_token_response_create( token_cache.token ? token_cache.token : L"", account, &token_response );
+    web_token_response_create( token_to_use, account, &token_response );
     vector_view_response_create( token_response, &vector_view );
     web_token_request_result_create( vector_view, 0 /* WebTokenRequestStatus_Success */, &result );
 

@@ -20,12 +20,74 @@
 #include "private.h"
 #include "initguid.h"
 #include "weakref.h"
+#include "winuser.h"
 
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ui);
 
 static EventRegistrationToken dummy_cookie = {.value = 0xdeadbeef};
+
+static const GUID IID_ComWrappers_internal =
+    {0x11d3b13a, 0x180e, 0x4789, {0xa8, 0xbe, 0x77, 0x12, 0x88, 0x28, 0x93, 0xe6}};
+
+static HRESULT WINAPI redhawk_interop_stub(void *This, ...) { return S_OK; }
+
+static DWORD get_app_theme(void)
+{
+    static const WCHAR *subkey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
+    static const WCHAR *name = L"AppsUseLightTheme";
+    static const HKEY root = HKEY_CURRENT_USER;
+    DWORD ret = 0, len = sizeof(ret), type;
+    HKEY hkey;
+
+    if (RegOpenKeyExW( root, subkey, 0, KEY_QUERY_VALUE, &hkey )) return 1;
+    if (RegQueryValueExW( hkey, name, NULL, &type, (BYTE *)&ret, &len ) || type != REG_DWORD) ret = 1;
+    RegCloseKey( hkey );
+    return ret;
+}
+
+static DWORD initialize_accent_palette( HKEY hkey, DWORD offset )
+{
+    DWORD palette[7] = { 0x00ffd8a6, 0x00edb976, 0x00e39c42, 0x00d77800, 0x009e5a00, 0x00754200, 0x00422600 };
+    DWORD len = sizeof(palette);
+
+    RegSetValueExW( hkey, L"AccentPalette", 0, REG_BINARY, (const BYTE *)&palette, len );
+    return palette[offset];
+}
+
+static void dword_to_color( DWORD color, Color *out )
+{
+    out->R = color & 0xFF;
+    out->G = (color >> 8) & 0xFF;
+    out->B = (color >> 16) & 0xFF;
+    out->A = 0xFF;
+}
+
+static void get_accent_palette_color( DWORD offset, Color *out )
+{
+    DWORD palette[7];
+    DWORD ret = 0, len = sizeof(palette), type;
+    HKEY hkey;
+
+    if (!RegCreateKeyW( HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent", &hkey ))
+    {
+        if (RegQueryValueExW( hkey, L"AccentPalette", NULL, &type, (BYTE *)&palette, &len ) || type != REG_BINARY)
+            ret = initialize_accent_palette( hkey, offset );
+        else
+            ret = palette[offset];
+        RegCloseKey( hkey );
+    }
+    dword_to_color( ret, out );
+}
+
+static void set_color_value( BYTE a, BYTE r, BYTE g, BYTE b, Color *out )
+{
+    out->A = a;
+    out->R = r;
+    out->G = g;
+    out->B = b;
+}
 
 struct uisettings
 {
@@ -34,6 +96,7 @@ struct uisettings
     IUISettings3 IUISettings3_iface;
     IUISettings4 IUISettings4_iface;
     IUISettings5 IUISettings5_iface;
+    struct { const void *lpVtbl; } IRedhawkInterop_iface;
     struct weak_reference_source weak_reference_source;
 };
 
@@ -41,6 +104,44 @@ static inline struct uisettings *impl_from_IUISettings( IUISettings *iface )
 {
     return CONTAINING_RECORD( iface, struct uisettings, IUISettings_iface );
 }
+
+static HRESULT WINAPI uisettings_QueryInterface( IUISettings *iface, REFIID iid, void **out );
+static ULONG WINAPI uisettings_AddRef( IUISettings *iface );
+static ULONG WINAPI uisettings_Release( IUISettings *iface );
+static HRESULT WINAPI uisettings_GetRuntimeClassName( IUISettings *iface, HSTRING *class_name );
+static HRESULT WINAPI uisettings_GetTrustLevel( IUISettings *iface, TrustLevel *trust_level );
+
+static HRESULT WINAPI redhawk_uisettings_QI(void *This, REFIID riid, void **out)
+{
+    struct uisettings *impl = (struct uisettings *)((char *)This - offsetof(struct uisettings, IRedhawkInterop_iface));
+    return uisettings_QueryInterface(&impl->IUISettings_iface, riid, out);
+}
+static ULONG WINAPI redhawk_uisettings_AddRef(void *This)
+{
+    struct uisettings *impl = (struct uisettings *)((char *)This - offsetof(struct uisettings, IRedhawkInterop_iface));
+    return uisettings_AddRef(&impl->IUISettings_iface);
+}
+static ULONG WINAPI redhawk_uisettings_Release(void *This)
+{
+    struct uisettings *impl = (struct uisettings *)((char *)This - offsetof(struct uisettings, IRedhawkInterop_iface));
+    return uisettings_Release(&impl->IUISettings_iface);
+}
+
+static const void *redhawk_uisettings_vtbl[32] = {
+    (void *)redhawk_uisettings_QI,
+    (void *)redhawk_uisettings_AddRef,
+    (void *)redhawk_uisettings_Release,
+    (void *)redhawk_interop_stub,
+    (void *)uisettings_GetRuntimeClassName,
+    (void *)uisettings_GetTrustLevel,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub
+};
 
 static HRESULT WINAPI uisettings_QueryInterface( IUISettings *iface, REFIID iid, void **out )
 {
@@ -77,6 +178,10 @@ static HRESULT WINAPI uisettings_QueryInterface( IUISettings *iface, REFIID iid,
     {
         *out = &impl->weak_reference_source.IWeakReferenceSource_iface;
     }
+    else if (IsEqualGUID( iid, &IID_ComWrappers_internal ))
+    {
+        *out = &impl->IRedhawkInterop_iface;
+    }
 
     if (!*out)
     {
@@ -109,59 +214,98 @@ static ULONG WINAPI uisettings_Release( IUISettings *iface )
 
 static HRESULT WINAPI uisettings_GetIids( IUISettings *iface, ULONG *iid_count, IID **iids )
 {
-    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
-    return E_NOTIMPL;
+    IID *array;
+    TRACE( "iface %p, iid_count %p, iids %p\n", iface, iid_count, iids );
+    if (!iid_count || !iids) return E_INVALIDARG;
+    if (!(array = CoTaskMemAlloc( 5 * sizeof(IID) ))) return E_OUTOFMEMORY;
+    array[0] = IID_IUISettings;
+    array[1] = IID_IUISettings2;
+    array[2] = IID_IUISettings3;
+    array[3] = IID_IUISettings4;
+    array[4] = IID_IUISettings5;
+    *iid_count = 5;
+    *iids = array;
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_GetRuntimeClassName( IUISettings *iface, HSTRING *class_name )
 {
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    TRACE( "iface %p, class_name %p\n", iface, class_name );
+    if (!class_name) return E_INVALIDARG;
+    return WindowsCreateString( RuntimeClass_Windows_UI_ViewManagement_UISettings,
+                                ARRAY_SIZE(RuntimeClass_Windows_UI_ViewManagement_UISettings) - 1,
+                                class_name );
 }
 
 static HRESULT WINAPI uisettings_GetTrustLevel( IUISettings *iface, TrustLevel *trust_level )
 {
-    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
-    return E_NOTIMPL;
+    TRACE( "iface %p, trust_level %p\n", iface, trust_level );
+    if (!trust_level) return E_POINTER;
+    *trust_level = BaseTrust;
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_HandPreference( IUISettings *iface, enum HandPreference *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    *value = HandPreference_RightHanded;
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_CursorSize( IUISettings *iface, struct Size *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    value->Width = (float)GetSystemMetrics( SM_CXCURSOR );
+    value->Height = (float)GetSystemMetrics( SM_CYCURSOR );
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_ScrollBarSize( IUISettings *iface, struct Size *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    value->Width = (float)GetSystemMetrics( SM_CXVSCROLL );
+    value->Height = (float)GetSystemMetrics( SM_CYHSCROLL );
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_ScrollBarArrowSize( IUISettings *iface, struct Size *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    value->Width = (float)GetSystemMetrics( SM_CXVSCROLL );
+    value->Height = (float)GetSystemMetrics( SM_CYHSCROLL );
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_ScrollBarThumbBoxSize( IUISettings *iface, struct Size *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    value->Width = (float)GetSystemMetrics( SM_CXVSCROLL );
+    value->Height = (float)GetSystemMetrics( SM_CYHSCROLL );
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_MessageDuration( IUISettings *iface, UINT32 *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    *value = 5;
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_AnimationsEnabled( IUISettings *iface, boolean *value )
+{
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    *value = TRUE;
+    return S_OK;
+}
+
+static HRESULT WINAPI uisettings_get_CaretBrowsingEnabled( IUISettings *iface, boolean *value )
 {
     TRACE( "iface %p, value %p\n", iface, value );
     if (!value) return E_INVALIDARG;
@@ -169,39 +313,95 @@ static HRESULT WINAPI uisettings_get_AnimationsEnabled( IUISettings *iface, bool
     return S_OK;
 }
 
-static HRESULT WINAPI uisettings_get_CaretBrowsingEnabled( IUISettings *iface, boolean *value )
-{
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
-}
-
 static HRESULT WINAPI uisettings_get_CaretBlinkRate( IUISettings *iface, UINT32 *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    *value = GetCaretBlinkTime();
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_CaretWidth( IUISettings *iface, UINT32 *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    DWORD width = 1;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    SystemParametersInfoW( SPI_GETCARETWIDTH, 0, &width, 0 );
+    *value = width;
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_DoubleClickTime( IUISettings *iface, UINT32 *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    *value = GetDoubleClickTime();
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_get_MouseHoverTime( IUISettings *iface, UINT32 *value )
 {
-    FIXME( "iface %p, value %p stub!\n", iface, value );
-    return E_NOTIMPL;
+    DWORD time = 400;
+    TRACE( "iface %p, value %p\n", iface, value );
+    if (!value) return E_INVALIDARG;
+    SystemParametersInfoW( SPI_GETMOUSEHOVERTIME, 0, &time, 0 );
+    *value = time;
+    return S_OK;
 }
 
 static HRESULT WINAPI uisettings_UIElementColor( IUISettings *iface, enum UIElementType element, struct Color *value )
 {
-    FIXME( "iface %p, element %d value %p stub!\n", iface, element, value );
+    DWORD sys_color;
+    static const int sys_color_map[] = {
+        COLOR_ACTIVECAPTION,           /* UIElementType_ActiveCaption = 0 */
+        COLOR_BACKGROUND,              /* UIElementType_Background = 1 */
+        COLOR_BTNFACE,                 /* UIElementType_ButtonFace = 2 */
+        COLOR_BTNTEXT,                 /* UIElementType_ButtonText = 3 */
+        COLOR_CAPTIONTEXT,             /* UIElementType_CaptionText = 4 */
+        COLOR_GRAYTEXT,                /* UIElementType_GrayText = 5 */
+        COLOR_HIGHLIGHT,               /* UIElementType_Highlight = 6 */
+        COLOR_HIGHLIGHTTEXT,           /* UIElementType_HighlightText = 7 */
+        COLOR_HOTLIGHT,                /* UIElementType_Hotlight = 8 */
+        COLOR_INACTIVECAPTION,         /* UIElementType_InactiveCaption = 9 */
+        COLOR_INACTIVECAPTIONTEXT,     /* UIElementType_InactiveCaptionText = 10 */
+        COLOR_WINDOW,                  /* UIElementType_Window = 11 */
+        COLOR_WINDOWTEXT,              /* UIElementType_WindowText = 12 */
+    };
+
+    TRACE( "iface %p, element %d, value %p.\n", iface, element, value );
+    if (!value) return E_INVALIDARG;
+
+    if (element >= 0 && element < ARRAY_SIZE(sys_color_map))
+    {
+        sys_color = GetSysColor( sys_color_map[element] );
+        dword_to_color( sys_color, value );
+        return S_OK;
+    }
+    if (element == 1000 /* UIElementType_AccentColor */)
+    {
+        get_accent_palette_color( 3, value );
+        return S_OK;
+    }
+    if (element == 1001 /* UIElementType_TextHigh */)
+    {
+        DWORD theme = get_app_theme();
+        set_color_value( 255, theme ? 0 : 255, theme ? 0 : 255, theme ? 0 : 255, value );
+        return S_OK;
+    }
+    if (element == 1002 /* UIElementType_TextMedium */)
+    {
+        DWORD theme = get_app_theme();
+        set_color_value( 180, theme ? 0 : 255, theme ? 0 : 255, theme ? 0 : 255, value );
+        return S_OK;
+    }
+    if (element == 1003 /* UIElementType_TextLow */)
+    {
+        DWORD theme = get_app_theme();
+        set_color_value( 120, theme ? 0 : 255, theme ? 0 : 255, theme ? 0 : 255, value );
+        return S_OK;
+    }
+
+    FIXME( "element %d not supported\n", element );
     return E_NOTIMPL;
 }
 
@@ -273,62 +473,6 @@ static const struct IUISettings2Vtbl uisettings2_vtbl =
 };
 
 DEFINE_IINSPECTABLE( uisettings3, IUISettings3, struct uisettings, IUISettings_iface );
-
-static DWORD get_app_theme(void)
-{
-    static const WCHAR *subkey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
-    static const WCHAR *name = L"AppsUseLightTheme";
-    static const HKEY root = HKEY_CURRENT_USER;
-    DWORD ret = 0, len = sizeof(ret), type;
-    HKEY hkey;
-
-    if (RegOpenKeyExW( root, subkey, 0, KEY_QUERY_VALUE, &hkey )) return 1;
-    if (RegQueryValueExW( hkey, name, NULL, &type, (BYTE *)&ret, &len ) || type != REG_DWORD) ret = 1;
-    RegCloseKey( hkey );
-    return ret;
-}
-
-static DWORD initialize_accent_palette( HKEY hkey, DWORD offset )
-{
-    DWORD palette[7] = { 0x00ffd8a6, 0x00edb976, 0x00e39c42, 0x00d77800, 0x009e5a00, 0x00754200, 0x00422600 };
-    DWORD len = sizeof(palette);
-
-    RegSetValueExW( hkey, L"AccentPalette", 0, REG_BINARY, (const BYTE *)&palette, len );
-    return palette[offset];
-}
-
-static void dword_to_color( DWORD color, Color *out )
-{
-    out->R = color & 0xFF;
-    out->G = (color >> 8) & 0xFF;
-    out->B = (color >> 16) & 0xFF;
-    out->A = 0xFF;
-}
-
-static void get_accent_palette_color( DWORD offset, Color *out )
-{
-    DWORD palette[7];
-    DWORD ret = 0, len = sizeof(palette), type;
-    HKEY hkey;
-
-    if (!RegCreateKeyW( HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent", &hkey ))
-    {
-        if (RegQueryValueExW( hkey, L"AccentPalette", NULL, &type, (BYTE *)&palette, &len ) || type != REG_BINARY)
-            ret = initialize_accent_palette( hkey, offset );
-        else
-            ret = palette[offset];
-        RegCloseKey( hkey );
-    }
-    dword_to_color( ret, out );
-}
-
-static void set_color_value( BYTE a, BYTE r, BYTE g, BYTE b, Color *out )
-{
-    out->A = a;
-    out->R = r;
-    out->G = g;
-    out->B = b;
-}
 
 static HRESULT WINAPI uisettings3_GetColorValue( IUISettings3 *iface, UIColorType type, Color *value )
 {
@@ -482,6 +626,7 @@ static const struct IUISettings5Vtbl uisettings5_vtbl =
 struct uisettings_statics
 {
     IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } IRedhawkInterop_iface;
     LONG ref;
 };
 
@@ -489,6 +634,44 @@ static inline struct uisettings_statics *impl_from_IActivationFactory( IActivati
 {
     return CONTAINING_RECORD( iface, struct uisettings_statics, IActivationFactory_iface );
 }
+
+static HRESULT WINAPI factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out );
+static ULONG WINAPI factory_AddRef( IActivationFactory *iface );
+static ULONG WINAPI factory_Release( IActivationFactory *iface );
+static HRESULT WINAPI factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name );
+static HRESULT WINAPI factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *trust_level );
+
+static HRESULT WINAPI redhawk_factory_QI(void *This, REFIID riid, void **out)
+{
+    struct uisettings_statics *impl = (struct uisettings_statics *)((char *)This - offsetof(struct uisettings_statics, IRedhawkInterop_iface));
+    return factory_QueryInterface(&impl->IActivationFactory_iface, riid, out);
+}
+static ULONG WINAPI redhawk_factory_AddRef(void *This)
+{
+    struct uisettings_statics *impl = (struct uisettings_statics *)((char *)This - offsetof(struct uisettings_statics, IRedhawkInterop_iface));
+    return factory_AddRef(&impl->IActivationFactory_iface);
+}
+static ULONG WINAPI redhawk_factory_Release(void *This)
+{
+    struct uisettings_statics *impl = (struct uisettings_statics *)((char *)This - offsetof(struct uisettings_statics, IRedhawkInterop_iface));
+    return factory_Release(&impl->IActivationFactory_iface);
+}
+
+static const void *redhawk_factory_vtbl[32] = {
+    (void *)redhawk_factory_QI,
+    (void *)redhawk_factory_AddRef,
+    (void *)redhawk_factory_Release,
+    (void *)redhawk_interop_stub,
+    (void *)factory_GetRuntimeClassName,
+    (void *)factory_GetTrustLevel,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub
+};
 
 static HRESULT WINAPI factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out )
 {
@@ -503,6 +686,13 @@ static HRESULT WINAPI factory_QueryInterface( IActivationFactory *iface, REFIID 
     {
         *out = &impl->IActivationFactory_iface;
         IInspectable_AddRef( *out );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( iid, &IID_ComWrappers_internal ))
+    {
+        *out = &impl->IRedhawkInterop_iface;
+        IInspectable_AddRef( (IInspectable *)&impl->IActivationFactory_iface );
         return S_OK;
     }
 
@@ -535,14 +725,19 @@ static HRESULT WINAPI factory_GetIids( IActivationFactory *iface, ULONG *iid_cou
 
 static HRESULT WINAPI factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name )
 {
-    FIXME( "iface %p, class_name %p stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    TRACE( "iface %p, class_name %p.\n", iface, class_name );
+    if (!class_name) return E_INVALIDARG;
+    return WindowsCreateString( RuntimeClass_Windows_UI_ViewManagement_UISettings,
+                                ARRAY_SIZE(RuntimeClass_Windows_UI_ViewManagement_UISettings) - 1,
+                                class_name );
 }
 
 static HRESULT WINAPI factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *trust_level )
 {
-    FIXME( "iface %p, trust_level %p stub!\n", iface, trust_level );
-    return E_NOTIMPL;
+    TRACE( "iface %p, trust_level %p.\n", iface, trust_level );
+    if (!trust_level) return E_POINTER;
+    *trust_level = BaseTrust;
+    return S_OK;
 }
 
 static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInspectable **instance )
@@ -563,6 +758,7 @@ static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInsp
     impl->IUISettings3_iface.lpVtbl = &uisettings3_vtbl;
     impl->IUISettings4_iface.lpVtbl = &uisettings4_vtbl;
     impl->IUISettings5_iface.lpVtbl = &uisettings5_vtbl;
+    impl->IRedhawkInterop_iface.lpVtbl = redhawk_uisettings_vtbl;
 
     if (FAILED(hr = weak_reference_source_init( &impl->weak_reference_source,
                                                 (IUnknown *)&impl->IUISettings_iface )))
@@ -572,7 +768,7 @@ static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInsp
         return hr;
     }
 
-    *instance = (IInspectable *)&impl->IUISettings5_iface;
+    *instance = (IInspectable *)&impl->IUISettings_iface;
     return S_OK;
 }
 
@@ -592,6 +788,7 @@ static const struct IActivationFactoryVtbl factory_vtbl =
 static struct uisettings_statics uisettings_statics =
 {
     {&factory_vtbl},
+    {redhawk_factory_vtbl},
     1,
 };
 

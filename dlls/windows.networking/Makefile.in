@@ -1,5 +1,5 @@
 MODULE = windows.networking.dll
-IMPORTS = combase
+IMPORTS = combase wininet
 
 SOURCES = \
 	main.c

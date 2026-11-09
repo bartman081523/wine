@@ -1119,34 +1119,167 @@ static IActivationFactory *logging_fields_factory = &default_logging_fields_fact
 static const GUID IID_IAsyncCausalityTracerStatics =
     {0x50850b26, 0x267e, 0x451b, {0xa8, 0x90, 0xab, 0x6a, 0x37, 0x02, 0x45, 0xee}};
 
-static HRESULT WINAPI causality_tracer_QueryInterface( void *iface, REFIID riid, void **out )
+struct causality_tracer
 {
+    IActivationFactory IActivationFactory_iface;
+    struct { const void *lpVtbl; } IAsyncCausalityTracerStatics_iface;
+    LONG ref;
+};
+
+static inline struct causality_tracer *impl_from_causality_factory( IActivationFactory *iface )
+{
+    return CONTAINING_RECORD( iface, struct causality_tracer, IActivationFactory_iface );
+}
+
+static inline struct causality_tracer *impl_from_causality_statics( void *iface )
+{
+    return CONTAINING_RECORD( iface, struct causality_tracer, IAsyncCausalityTracerStatics_iface );
+}
+
+static HRESULT WINAPI causality_tracer_QueryInterface( IActivationFactory *iface, REFIID riid, void **out )
+{
+    struct causality_tracer *impl = impl_from_causality_factory( iface );
     if (!out) return E_POINTER;
-    *out = iface;
+    *out = NULL;
+
+    if (IsEqualGUID( riid, &IID_IUnknown ) ||
+        IsEqualGUID( riid, &IID_IInspectable ) ||
+        IsEqualGUID( riid, &IID_IAgileObject ) ||
+        IsEqualGUID( riid, &IID_IActivationFactory ))
+    {
+        *out = &impl->IActivationFactory_iface;
+        IActivationFactory_AddRef( iface );
+        return S_OK;
+    }
+    if (IsEqualGUID( riid, &IID_IAsyncCausalityTracerStatics ))
+    {
+        *out = &impl->IAsyncCausalityTracerStatics_iface;
+        IActivationFactory_AddRef( iface );
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI causality_tracer_AddRef( IActivationFactory *iface )
+{
+    struct causality_tracer *impl = impl_from_causality_factory( iface );
+    return InterlockedIncrement( &impl->ref );
+}
+
+static ULONG WINAPI causality_tracer_Release( IActivationFactory *iface )
+{
+    struct causality_tracer *impl = impl_from_causality_factory( iface );
+    return InterlockedDecrement( &impl->ref );
+}
+
+static HRESULT WINAPI causality_tracer_GetIids( IActivationFactory *iface, ULONG *c, IID **i )
+{
+    if (c) *c = 0;
+    if (i) *i = NULL;
     return S_OK;
 }
-static ULONG WINAPI causality_tracer_AddRef( void *iface ) { return 2; }
-static ULONG WINAPI causality_tracer_Release( void *iface ) { return 1; }
-static HRESULT WINAPI causality_tracer_GetIids( void *iface, ULONG *c, IID **i ) { if (c) *c = 0; return S_OK; }
-static HRESULT WINAPI causality_tracer_GetRuntimeClassName( void *iface, HSTRING *s )
+
+static HRESULT WINAPI causality_tracer_GetRuntimeClassName( IActivationFactory *iface, HSTRING *s )
 {
     return WindowsCreateString( L"Windows.Foundation.Diagnostics.AsyncCausalityTracer", 51, s );
 }
-static HRESULT WINAPI causality_tracer_GetTrustLevel( void *iface, TrustLevel *t ) { if (t) *t = BaseTrust; return S_OK; }
-static HRESULT WINAPI causality_tracer_ActivateInstance( void *iface, IInspectable **inst ) { return E_NOTIMPL; }
 
-static const void *causality_tracer_vtbl[16] = {
+static HRESULT WINAPI causality_tracer_GetTrustLevel( IActivationFactory *iface, TrustLevel *t )
+{
+    if (!t) return E_INVALIDARG;
+    *t = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI causality_tracer_ActivateInstance( IActivationFactory *iface, IInspectable **inst )
+{
+    if (inst) *inst = NULL;
+    return E_NOTIMPL;
+}
+
+static const struct IActivationFactoryVtbl causality_factory_vtbl =
+{
     causality_tracer_QueryInterface,
     causality_tracer_AddRef,
     causality_tracer_Release,
     causality_tracer_GetIids,
     causality_tracer_GetRuntimeClassName,
     causality_tracer_GetTrustLevel,
-    causality_tracer_ActivateInstance,
-    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
-    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
-    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok
+    causality_tracer_ActivateInstance
 };
 
-static struct { const void *lpVtbl; } default_causality_tracer_factory = { causality_tracer_vtbl };
-static IActivationFactory *async_causality_tracer_factory = (IActivationFactory *)&default_causality_tracer_factory;
+static HRESULT WINAPI causality_statics_QueryInterface( void *iface, REFIID riid, void **out )
+{
+    struct causality_tracer *impl = impl_from_causality_statics( iface );
+    return causality_tracer_QueryInterface( &impl->IActivationFactory_iface, riid, out );
+}
+
+static ULONG WINAPI causality_statics_AddRef( void *iface )
+{
+    struct causality_tracer *impl = impl_from_causality_statics( iface );
+    return causality_tracer_AddRef( &impl->IActivationFactory_iface );
+}
+
+static ULONG WINAPI causality_statics_Release( void *iface )
+{
+    struct causality_tracer *impl = impl_from_causality_statics( iface );
+    return causality_tracer_Release( &impl->IActivationFactory_iface );
+}
+
+static HRESULT WINAPI causality_statics_GetIids( void *iface, ULONG *c, IID **i )
+{
+    if (c) *c = 0;
+    if (i) *i = NULL;
+    return S_OK;
+}
+
+static HRESULT WINAPI causality_statics_GetRuntimeClassName( void *iface, HSTRING *s )
+{
+    return WindowsCreateString( L"Windows.Foundation.Diagnostics.AsyncCausalityTracer", 51, s );
+}
+
+static HRESULT WINAPI causality_statics_GetTrustLevel( void *iface, TrustLevel *t )
+{
+    if (!t) return E_INVALIDARG;
+    *t = BaseTrust;
+    return S_OK;
+}
+
+static HRESULT WINAPI causality_statics_add_TracingStatusChanged( void *iface, void *handler, EventRegistrationToken *token )
+{
+    if (token) token->value = 1;
+    return S_OK;
+}
+
+static const void *causality_statics_vtbl[32] =
+{
+    causality_statics_QueryInterface,
+    causality_statics_AddRef,
+    causality_statics_Release,
+    causality_statics_GetIids,
+    causality_statics_GetRuntimeClassName,
+    causality_statics_GetTrustLevel,
+    diagnostics_stub_ok, /* 6: TraceOperationCreation */
+    diagnostics_stub_ok, /* 7: TraceOperationCompletion */
+    diagnostics_stub_ok, /* 8: TraceOperationRelation */
+    diagnostics_stub_ok, /* 9: TraceSynchronousWorkStart */
+    diagnostics_stub_ok, /* 10: TraceSynchronousWorkCompletion */
+    causality_statics_add_TracingStatusChanged, /* 11: add_TracingStatusChanged */
+    diagnostics_stub_ok, /* 12: remove_TracingStatusChanged */
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
+    diagnostics_stub_ok, diagnostics_stub_ok, diagnostics_stub_ok,
+    diagnostics_stub_ok
+};
+
+static struct causality_tracer default_causality_tracer =
+{
+    {&causality_factory_vtbl},
+    {causality_statics_vtbl},
+    1
+};
+
+static IActivationFactory *async_causality_tracer_factory = &default_causality_tracer.IActivationFactory_iface;

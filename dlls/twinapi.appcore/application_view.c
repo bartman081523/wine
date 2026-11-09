@@ -145,6 +145,7 @@ struct application_view_impl
     boolean is_fullscreen;
     RECT saved_rect;
     DWORD saved_style;
+    HSTRING title;
 };
 
 #define impl_from_IApplicationView(ptr)  ((struct application_view_impl *)((char *)(ptr) - offsetof(struct application_view_impl, IApplicationView_iface)))
@@ -257,11 +258,22 @@ static HRESULT WINAPI view_get_IsScreenCaptureEnabled(void *This, boolean *value
     return S_OK;
 }
 static HRESULT WINAPI view_put_IsScreenCaptureEnabled(void *This, boolean value) { return S_OK; }
-static HRESULT WINAPI view_put_Title(void *This, HSTRING value) { return S_OK; }
+static HRESULT WINAPI view_put_Title(void *This, HSTRING value)
+{
+    struct application_view_impl *impl = impl_from_IApplicationView(This);
+    TRACE("This %p, value %p\n", This, value);
+    if (impl->title) WindowsDeleteString(impl->title);
+    impl->title = NULL;
+    if (value) WindowsDuplicateString(value, &impl->title);
+    return S_OK;
+}
 static HRESULT WINAPI view_get_Title(void *This, HSTRING *value)
 {
+    struct application_view_impl *impl = impl_from_IApplicationView(This);
     if (!value) return E_POINTER;
-    return WindowsCreateString(L"Calculator", 10, value);
+    if (impl->title)
+        return WindowsDuplicateString(impl->title, value);
+    return WindowsCreateString(L"", 0, value);
 }
 static HRESULT WINAPI view_get_Id(void *This, INT32 *value)
 {

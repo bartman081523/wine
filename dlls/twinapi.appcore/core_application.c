@@ -482,6 +482,10 @@ static const IID IID_ICoreApplicationViewTitleBar_local =
     {0x006d35e3,0xe1f1,0x431b,{0x95,0x08,0x29,0xb9,0x69,0x26,0xac,0x53}};
 static const IID IID_IAgileObject_local =
     {0x94ea2b94,0xe9cc,0x49e0,{0xc0,0xff,0xee,0x64,0xca,0x8f,0x5b,0x90}};
+static const GUID IID_ComWrappers_internal =
+    {0x11d3b13a,0x180e,0x4789,{0xa8,0xbe,0x77,0x12,0x88,0x28,0x93,0xe6}};
+
+static HRESULT WINAPI redhawk_interop_stub(void *This, void *a1, void *a2, void *a3) { return S_OK; }
 
 /* =========================================================================
  * Windows.ApplicationModel.Core.CoreApplicationViewTitleBar
@@ -489,6 +493,7 @@ static const IID IID_IAgileObject_local =
 struct core_view_titlebar
 {
     ICoreApplicationViewTitleBar ICoreApplicationViewTitleBar_iface;
+    struct { const void *lpVtbl; } IRedhawkInterop_iface;
     LONG ref;
     boolean extend_into_titlebar;
 };
@@ -508,6 +513,13 @@ static HRESULT WINAPI titlebar_QueryInterface( ICoreApplicationViewTitleBar *ifa
         IsEqualGUID( riid, &IID_ICoreApplicationViewTitleBar_local ))
     {
         *out = &impl->ICoreApplicationViewTitleBar_iface;
+        InterlockedIncrement( &impl->ref );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( riid, &IID_ComWrappers_internal ))
+    {
+        *out = &impl->IRedhawkInterop_iface;
         InterlockedIncrement( &impl->ref );
         return S_OK;
     }
@@ -867,6 +879,7 @@ struct core_application_view
     ICoreApplicationView  ICoreApplicationView_iface;
     ICoreApplicationView2 ICoreApplicationView2_iface;
     ICoreApplicationView3 ICoreApplicationView3_iface;
+    struct { const void *lpVtbl; } IRedhawkInterop_iface;
     LONG ref;
     struct core_view_titlebar *titlebar;
     ITypedEventHandler_CoreApplicationView_IActivatedEventArgs *activated_handler;
@@ -907,6 +920,13 @@ static HRESULT WINAPI view_QueryInterface( ICoreApplicationView *iface, REFIID r
     if (IsEqualGUID( riid, &IID_ICoreApplicationView3_local ))
     {
         *out = &impl->ICoreApplicationView3_iface;
+        InterlockedIncrement( &impl->ref );
+        return S_OK;
+    }
+
+    if (IsEqualGUID( riid, &IID_ComWrappers_internal ))
+    {
+        *out = &impl->IRedhawkInterop_iface;
         InterlockedIncrement( &impl->ref );
         return S_OK;
     }
@@ -1145,6 +1165,60 @@ static const struct ICoreApplicationView3Vtbl view3_vtbl = {
     view3_remove_HostedViewClosing
 };
 
+static HRESULT WINAPI redhawk_titlebar_QI(void *iface, REFIID riid, void **out)
+{
+    struct core_view_titlebar *impl = CONTAINING_RECORD(iface, struct core_view_titlebar, IRedhawkInterop_iface);
+    return titlebar_QueryInterface(&impl->ICoreApplicationViewTitleBar_iface, riid, out);
+}
+static ULONG WINAPI redhawk_titlebar_AddRef(void *iface)
+{
+    struct core_view_titlebar *impl = CONTAINING_RECORD(iface, struct core_view_titlebar, IRedhawkInterop_iface);
+    return titlebar_AddRef(&impl->ICoreApplicationViewTitleBar_iface);
+}
+static ULONG WINAPI redhawk_titlebar_Release(void *iface)
+{
+    struct core_view_titlebar *impl = CONTAINING_RECORD(iface, struct core_view_titlebar, IRedhawkInterop_iface);
+    return titlebar_Release(&impl->ICoreApplicationViewTitleBar_iface);
+}
+
+static const void *redhawk_core_titlebar_vtbl[] = {
+    (void *)redhawk_titlebar_QI,
+    (void *)redhawk_titlebar_AddRef,
+    (void *)redhawk_titlebar_Release,
+    (void *)redhawk_interop_stub,
+    (void *)titlebar_GetRuntimeClassName,
+    (void *)titlebar_GetTrustLevel,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub
+};
+
+static HRESULT WINAPI redhawk_view_QI(void *iface, REFIID riid, void **out)
+{
+    struct core_application_view *impl = CONTAINING_RECORD(iface, struct core_application_view, IRedhawkInterop_iface);
+    return view_QueryInterface(&impl->ICoreApplicationView_iface, riid, out);
+}
+static ULONG WINAPI redhawk_view_AddRef(void *iface)
+{
+    struct core_application_view *impl = CONTAINING_RECORD(iface, struct core_application_view, IRedhawkInterop_iface);
+    return view_AddRef(&impl->ICoreApplicationView_iface);
+}
+static ULONG WINAPI redhawk_view_Release(void *iface)
+{
+    struct core_application_view *impl = CONTAINING_RECORD(iface, struct core_application_view, IRedhawkInterop_iface);
+    return view_Release(&impl->ICoreApplicationView_iface);
+}
+
+static const void *redhawk_core_view_vtbl[] = {
+    (void *)redhawk_view_QI,
+    (void *)redhawk_view_AddRef,
+    (void *)redhawk_view_Release,
+    (void *)redhawk_interop_stub,
+    (void *)view_GetRuntimeClassName,
+    (void *)view_GetTrustLevel,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub,
+    (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub, (void *)redhawk_interop_stub
+};
+
 static struct core_application_view *global_core_view = NULL;
 
 static HRESULT WINAPI core_application_instance_GetCurrentView( ICoreApplication *iface,
@@ -1160,8 +1234,10 @@ static HRESULT WINAPI core_application_instance_GetCurrentView( ICoreApplication
         v->ICoreApplicationView_iface.lpVtbl = &view_vtbl;
         v->ICoreApplicationView2_iface.lpVtbl = &view2_vtbl;
         v->ICoreApplicationView3_iface.lpVtbl = &view3_vtbl;
+        v->IRedhawkInterop_iface.lpVtbl = redhawk_core_view_vtbl;
         v->ref = 1000;
         tb->ICoreApplicationViewTitleBar_iface.lpVtbl = &titlebar_vtbl;
+        tb->IRedhawkInterop_iface.lpVtbl = redhawk_core_titlebar_vtbl;
         tb->ref = 1000;
         v->titlebar = tb;
         global_core_view = v;
