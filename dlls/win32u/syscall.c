@@ -32,6 +32,13 @@
 #include "ntuser_private.h"
 #include "ntuser.h"
 #include "wine/unixlib.h"
+
+extern void WINAPI NtUserHwndDmaBufCloseProducer( HWND hwnd, int channel_fd );
+extern int WINAPI NtUserHwndDmaBufDrainRelease( int channel_fd, void *release );
+extern UINT WINAPI NtUserHwndDmaBufGetCaps( HWND hwnd, void *caps, void *format_modifiers, UINT max_format_modifiers, UINT *total_format_modifiers );
+extern int WINAPI NtUserHwndDmaBufOpenProducer( HWND hwnd );
+extern int WINAPI NtUserHwndDmaBufPublish( HWND hwnd, int channel_fd, const void *desc, int dmabuf_fd );
+
 #include "win32syscalls.h"
 
 ULONG_PTR zero_bits = 0;

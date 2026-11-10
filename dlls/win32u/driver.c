@@ -1509,3 +1509,28 @@ struct client_surface *nulldrv_client_surface_create( HWND hwnd )
 {
     return client_surface_create( sizeof(struct client_surface), &nulldrv_surface_funcs, hwnd );
 }
+
+int WINAPI NtUserHwndDmaBufOpenProducer( HWND hwnd )
+{
+    return -1;
+}
+
+void WINAPI NtUserHwndDmaBufCloseProducer( HWND hwnd, int channel_fd )
+{
+}
+
+int WINAPI NtUserHwndDmaBufPublish( HWND hwnd, int channel_fd, const void *desc, int dmabuf_fd )
+{
+    return -1;
+}
+
+int WINAPI NtUserHwndDmaBufDrainRelease( int channel_fd, void *release )
+{
+    return -1;
+}
+
+UINT WINAPI NtUserHwndDmaBufGetCaps( HWND hwnd, void *caps, void *format_modifiers, UINT max_format_modifiers, UINT *total_format_modifiers )
+{
+    return 0;
+}
+

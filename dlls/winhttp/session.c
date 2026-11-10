@@ -130,6 +130,13 @@ static BOOL session_query_option( struct object_header *hdr, DWORD option, void 
         *buflen = sizeof(DWORD);
         return TRUE;
 
+    case WINHTTP_OPTION_IPV6_FAST_FALLBACK:
+        if (!validate_buffer( buffer, buflen, sizeof(DWORD) )) return FALSE;
+
+        *(DWORD *)buffer = 1;
+        *buflen = sizeof(DWORD);
+        return TRUE;
+
     case WINHTTP_OPTION_RECEIVE_TIMEOUT:
         if (!validate_buffer( buffer, buflen, sizeof(DWORD) )) return FALSE;
 
@@ -276,6 +283,12 @@ static BOOL session_set_option( struct object_header *hdr, DWORD option, void *b
         buffer_size = *(DWORD *)buffer;
         TRACE( "%#lx\n", buffer_size );
         session->websocket_send_buffer_size = buffer_size;
+        return TRUE;
+    }
+
+    case WINHTTP_OPTION_IPV6_FAST_FALLBACK:
+    {
+        TRACE( "WINHTTP_OPTION_IPV6_FAST_FALLBACK\n" );
         return TRUE;
     }
 
