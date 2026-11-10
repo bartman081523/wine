@@ -2314,9 +2314,20 @@ static void add_modes( const DEVMODEW *current, UINT host_modes_count, const DEV
 {
     struct device_manager_ctx *ctx = param;
     DEVMODEW dummy, physical, detached = *current, virtual, *virtual_modes = NULL;
-    UINT virtual_count, modes_count = host_modes_count;
+    DEVMODEW max_physical = *current;
+    UINT virtual_count, modes_count = host_modes_count, i;
     const DEVMODEW *modes = host_modes;
     struct source *source;
+
+    for (i = 0; i < host_modes_count; i++)
+    {
+        if (host_modes[i].dmPelsWidth > max_physical.dmPelsWidth)
+            max_physical.dmPelsWidth = host_modes[i].dmPelsWidth;
+        if (host_modes[i].dmPelsHeight > max_physical.dmPelsHeight)
+            max_physical.dmPelsHeight = host_modes[i].dmPelsHeight;
+        if (host_modes[i].dmDisplayFrequency > max_physical.dmDisplayFrequency)
+            max_physical.dmDisplayFrequency = host_modes[i].dmDisplayFrequency;
+    }
 
     TRACE( "current %s, host_modes_count %u, host_modes %p, param %p\n", debugstr_devmodew( current ),
            host_modes_count, host_modes, param );
@@ -2331,7 +2342,7 @@ static void add_modes( const DEVMODEW *current, UINT host_modes_count, const DEV
     }
     else if (emulate_modelist)
     {
-        physical = *current;
+        physical = max_physical;
         if ((virtual_modes = get_virtual_modes( current, &physical, host_modes, host_modes_count, &virtual_count )))
         {
             modes_count = virtual_count;
@@ -2347,7 +2358,7 @@ static void add_modes( const DEVMODEW *current, UINT host_modes_count, const DEV
         }
     }
 
-    physical = modes_count == 1 ? *modes : *current;
+    physical = max_physical;
     if (ctx->is_primary) ctx->primary = *current;
 
     detached.dmPelsWidth = 0;

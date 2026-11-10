@@ -5119,6 +5119,17 @@ NTSTATUS WINAPI NtRaiseHardError( NTSTATUS status, ULONG count,
                                   HARDERROR_RESPONSE_OPTION option, HARDERROR_RESPONSE *response )
 {
     FIXME( "%#08x %u %#x %p %u %p: stub\n", status, count, params_mask, params, option, response );
+    if (params && count >= 1)
+    {
+        for (ULONG i = 0; i < count; i++)
+        {
+            UNICODE_STRING *us = (UNICODE_STRING *)params[i];
+            if (us && (params_mask & (1 << i)))
+            {
+                fprintf( stderr, "NtRaiseHardError param[%u]: %.*ls\n", (unsigned)i, (int)(us->Length / sizeof(WCHAR)), us->Buffer );
+            }
+        }
+    }
     return STATUS_NOT_IMPLEMENTED;
 }
 
