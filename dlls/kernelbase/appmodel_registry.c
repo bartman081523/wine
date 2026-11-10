@@ -210,12 +210,42 @@ static BOOL load_entry( HANDLE packages, WINE_APPMODEL_ENTRY *entry )
 
     if (!(entry->name = read_string_value( key, L"Name" )))
     {
-        ERR( "package %s has no Name value\n", debugstr_w( entry->full_name ) );
-        NtClose( key );
-        return FALSE;
+        /* Fallback: derive Name from full_name (format: Name_Version_Arch_Resource_PublisherId) */
+        const WCHAR *p = wcschr( entry->full_name, L'_' );
+        if (p)
+        {
+            size_t len = p - entry->full_name;
+            WCHAR *name = HeapAlloc( GetProcessHeap(), 0, (len + 1) * sizeof(WCHAR) );
+            if (name)
+            {
+                memcpy( name, entry->full_name, len * sizeof(WCHAR) );
+                name[len] = 0;
+                entry->name = name;
+                WARN( "Derived missing Name %s from full_name %s\n", debugstr_w( entry->name ), debugstr_w( entry->full_name ) );
+            }
+        }
+        if (!entry->name)
+        {
+            ERR( "package %s has no Name value\n", debugstr_w( entry->full_name ) );
+            NtClose( key );
+            return FALSE;
+        }
     }
 
     entry->publisher_id = read_string_value( key, L"PublisherId" );
+    if (!entry->publisher_id)
+    {
+        const WCHAR *p = wcsrchr( entry->full_name, L'_' );
+        if (p && *(p + 1))
+        {
+            WCHAR *pub_id = HeapAlloc( GetProcessHeap(), 0, (lstrlenW( p + 1 ) + 1) * sizeof(WCHAR) );
+            if (pub_id)
+            {
+                lstrcpyW( pub_id, p + 1 );
+                entry->publisher_id = pub_id;
+            }
+        }
+    }
     entry->publisher = read_string_value( key, L"Publisher" );
     entry->resource_id = read_string_value( key, L"ResourceId" );
     entry->architecture = read_string_value( key, L"Architecture" );
@@ -250,6 +280,9 @@ static BOOL load_entry( HANDLE packages, WINE_APPMODEL_ENTRY *entry )
                                              entry->publisher_id ? entry->publisher_id : L"" );
     ok = entry->family_name != NULL;
     if (!ok) ERR( "family name derivation failed for %s\n", debugstr_w( entry->full_name ) );
+    else WARN( "AppModel: loaded package %s (name=%s, family=%s, path=%s)\n",
+               debugstr_w( entry->full_name ), debugstr_w( entry->name ),
+               debugstr_w( entry->family_name ), debugstr_w( entry->path ) );
     NtClose( key );
     return ok;
 }

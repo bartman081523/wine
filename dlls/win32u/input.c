@@ -2854,8 +2854,19 @@ BOOL WINAPI NtUserClipCursor( const RECT *rect )
 
     if (foreground == NtUserGetDesktopWindow())
     {
-        WARN( "desktop is foreground, ignoring ClipCursor\n" );
-        rect = NULL;
+        HWND active = get_active_window();
+        if (!active) active = get_focus();
+        if (active && active != NtUserGetDesktopWindow())
+        {
+            WARN( "desktop was foreground, but thread has active window %p; recovering foreground for ClipCursor\n", active );
+            NtUserSetForegroundWindow( active );
+            foreground = active;
+        }
+        else
+        {
+            WARN( "desktop is foreground, ignoring ClipCursor\n" );
+            rect = NULL;
+        }
     }
 
     if (rect)
